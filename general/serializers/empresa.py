@@ -5,8 +5,8 @@ from decouple import config
 class GenEmpresaSerializador(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = GenEmpresa
-        fields = ['id','identificacion', 'numero_identificacion','digito_verificacion','nombre_corto','direccion','ciudad','telefono','correo',
-                  'tipo_persona','regimen','imagen','contenedor_id','rededoc_id','subdominio']
+        fields = ['id', 'numero_identificacion','digito_verificacion','nombre_corto','direccion','ciudad','telefono','correo',
+                  'imagen','contenedor_id','rededoc_id','subdominio']
         
     def to_representation(self, instance):
         ciudad_nombre = ""
