@@ -66,22 +66,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f'{self.nombre} {self.apellido}' 
 
-class CtnContenedor(TenantMixin):
+class Contenedor(TenantMixin):
     schema_name = models.CharField(max_length=100)
-    nombre = models.CharField(max_length=200, null=True)
-    numero_identificacion = models.CharField(max_length=20, null=True,  blank=True, default=None)
+    nombre = models.CharField(max_length=200, null=True)    
     fecha = models.DateTimeField(auto_now_add=True)
     fecha_ultima_conexion = models.DateTimeField(auto_now_add=True, null=True)
     imagen = models.TextField(null=True)    
-    usuarios = models.IntegerField(default=1) 
-    reddoc = models.BooleanField(default = False)
-    ruteo = models.BooleanField(default = False)
-    cortesia = models.BooleanField(default = False)
-    precio = models.DecimalField(max_digits=16, decimal_places=2, default=0)
-    # default true, schema will be automatically created and synced when it is saved
+    usuarios = models.IntegerField(default=1)         
     auto_create_schema = True
     auto_drop_schema = True
-    usuario = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
 
     def __str__(self):
         return self.schema_name
@@ -89,12 +82,11 @@ class CtnContenedor(TenantMixin):
     class Meta:
         db_table = "ctn_contenedor"
 
-class CtnDominio(DomainMixin):
+class Dominio(DomainMixin):
     pass
 
     class Meta:
         db_table = "ctn_dominio"
-
 
 class CtnPais(models.Model):
     id = models.CharField(primary_key=True, max_length=2)
@@ -125,12 +117,10 @@ class CtnCiudad(models.Model):
     class Meta:
         db_table = "ctn_ciudad"      
         
-
-
 class UsuarioContenedor(models.Model):
     rol = models.CharField(max_length=20, null=True)
     usuario = models.ForeignKey(User, on_delete=models.CASCADE)
-    contenedor = models.ForeignKey(CtnContenedor, on_delete=models.CASCADE)
+    contenedor = models.ForeignKey(Contenedor, on_delete=models.CASCADE)
     
     class Meta:
         unique_together = ('usuario', 'contenedor')
