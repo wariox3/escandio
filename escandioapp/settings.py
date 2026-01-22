@@ -15,7 +15,7 @@ SECRET_KEY = 'django-insecure-x)e8ci34g3_w6y6&p-=4lcnn2z@jnic9#4h(s8&8bhq_jz9mj!
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'django_tenants',
+    "corsheaders",
     'contenedor',
     'vertical',
     'ruteo',
@@ -55,6 +56,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -101,8 +103,8 @@ DATABASE_ROUTERS = (
 )
 
 
-TENANT_MODEL = "contenedor.CtnContenedor" # app.Model
-TENANT_DOMAIN_MODEL = "contenedor.CtnDominio"  # app.Model
+TENANT_MODEL = "contenedor.Contenedor" # app.Model
+TENANT_DOMAIN_MODEL = "contenedor.Dominio"  # app.Model
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -150,7 +152,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
-    'EXCEPTION_HANDLER': 'itrioapp.exceptions.custom_exception_handler',
+    'EXCEPTION_HANDLER': 'escandioapp.exceptions.custom_exception_handler',
 }
 
 SIMPLE_JWT = {      
@@ -162,3 +164,10 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = 'contenedor.User'
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:4200",
+]
+
+
+CORS_ALLOW_CREDENTIALS = True
