@@ -1,0 +1,16 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenPais",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "model": "general.GenPais",
+      "pk": "CO",
+      "campos": {
+        "nombre": "Colombia",
+        "codigo": "169"
+      }
+    }
+  ]
+}

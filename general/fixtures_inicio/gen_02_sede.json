@@ -1,0 +1,13 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenSede",
+  "modelo_nativo": "gen_sede",
+  "actualizar_secuencia": true,
+  "datos": [
+    {
+      "pk": 1,
+      "campos": {"nombre": "Principal", "grupo": 1}
+    }
+  ]
+}
+

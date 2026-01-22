@@ -1,0 +1,29 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenComplemento",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "model": "general.GenComplemento",
+      "pk": 1,
+      "campos": {
+        "nombre": "Semantica",
+        "estructura_json": [
+          {
+            "nombre": "url",
+            "valor": ""
+          },
+          {
+            "nombre": "clave",
+            "valor": ""
+          },
+          {
+            "nombre": "usuario",
+            "valor": ""
+          }
+        ]
+      }
+    }
+  ]
+}

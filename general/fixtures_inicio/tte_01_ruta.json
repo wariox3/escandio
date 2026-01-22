@@ -1,0 +1,14 @@
+{
+    "aplicacion": "transporte",
+    "modelo": "TteRuta",
+    "modelo_nativo": "tte_ruta",
+    "actualizar_secuencia": true,
+    "datos": [
+        {
+            "pk": 1,
+            "campos": {
+                "nombre": "Sin definir"
+            }
+        }
+    ]
+}
