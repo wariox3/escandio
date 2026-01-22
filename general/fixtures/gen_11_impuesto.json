@@ -1,0 +1,515 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenImpuesto",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {  
+      "pk": 1,
+      "campos": {
+        "nombre": "IVA 19%",
+        "nombre_extendido": "IVA Ventas 19%",
+        "porcentaje": "19",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": 1,
+        "impuesto_tipo": 1
+      }
+    },
+    {      
+      "pk": 2,
+      "campos": {
+        "nombre": "IVA 5%",
+        "nombre_extendido": "IVA Ventas 5%",
+        "porcentaje": "5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": 1,
+        "impuesto_tipo": 1
+      }
+    },
+    {
+      "pk": 3,
+      "campos": {
+        "nombre": "IVA 19%",
+        "nombre_extendido": "IVA Compras 19%",
+        "porcentaje": "19",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": 1,
+        "impuesto_tipo": 1
+      }
+    },
+    {
+      "pk": 4,
+      "campos": {
+        "nombre": "IVA 5%",
+        "nombre_extendido": "IVA Compras 5%",
+        "porcentaje": "5",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": 1,
+        "impuesto_tipo": 1
+      }
+    },
+    {
+      "pk": 5,
+      "campos": {
+        "nombre": "IVA 19% AIU",
+        "nombre_extendido": "IVA AIU Ventas 19%",
+        "porcentaje": "19",
+        "porcentaje_base": "10",
+        "venta": "True",
+        "compra": "False",
+        "operacion": 1,
+        "impuesto_tipo": 1
+      }
+    },
+    {
+      "pk": 6,
+      "campos": {
+        "nombre": "IVA 19% AIU",
+        "nombre_extendido": "IVA AIU compras 19%",
+        "porcentaje": "19",
+        "porcentaje_base": "10",
+        "venta": "False",
+        "compra": "True",
+        "operacion": 1,
+        "impuesto_tipo": 1
+      }
+    },
+    {
+      "pk": 101,
+      "campos": {
+        "nombre": "RTF 10%",
+        "nombre_extendido": "RTF 10% Honorarios comisiones",
+        "porcentaje": "10",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 102,
+      "campos": {
+        "nombre": "RTF 6%",
+        "nombre_extendido": "RTF 6% Personas naturales ND",
+        "porcentaje": "6",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 103,
+      "campos": {
+        "nombre": "RTF 1%",
+        "nombre_extendido": "RTF 1% Vehiculos",
+        "porcentaje": "1",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 104,
+      "campos": {
+        "nombre": "RTF 4%",
+        "nombre_extendido": "RTF 4% Arrendamiento de bienes muebles",
+        "porcentaje": "4",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 105,
+      "campos": {
+        "nombre": "RTF 2.5%",
+        "nombre_extendido": "RTF 2.5% Otros ingresos tributarios",
+        "porcentaje": "2.5",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 106,
+      "campos": {
+        "nombre": "RTF 11%",
+        "nombre_extendido": "RTF 11% Honorarios y comisiones",
+        "porcentaje": "11",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 107,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% No declarante",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 108,
+      "campos": {
+        "nombre": "RTF 2.5%",
+        "nombre_extendido": "RTF 2.5% Compras generales",
+        "porcentaje": "2.50",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 109,
+      "campos": {
+        "nombre": "RTF 0.1%",
+        "nombre_extendido": "RTF 0.1% Compras combustible",
+        "porcentaje": "0.10",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 110,
+      "campos": {
+        "nombre": "RTF 4%",
+        "nombre_extendido": "RTF 4% Servicios generales ",
+        "porcentaje": "4",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 111,
+      "campos": {
+        "nombre": "RTF 1%",
+        "nombre_extendido": "RTF 1% Servicios transporte de carga",
+        "porcentaje": "1",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 112,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% Servicios de transporte terrestre",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 113,
+      "campos": {
+        "nombre": "RTF 2%",
+        "nombre_extendido": "RTF 2% Servicios vigilancia y aseo (AIU)",
+        "porcentaje": "2",
+        "porcentaje_base": "10",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 114,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% Servicios de hoteles y restaurantes ",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 115,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% Arrendamientos de bienes inmuebles",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 116,
+      "campos": {
+        "nombre": "RTF 4%",
+        "nombre_extendido": "RTF 4% Servicios de publicidad y mercadeo ",
+        "porcentaje": "4",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 200,
+      "campos": {
+        "nombre": "RteFte 3.5%",
+        "nombre_extendido": "RTF 3.5% Compras generales ND",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 201,
+      "campos": {
+        "nombre": "RteFte 2.5%",
+        "nombre_extendido": "RTF 2.5% Compras generales",
+        "porcentaje": "2.5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 202,
+      "campos": {
+        "nombre": "RteFte 11%",
+        "nombre_extendido": "RTF 11% Honorarios y comisiones",
+        "porcentaje": "11",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 203,
+      "campos": {
+        "nombre": "RteFte 4%",
+        "nombre_extendido": "RTF 4% Servicios generales",
+        "porcentaje": "4",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 204,
+      "campos": {
+        "nombre": "RteFte 6%",
+        "nombre_extendido": "RTF 6% Servicios generales ND",
+        "porcentaje": "6",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 205,
+      "campos": {
+        "nombre": "RTF 10%",
+        "nombre_extendido": "RTF 10% Honorarios comisiones",
+        "porcentaje": "10",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 206,
+      "campos": {
+        "nombre": "RTF 1%",
+        "nombre_extendido": "RTF 1% Compra de vehiculos",
+        "porcentaje": "1",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 207,
+      "campos": {
+        "nombre": "RTF 4%",
+        "nombre_extendido": "RTF 4% Arrendamiento de bienes muebles",
+        "porcentaje": "4",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 208,
+      "campos": {
+        "nombre": "RTF 2.5%",
+        "nombre_extendido": "RTF 2.5% Otros ingresos tributarios",
+        "porcentaje": "2.5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 209,
+      "campos": {
+        "nombre": "RTF 0.1%",
+        "nombre_extendido": "RTF 0.1% Compras combustible",
+        "porcentaje": "0.1",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 210,
+      "campos": {
+        "nombre": "RTF 1%",
+        "nombre_extendido": "RTF 1% Servicios transporte de carga",
+        "porcentaje": "1",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 211,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% Servicios de transporte terrestre",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 212,
+      "campos": {
+        "nombre": "RTF 2%",
+        "nombre_extendido": "RTF 2% Servicios vigilancia y aseo (AIU)",
+        "porcentaje": "2",
+        "porcentaje_base": "10",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 213,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% Servicios de hoteles y restaurantes",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 214,
+      "campos": {
+        "nombre": "RTF 3.5%",
+        "nombre_extendido": "RTF 3.5% Arrendamientos de bienes inmuebles",
+        "porcentaje": "3.5",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 215,
+      "campos": {
+        "nombre": "RTF 4%",
+        "nombre_extendido": "RTF 4% Servicios de publicidad y mercadeo  ",
+        "porcentaje": "4",
+        "porcentaje_base": "100",
+        "venta": "True",
+        "compra": "False",
+        "operacion": -1,
+        "impuesto_tipo": 3
+      }
+    },
+    {
+      "pk": 501,
+      "campos": {
+        "nombre": "IPCU 20%",
+        "nombre_extendido": "IPCU 20%",
+        "porcentaje": "20",
+        "porcentaje_base": "100",
+        "venta": "False",
+        "compra": "True",
+        "operacion": 1,
+        "impuesto_tipo": 5
+      }
+    }
+  ]
+}

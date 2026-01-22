@@ -1,0 +1,60 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenRegimen",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "model": "general.GenRegimen",
+      "pk": 1,
+      "campos": {
+        "nombre": "Responsable de IVA",
+        "codigo_interface": "05"
+      }
+    },
+    {
+      "model": "general.GenRegimen",
+      "pk": 2,
+      "campos": {
+        "nombre": "No responsable de IVA",
+        "codigo_interface": "04"
+      }
+    },
+    {
+      "model": "general.GenRegimen",
+      "pk": 3,
+      "campos": {
+        "nombre": "Impuesto nacional al consumo INC",
+        "codigo_interface": "00",
+        "inactivo": true
+      }
+    },
+    {
+      "model": "general.GenRegimen",
+      "pk": 4,
+      "campos": {
+        "nombre": "No responsable INC",
+        "codigo_interface": "00",
+        "inactivo": true
+      }
+    },
+    {
+      "model": "general.GenRegimen",
+      "pk": 5,
+      "campos": {
+        "nombre": "Responsable Iva e INC",
+        "codigo_interface": "00",
+        "inactivo": true
+      }
+    },
+    {
+      "model": "general.GenRegimen",
+      "pk": 6,
+      "campos": {
+        "nombre": "No aplica - Regimen especial",
+        "codigo_interface": "00",
+        "inactivo": true
+      }
+    }
+  ]
+}

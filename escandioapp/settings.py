@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -28,12 +29,12 @@ SHARED_APPS = (
     'django.contrib.admin',
     'django_tenants',
     'contenedor',
-    'seguridad',
     'vertical'
 )
 
 TENANT_APPS = (
-    'ruteo'
+    'ruteo',
+    'general'
 )
 
 INSTALLED_APPS = [
@@ -43,7 +44,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'ruteo'
+    'rest_framework',
+    'django_tenants',
+    'contenedor',
+    'vertical',
+    'ruteo',
+    'general'
 ]
 
 MIDDLEWARE = [
@@ -90,6 +96,13 @@ DATABASES = {
     }
 }
 
+DATABASE_ROUTERS = (
+    'django_tenants.routers.TenantSyncRouter',
+)
+
+
+TENANT_MODEL = "contenedor.CtnContenedor" # app.Model
+TENANT_DOMAIN_MODEL = "contenedor.CtnDominio"  # app.Model
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -113,9 +126,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'es'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Bogota'
 
 USE_I18N = True
 
@@ -126,3 +139,26 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+REST_FRAMEWORK = {
+    # Use Django's standard `django.contrib.auth` permissions,
+    # or allow read-only access for unauthenticated users.
+    'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 30,  
+    'COERCE_DECIMAL_TO_STRING': False,      
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'EXCEPTION_HANDLER': 'itrioapp.exceptions.custom_exception_handler',
+}
+
+SIMPLE_JWT = {      
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,    
+}
+
+AUTH_USER_MODEL = 'contenedor.User'

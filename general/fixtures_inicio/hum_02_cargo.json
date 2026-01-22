@@ -1,0 +1,13 @@
+{
+  "aplicacion": "humano",
+  "modelo": "HumCargo",
+  "modelo_nativo": "hum_cargo",
+  "actualizar_secuencia": true,
+  "datos": [
+    {
+      "pk": 1,
+      "campos": {"nombre": "General", "codigo":"1"}
+    }
+  ]
+}
+

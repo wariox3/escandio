@@ -1,0 +1,305 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenEstado",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "model": "general.GenEstado",
+      "pk": 1,
+      "campos": {
+        "nombre": "Antioquia",
+        "pais": "CO",
+        "codigo": "05"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 2,
+      "campos": {
+        "nombre": "Atlántico",
+        "pais": "CO",
+        "codigo": "08"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 3,
+      "campos": {
+        "nombre": "Bogotá",
+        "pais": "CO",
+        "codigo": "11"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 4,
+      "campos": {
+        "nombre": "Bolívar",
+        "pais": "CO",
+        "codigo": "13"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 5,
+      "campos": {
+        "nombre": "Boyacá",
+        "pais": "CO",
+        "codigo": "15"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 6,
+      "campos": {
+        "nombre": "Caldas",
+        "pais": "CO",
+        "codigo": "17"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 7,
+      "campos": {
+        "nombre": "Caquetá",
+        "pais": "CO",
+        "codigo": "18"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 8,
+      "campos": {
+        "nombre": "Cauca",
+        "pais": "CO",
+        "codigo": "19"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 9,
+      "campos": {
+        "nombre": "Cesar",
+        "pais": "CO",
+        "codigo": "20"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 10,
+      "campos": {
+        "nombre": "Córdoba",
+        "pais": "CO",
+        "codigo": "23"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 11,
+      "campos": {
+        "nombre": "Cundinamarca",
+        "pais": "CO",
+        "codigo": "25"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 12,
+      "campos": {
+        "nombre": "Chocó",
+        "pais": "CO",
+        "codigo": "27"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 13,
+      "campos": {
+        "nombre": "Huila",
+        "pais": "CO",
+        "codigo": "41"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 14,
+      "campos": {
+        "nombre": "La Guajira",
+        "pais": "CO",
+        "codigo": "44"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 15,
+      "campos": {
+        "nombre": "Magdalena",
+        "pais": "CO",
+        "codigo": "47"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 16,
+      "campos": {
+        "nombre": "Meta",
+        "pais": "CO",
+        "codigo": "50"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 17,
+      "campos": {
+        "nombre": "Nariño",
+        "pais": "CO",
+        "codigo": "52"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 18,
+      "campos": {
+        "nombre": "Norte de Santander",
+        "pais": "CO",
+        "codigo": "54"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 19,
+      "campos": {
+        "nombre": "Quindío",
+        "pais": "CO",
+        "codigo": "63"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 20,
+      "campos": {
+        "nombre": "Risaralda",
+        "pais": "CO",
+        "codigo": "66"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 21,
+      "campos": {
+        "nombre": "Santander",
+        "pais": "CO",
+        "codigo": "68"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 22,
+      "campos": {
+        "nombre": "Sucre",
+        "pais": "CO",
+        "codigo": "70"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 23,
+      "campos": {
+        "nombre": "Tolima",
+        "pais": "CO",
+        "codigo": "73"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 24,
+      "campos": {
+        "nombre": "Valle del Cauca",
+        "pais": "CO",
+        "codigo": "76"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 25,
+      "campos": {
+        "nombre": "Arauca",
+        "pais": "CO",
+        "codigo": "81"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 26,
+      "campos": {
+        "nombre": "Casanare",
+        "pais": "CO",
+        "codigo": "85"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 27,
+      "campos": {
+        "nombre": "Putumayo",
+        "pais": "CO",
+        "codigo": "86"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 28,
+      "campos": {
+        "nombre": "San Andrés y Providencia",
+        "pais": "CO",
+        "codigo": "88"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 29,
+      "campos": {
+        "nombre": "Amazonas",
+        "pais": "CO",
+        "codigo": "91"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 30,
+      "campos": {
+        "nombre": "Guainía",
+        "pais": "CO",
+        "codigo": "94"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 31,
+      "campos": {
+        "nombre": "Guaviare",
+        "pais": "CO",
+        "codigo": "95"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 32,
+      "campos": {
+        "nombre": "Vaupés",
+        "pais": "CO",
+        "codigo": "97"
+      }
+    },
+    {
+      "model": "general.GenEstado",
+      "pk": 33,
+      "campos": {
+        "nombre": "Vichada",
+        "pais": "CO",
+        "codigo": "99"
+      }
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenIdentificacion",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 1,
+      "campos": {
+        "nombre": "Registro civil de nacimiento",
+        "pais": "CO",
+        "codigo": "11",
+        "orden": 3,
+        "abreviatura": "RC",
+        "aporte": "RC",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 2,
+      "campos": {
+        "nombre": "Tarjeta de identidad",
+        "pais": "CO",
+        "codigo": "12",
+        "orden": 4,
+        "abreviatura": "TI",
+        "aporte": "TI",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 3,
+      "campos": {
+        "nombre": "Cédula de ciudadanía",
+        "pais": "CO",
+        "codigo": "13",
+        "orden": 2,
+        "abreviatura": "CC",
+        "aporte": "CC",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 4,
+      "campos": {
+        "nombre": "Tarjeta de extranjería",
+        "pais": "CO",
+        "codigo": "21",
+        "orden": 5,
+        "abreviatura": "TE",
+        "aporte": "",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 5,
+      "campos": {
+        "nombre": "Cédula de extranjería",
+        "pais": "CO",
+        "codigo": "22",
+        "orden": 6,
+        "abreviatura": "CE",
+        "aporte": "CE",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 6,
+      "campos": {
+        "nombre": "Número de identificación tributaria ",
+        "codigo": "31",
+        "pais": "CO",
+        "orden": 1,
+        "abreviatura": "NIT",
+        "aporte": "",
+        "tipo_persona": 1
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 7,
+      "campos": {
+        "nombre": "Pasaporte",
+        "pais": "CO",
+        "codigo": "41",
+        "orden": 7,
+        "abreviatura": "PA",
+        "aporte": "PT",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 8,
+      "campos": {
+        "nombre": "Documento de identificación extranjero",
+        "pais": "CO",
+        "codigo": "42",
+        "orden": 8,
+        "abreviatura": "TDE",
+        "aporte": "",
+        "tipo_persona": 2
+      }
+    },
+    {
+      "model": "general.GenIdentificacion",
+      "pk": 9,
+      "campos": {
+        "nombre": "NIT de otro país",
+        "pais": "CO",
+        "codigo": "50",
+        "orden": 9,
+        "abreviatura": "SI",
+        "aporte": "",
+        "tipo_persona": 2
+      }
+    }
+  ]
+}

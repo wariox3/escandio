@@ -1,0 +1,48 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenImpuestoTipo",
+  "modelo_nativo": "",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "model": "general.GenImpuestoTipo",
+      "pk": 1,
+      "campos": {
+        "nombre": "IVA",
+        "codigo": "IVA"
+      }
+    },
+    {
+      "model": "general.GenImpuestoTipo",
+      "pk": 2,
+      "campos": {
+        "nombre": "ICA",
+        "codigo": "ICA"
+      }
+    },
+    {
+      "model": "general.GenImpuestoTipo",
+      "pk": 3,
+      "campos": {
+        "nombre": "RETENCION FUENTE",
+        "codigo": "RTF"
+      }
+    },
+    {
+      "model": "general.GenImpuestoTipo",
+      "pk": 4,
+      "campos": {
+        "nombre": "RETENCION IVA",
+        "codigo": "RTI"
+      }
+    },
+    {
+      "model": "general.GenImpuestoTipo",
+      "pk": 5,
+      "campos": {
+        "nombre": "CONSUMO",
+        "codigo": "COM"
+      }
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+{
+    "aplicacion": "ruteo",
+    "modelo": "RutNovedadTipo",
+    "modelo_nativo": "rut_novedad_tipo",
+    "actualizar_secuencia": false,
+    "datos": [
+        {
+            "pk": 1,
+            "campos": {
+                "nombre": "Direccion errada"
+            }
+        },
+        {
+            "pk": 2,
+            "campos": {
+                "nombre": "Problemas en la via"
+            }
+        },
+        {
+            "pk": 3,
+            "campos": {
+                "nombre": "Vehiculo varado"
+            }
+        },
+        {
+            "pk": 4,
+            "campos": {
+                "nombre": "Ruta sin finalizar (tiempo)"
+            }
+        },
+        {
+            "pk": 5,
+            "campos": {
+                "nombre": "Población errada"
+            }
+        },
+        {
+            "pk": 6,
+            "campos": {
+                "nombre": "Mercancia extraviada"
+            }
+        },
+        {
+            "pk": 7,
+            "campos": {
+                "nombre": "Ingreso jaula"
+            }
+        },
+        {
+            "pk": 8,
+            "campos": {
+                "nombre": "Mercancía retenida por orden de remitente"
+            }
+        },
+        {
+            "pk": 9,
+            "campos": {
+                "nombre": "Decomiso por autoridades"
+            }
+        },
+        {
+            "pk": 10,
+            "campos": {
+                "nombre": "Cliente reclama en oficina"
+            }
+        },
+        {
+            "pk": 11,
+            "campos": {
+                "nombre": "Costo adicional por operacion"
+            }
+        },
+        {
+            "pk": 12,
+            "campos": {
+                "nombre": "Ruta incompleta"
+            }
+        },
+        {
+            "pk": 13,
+            "campos": {
+                "nombre": "Cliente no despacha (recogida)"
+            }
+        },
+        {
+            "pk": 14,
+            "campos": {
+                "nombre": "Mercancia averiada / mal estado"
+            }
+        },
+        {
+            "pk": 15,
+            "campos": {
+                "nombre": "Mercancia no despachada (bodega)"
+            }
+        },
+        {
+            "pk": 16,
+            "campos": {
+                "nombre": "Mercancia hurtada"
+            }
+        },
+        {
+            "pk": 17,
+            "campos": {
+                "nombre": "Destinatario no habita en el lugar"
+            }
+        },
+        {
+            "pk": 18,
+            "campos": {
+                "nombre": "Cliente no recibe"
+            }
+        },
+        {
+            "pk": 19,
+            "campos": {
+                "nombre": "Pedido errado"
+            }
+        },
+        {
+            "pk": 20,
+            "campos": {
+                "nombre": "Mercancia incompleta"
+            }
+        },
+        {
+            "pk": 21,
+            "campos": {
+                "nombre": "Persona destino ausente"
+            }
+        },
+        {
+            "pk": 22,
+            "campos": {
+                "nombre": "Destinatario fallecido"
+            }
+        },
+        {
+            "pk": 23,
+            "campos": {
+                "nombre": "Local cerrado"
+            }
+        },
+        {
+            "pk": 24,
+            "campos": {
+                "nombre": "Cliente vereda esperando que reciba"
+            }
+        }
+    ]
+}

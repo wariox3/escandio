@@ -1,0 +1,56 @@
+{
+  "aplicacion": "general",
+  "modelo": "GenRh",
+  "modelo_nativo": "gen_rh",
+  "actualizar_secuencia": false,
+  "datos": [
+    {
+      "pk": 1,
+      "campos": {
+        "nombre": "O-"
+      }
+    },
+    {
+      "pk": 2,
+      "campos": {
+        "nombre": "O+"
+      }
+    },
+    {
+      "pk": 3,
+      "campos": {
+        "nombre": "A-"
+      }
+    },
+    {
+      "pk": 4,
+      "campos": {
+        "nombre": "A+"
+      }
+    },
+    {
+      "pk": 5,
+      "campos": {
+        "nombre": "B-"
+      }
+    },
+    {
+      "pk": 6,
+      "campos": {
+        "nombre": "B+"
+      }
+    },
+    {
+      "pk": 7,
+      "campos": {
+        "nombre": "AB-"
+      }
+    },
+    {
+      "pk": 8,
+      "campos": {
+        "nombre": "AB+"
+      }
+    }
+  ]
+}

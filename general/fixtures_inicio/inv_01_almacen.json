@@ -1,0 +1,13 @@
+{
+    "aplicacion": "inventario",
+    "modelo": "InvAlmacen",
+    "modelo_nativo": "inv_almacen",
+    "actualizar_secuencia": true,
+    "datos": [
+        {
+            "pk": 1,
+            "campos": {"nombre": "Principal", "codigo":"1"}
+        }
+    ]
+}
+
