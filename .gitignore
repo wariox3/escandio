@@ -1,0 +1,36 @@
+### Django ###
+*.log
+*.pot
+*.pyc
+*.sqlite3
+__pycache__/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media
+venv/
+bd.py
+
+### VisualStudioCode ###
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+### VisualStudioCode Patch ###
+# Ignore all local history of files
+.history
+.ionide
+.vscode/launch.json
+.env
+
+### PyCharm ###
+.idea/
