@@ -5,25 +5,9 @@ from rest_framework import serializers
 from decouple import config
 
 class GenConfiguracionSerializador(serializers.ModelSerializer):
-    gen_item_administracion__nombre = serializers.CharField(source='gen_item_administracion.nombre', read_only=True)
-    gen_item_imprevisto__nombre = serializers.CharField(source='gen_item_imprevisto.nombre', read_only=True)
-    gen_item_utilidad__nombre = serializers.CharField(source='gen_item_utilidad.nombre', read_only=True)
     class Meta:
         model = GenConfiguracion
-        fields = ['id', 'empresa', 'informacion_factura', 'informacion_factura_superior', 
-            'gen_uvt', 
-            'gen_emitir_automaticamente',
-            'gen_item_administracion',
-            'gen_item_administracion__nombre',
-            'gen_item_imprevisto',
-            'gen_item_imprevisto__nombre',
-            'gen_item_utilidad',
-            'gen_item_utilidad__nombre',
-            'hum_factor', 
-            'hum_salario_minimo', 
-            'hum_auxilio_transporte', 
-            'hum_entidad_riesgo',
-            'pos_documento_tipo', 
+        fields = ['id', 'empresa', 'informacion_factura', 'informacion_factura_superior',         
             'rut_sincronizar_complemento', 
             'rut_rutear_franja', 
             'rut_direccion_origen', 
@@ -31,7 +15,7 @@ class GenConfiguracionSerializador(serializers.ModelSerializer):
             'rut_longitud',
             'rut_decodificar_direcciones'
         ]   
-        select_related_fields = ['empresa', 'hum_entidad_riesgo', 'pos_documento_tipo', 'gen_item_imprevisto', 'gen_item_administracion', 'gen_item_utilidad']   
+        select_related_fields = ['empresa']   
 
 class GenConfiguracionRndcSerializador(serializers.ModelSerializer):
     empresa__numero_identificacion = serializers.CharField(source='empresa.numero_identificacion', read_only=True)
