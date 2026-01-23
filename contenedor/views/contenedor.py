@@ -63,7 +63,8 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                              nombre=nombre, 
                              domain_is_primary='0', 
                              imagen=imagenReferencia,                              
-                             usuarios=1)  
+                             usuarios=1,
+                             usuario_id=usuario.id)  
                 #os.system(f"python manage.py tenant_command actualizar_fixtures general/fixtures/ --schema={subdominio}")
                 #os.system(f"python manage.py tenant_command actualizar_fixtures general/fixtures_inicio/ --schema={subdominio}")                                           
                 thread = Thread(
