@@ -6,8 +6,9 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import UpdateModelMixin
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
-from contenedor.models import User
+from contenedor.models import User, CtnVerificacion
 from contenedor.serializers.user import UserSerializer, UserUpdateSerializer
+from contenedor.serializers.verificacion import CtnVerificacionSerializador
 from datetime import datetime, timedelta
 from utilidades.zinc import Zinc
 from decouple import config
@@ -40,7 +41,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         if user_serializer.is_valid():
             user_serializer.save()
             return Response({'actualizacion': True, 'usuario': user_serializer.data}, status=status.HTTP_201_CREATED)            
-        return Response({'mensaje':'Errores en la actualizacion del usuario', 'codigo':10, 'validaciones': user_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'mensaje':'Errores en la actualizacion del usuario', 'codigo':10, 'validaciones': user_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)  
 
     @action(detail=False, methods=["post"], url_path=r'nuevo',)
     def nuevo_action(self, request):
@@ -50,8 +51,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         nombre_corto = raw.get('nombre_corto', None)
         nombre = raw.get('nombre', None)
         apellido = raw.get('apellido', None)
-        telefono = raw.get('telefono', None)
-        
+        telefono = raw.get('telefono', None)        
         if username and password:                    
             data = {
                 'username': username,
@@ -76,6 +76,69 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=["post"], url_path=r'cambio-clave-solicitar',)
+    def cambio_clave_solicitar(self, request):
+        raw = request.data            
+        username = raw.get('username')        
+        if username:
+            try:
+                usuario = User.objects.get(username = username)
+            except User.DoesNotExist:
+                return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)    
+            
+            token = secrets.token_urlsafe(20)            
+            data = {
+                'token': token,
+                'vence': datetime.now().date() + timedelta(days=1),
+                'usuario_id': usuario.id,
+                'accion': 'clave'
+            }
+            verificacion_serializer = CtnVerificacionSerializador(data = data)
+            if verificacion_serializer.is_valid():                                             
+                verificacion_serializer.save()
+                url = f"https://app.ruteo.co/auth/clave/cambiar/" + token
+                if config('ENV') == "test":
+                    url = f"http://app.ruteo.online/auth/clave/cambiar/" + token
+                if config('ENV') == "dev":
+                    url = f"http://localhost:4200/auth/clave/cambiar/" + token  
+
+                html_content = """
+                                <h1>¡Hola {usuario}!</h1>
+                                <p>Recibimos una solicitud para cambiar tu clave, puedes cambiarla haciendo clic en 
+                                el siguiente enlace.</p>
+                                <a href='{url}' class='button'>Cambiar clave</a>
+                                """.format(url=url, usuario=usuario.nombre_corto)
+                correo = Zinc()  
+                correo.correo(usuario.correo, f'Solicitud cambio clave Ruteo.co', html_content, 'ruteo')
+                return Response({'verificacion': verificacion_serializer.data}, status=status.HTTP_201_CREATED)
+            return Response({'mensaje':'Errores en el registro de la verificacion', 'codigo':3, 'validaciones': verificacion_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)            
+        return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["post"], url_path=r'cambio-clave-verificar',)
+    def cambio_clave_verificar(self, request):
+        raw = request.data
+        try:
+            token = raw.get('token')
+            clave = raw.get('password')
+            if token and clave:
+                verificacion = CtnVerificacion.objects.filter(token=token).first()
+                if verificacion:
+                    if verificacion.estado_usado == False:
+                        fechaActual = datetime.now().date()                
+                        if fechaActual <= verificacion.vence:
+                            usuario = User.objects.get(pk=verificacion.usuario_id)
+                            verificacion.estado_usado = True
+                            verificacion.save()
+                            usuario.set_password(clave)
+                            usuario.save()
+                            return Response({'cambio': True}, status=status.HTTP_200_OK)
+                        return Response({'mensaje':'El token de la verificacion esta vencido', 'codigo': 6, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({'mensaje':'La verificacion ya fue usada', 'codigo': 5, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'mensaje':'No se ha encontrado la verificacion', 'codigo': 4}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)                
+        except User.DoesNotExist:
+            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=False, methods=["post"], url_path=r'cambio-clave',)
     def cambio_clave(self, request):
         raw = request.data
@@ -89,7 +152,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 return Response({'cambio': True}, status=status.HTTP_200_OK)                
             return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)                
         except User.DoesNotExist:
-            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)       
+            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)             
 
     @action(detail=False, methods=["post"], url_path=r'cargar-imagen',)
     def cargar_imagen(self, request):
@@ -178,17 +241,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)                
         except User.DoesNotExist:
             return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)   
-
-    @action(detail=False, methods=["post"], url_path=r'lista-socio')
-    def lista_socio(self, request):        
-        raw = request.data
-        socio_id = raw.get('socio_id')  
-        if socio_id:
-            usuarios = User.objects.filter(socio_id=socio_id)
-            usuariosSerializer = UserSerializer(usuarios, many=True)                
-            return Response({'usuarios': usuariosSerializer.data}, status=status.HTTP_200_OK)
-        return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)      
-
+     
     @action(detail=False, methods=["get"], permission_classes=[permissions.AllowAny], url_path=r'detalle/(?P<id>\d+)')
     def detalle(self, request, id=None):        
         usuario = User.objects.get(id=id)

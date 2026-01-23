@@ -138,3 +138,15 @@ class CtnDireccion(models.Model):
     
     class Meta:
         db_table = "ctn_direccion"
+
+class CtnVerificacion(models.Model):
+    usuario_id = models.IntegerField(null=True)
+    contenedor_id = models.IntegerField(null=True)
+    token = models.CharField(max_length=50)
+    estado_usado = models.BooleanField(default = False)
+    vence = models.DateField(null=True)
+    accion = models.CharField(max_length=10, default='registro')
+    usuario_invitado_username = models.EmailField(max_length = 255, null=True)
+
+    class Meta:
+        db_table = "ctn_verificacion"         
