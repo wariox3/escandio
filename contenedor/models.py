@@ -75,6 +75,7 @@ class Contenedor(TenantMixin):
     usuarios = models.IntegerField(default=1)         
     auto_create_schema = True
     auto_drop_schema = True
+    usuario = models.ForeignKey(User, on_delete=models.PROTECT, null=True)
 
     def __str__(self):
         return self.schema_name
