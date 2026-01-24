@@ -10,11 +10,8 @@ class GenEmpresa(models.Model):
     telefono = models.CharField(max_length=50, null=True)
     correo = models.EmailField(max_length = 255)
     imagen = models.TextField(null=True)
-    contenedor_id = models.IntegerField()     
-    rededoc_id = models.IntegerField(null=True)    
+    contenedor_id = models.IntegerField()        
     subdominio = models.CharField(max_length=100, default='demo') 
-    asistente_electronico = models.BooleanField(default = False)
-    asistente_predeterminado = models.BooleanField(default = False)
     ciudad = models.ForeignKey(GenCiudad, null=True, on_delete=models.PROTECT)
 
     class Meta:
