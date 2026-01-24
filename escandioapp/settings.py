@@ -170,6 +170,3 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://ruteoapi.online",
 ]
-
-
-CORS_ALLOW_CREDENTIALS = True
