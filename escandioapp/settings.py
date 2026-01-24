@@ -178,7 +178,8 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://(\w+\.)?ruteo\.co$",
     r"^https?://(\w+\.)?ruteo\.online$",
     r"^https?://(\w+\.)?reddoc\.com\.co$",
-    r"http?://(\w+\.)?localhost:4200",    
+    r"http?://(\w+\.)?localhost:4200",  
+    r"^http?://(\w+\.)?ruteoapi\.online$",  
 ]
 
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
