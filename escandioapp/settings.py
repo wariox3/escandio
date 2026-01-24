@@ -195,13 +195,28 @@ CORS_ALLOWED_ORIGINS = [
     "http://cargamasiva.com",
 ]
 
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    #r"^https?://(\w+\.)?muup\.online$",
+    r"^https?://(\w+\.)?reddoc\.online$",
+    r"^https?://(\w+\.)?reddoc\.co$",
+    r"^https?://(\w+\.)?ruteo\.co$",
+    r"^https?://(\w+\.)?ruteo\.online$",
+    r"^https?://(\w+\.)?reddoc\.com\.co$",
+    r"http?://(\w+\.)?localhost:4200"
+]
+
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 
-# Si necesitas headers personalizados
 CORS_ALLOW_HEADERS = [
-    'content-type',
-    'authorization',
-    'x-csrf-token'
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with"
 ]
 
 CORS_ALLOW_CREDENTIALS = True
