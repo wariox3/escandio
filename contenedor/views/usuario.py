@@ -57,10 +57,10 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
     @action(detail=False, methods=["get"], url_path=r'seleccionar')
     def seleccionar_action(self, request):
         limit = request.query_params.get('limit', 10)
-        nombre = request.query_params.get('nombre__icontains', None)
+        username = request.query_params.get('username__icontains', None)
         queryset = self.get_queryset()
         if nombre:
-            queryset = queryset.filter(nombre__icontains=nombre)
+            username = queryset.filter(username__icontains=username)
         try:
             limit = int(limit)
             queryset = queryset[:limit]
