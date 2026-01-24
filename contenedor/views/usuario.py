@@ -59,7 +59,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         limit = request.query_params.get('limit', 10)
         username = request.query_params.get('username__icontains', None)
         queryset = self.get_queryset()
-        if nombre:
+        if username:
             username = queryset.filter(username__icontains=username)
         try:
             limit = int(limit)
