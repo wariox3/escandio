@@ -68,4 +68,4 @@ class UserUpdateSerializer(serializers.HyperlinkedModelSerializer):
 class UserSeleccionarSerializador(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['username']
+        fields = ['id', 'username']
