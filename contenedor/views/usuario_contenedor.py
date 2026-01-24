@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from contenedor.models import User
 from contenedor.models import Contenedor, UsuarioContenedor
 from contenedor.serializers.contenedor import ContenedorSerializador
+from contenedor.serializers.user import UserSerializer
 from contenedor.serializers.usuario_contenedor import UsuarioContenedorSerializador, UsuarioContenedorListaSerializador, UsuarioContenedorConfiguracionSerializador
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
@@ -64,3 +65,28 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_200_OK)
         else:
             return Response({'mensaje':"El usuario propietario no se puede eliminar", 'codigo': 22}, status=status.HTTP_400_BAD_REQUEST)      
+        
+
+    @action(detail=False, methods=["post"], url_path=r'nuevo',)
+    def nuevo_action(self, request):
+        raw = request.data
+        usuario_id = raw.get('usuario_id', None)
+        usuario_invitado_id = raw.get('usuario_invitado_id', None)
+        contenedor_id = raw.get('contenedor_id', None)
+        if usuario_id and usuario_invitado_id and contenedor_id:                    
+            usuario_contenedor_existente = UsuarioContenedor.objects.filter(usuario_id=usuario_invitado_id, contenedor_id=contenedor_id).first()
+            if usuario_contenedor_existente:
+                return Response({'mensaje':'El usuario ya pertenece al contenedor', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)                        
+            data = {
+                'usuario': usuario_invitado_id,
+                'contenedor': contenedor_id,
+                'rol': 'invitado'
+            }
+            serializador = UsuarioContenedorSerializador(data=data)
+            if serializador.is_valid():
+                usuario_contenedor = serializador.save()                
+                return Response({'usuario_contenedor': serializador.data}, status=status.HTTP_201_CREATED)                    
+            else:
+                return Response({'mensaje':'Errores en el registro del usuario contenedor', 'codigo':2, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)     
+        else:
+            return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)                        
