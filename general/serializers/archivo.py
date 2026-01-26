@@ -5,7 +5,7 @@ class GenArchivoSerializador(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = GenArchivo
-        fields = ['id', 'documento']
+        fields = ['id']
 
     def to_representation(self, instance):        
         return {
@@ -16,6 +16,5 @@ class GenArchivoSerializador(serializers.HyperlinkedModelSerializer):
             'tipo': instance.tipo,
             'tamano': instance.tamano,
             'almacenamiento_id': instance.almacenamiento_id,
-            'documento_id': instance.documento_id,
             'uuid': instance.uuid                        
         }
