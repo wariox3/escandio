@@ -296,6 +296,27 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             return Response({
                 'usuario': usuarioSerializador.data, 
                 'informaciones_facturaciones': informacionesFacturacionesSerializador.data}, status=status.HTTP_200_OK)
-        return Response({'mensaje':'El usuario no existe', 'codigo': 4}, status=status.HTTP_400_BAD_REQUEST)          
+        return Response({'mensaje':'El usuario no existe', 'codigo': 4}, status=status.HTTP_400_BAD_REQUEST)  
+
+    @action(detail=False, methods=["post"], url_path=r'verificar',)
+    def verificar(self, request):
+        tokenUrl = request.data.get('token')
+        if tokenUrl:
+            verificacion = CtnVerificacion.objects.filter(token=tokenUrl).first()
+            if verificacion:
+                if verificacion.estado_usado == False:
+                    fechaActual = datetime.now().date()                
+                    if fechaActual <= verificacion.vence:
+                        verificacion.estado_usado = True
+                        verificacion.save()
+                        usuario = User.objects.get(id = verificacion.usuario_id)
+                        usuario.verificado = True
+                        usuario.save()
+                        verificacionSerializer = CtnVerificacionSerializador(verificacion)                
+                        return Response({'verificado': True, 'verificacion': verificacionSerializer.data}, status=status.HTTP_200_OK)
+                    return Response({'mensaje':'El token de la verificacion esta vencido', 'codigo': 6, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'mensaje':'La verificacion ya fue usada', 'codigo': 5, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'mensaje':'No se ha encontrado la verificacion', 'codigo': 4}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)        
 
         
