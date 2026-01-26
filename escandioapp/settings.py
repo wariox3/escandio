@@ -169,6 +169,7 @@ AUTH_USER_MODEL = 'contenedor.User'
 CORS_ALLOWED_ORIGINS = [    
     "http://localhost:4200",    
     "http://ruteoapi.online",    
+    "http://app.reddoc.online",
 ]
 
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
