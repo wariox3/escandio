@@ -50,10 +50,9 @@ class ArchivoViewSet(viewsets.ModelViewSet):
         raw = request.data        
         archivo_base64 = raw.get('archivo_base64')
         nombre_archivo = raw.get('nombre_archivo')
-        documento_id = raw.get('documento_id')     
         codigo = raw.get('codigo', None)
         modelo = raw.get('modelo', None)
-        if archivo_base64 and nombre_archivo and (documento_id or (codigo and modelo)):            
+        if archivo_base64 and nombre_archivo and codigo and modelo:            
                 
             try:                        
                 tenant = request.tenant.schema_name
