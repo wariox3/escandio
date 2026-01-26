@@ -96,7 +96,25 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                     'token': token,
                     'vence': datetime.now().date() + timedelta(days=1)
                 }
-                return Response({'usuario': serializador_usuario.data}, status=status.HTTP_201_CREATED)                    
+                serializador_verificacion = CtnVerificacionSerializador(data = data)
+                if serializador_verificacion.is_valid():                                             
+                    serializador_verificacion.save()                                                
+                    url = f"https://app.ruteo.co/auth/verificacion/" + token                        
+                    if config('ENV') == "test":
+                        url = f"http://app.ruteo.online/auth/verificacion/" + token
+                    if config('ENV') == "dev":
+                        url = f"http://localhost:4200/auth/verificacion/" + token
+                    
+                    html_content = """
+                                    <h1>¡Hola {usuario}!</h1>
+                                    <p>Estamos comprometidos con la seguridad de tu cuenta, por esta razón necesitamos que nos valides 
+                                    que eres tú, por favor verifica tu cuenta haciendo clic en el siguiente enlace.</p>
+                                    <a href='{url}' class='button'>Verificar cuenta</a>
+                                    """.format(url=url, usuario=usuario.nombre_corto)
+                    correo = Zinc()  
+                    correo.correo(usuario.correo, f'Verificar cuenta de Ruteo.co', html_content, 'ruteo')  
+                    return Response({'usuario': serializador_usuario.data}, status=status.HTTP_201_CREATED)
+                return Response({'mensaje':'Errores en el registro de la verificacion', 'codigo':3, 'validaciones': serializador_verificacion.errors}, status=status.HTTP_400_BAD_REQUEST)                                                
             else:
                 return Response({'mensaje':'Errores en el registro del usuario', 'codigo':2, 'validaciones': serializador_usuario.errors}, status=status.HTTP_400_BAD_REQUEST)     
         else:
