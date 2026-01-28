@@ -56,7 +56,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                     return Response({'mensaje': f"Ya existe una empresa con el nombre {subdominio}", "codigo": 13}, status=status.HTTP_400_BAD_REQUEST)
                 dominio = '.' + config('DOMINIO_BACKEND')
                 usuario = User.objects.get(pk=usuario_id)
-                imagenReferencia = f"itrio/logo_defecto.jpg"
+                imagenReferencia = f"escandio/logo_defecto.jpg"
                 call_command('create_tenant', 
                              schema_name=subdominio, 
                              domain_domain=subdominio+dominio, 
@@ -146,7 +146,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                 arrTipo = arrDatosB64[0].split(";")
                 arrData = arrTipo[0].split(":")
                 contentType = arrData[1]
-                archivo = f"itrio/{config('ENV')}/contenedor/logo_{empresa_id}.jpg"
+                archivo = f"escandio/{config('ENV')}/contenedor/logo_{empresa_id}.jpg"
                 spaceDo = SpaceDo()
                 spaceDo.putB64(archivo, base64Crudo, contentType)
                 empresa.imagen = archivo
@@ -166,7 +166,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                 empresa = Contenedor.objects.get(pk=empresa_id)                
                 spaceDo = SpaceDo()
                 spaceDo.eliminar(empresa.imagen)
-                empresa.imagen = f"itrio/logo_defecto.jpg"
+                empresa.imagen = f"escandio/logo_defecto.jpg"
                 empresa.save()
                 return Response({'limpiar':True, 'imagen':f"https://{config('DO_BUCKET')}.{config('DO_REGION')}.digitaloceanspaces.com/{empresa.imagen}"}, status=status.HTTP_200_OK)                  
             else: 

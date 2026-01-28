@@ -52,7 +52,7 @@ class SpaceDo():
         self.client.upload_fileobj(imagen_temporal, config('DO_BUCKET'), path_destino, ExtraArgs=extra_args)    
 
     def eliminar(self, pathDestino):
-        if pathDestino and pathDestino.strip() != "itrio/usuario_defecto.jpg" and pathDestino.strip() != "itrio/logo_defecto.jpg" and pathDestino.strip() != "itrio/item_defecto.jpg":
+        if pathDestino and pathDestino.strip() != "escandio/usuario_defecto.jpg" and pathDestino.strip() != "escandio/logo_defecto.jpg" and pathDestino.strip() != "escandio/item_defecto.jpg":
             self.client.delete_object(Bucket=config('DO_BUCKET'), Key=pathDestino)
 
     def descargar(self, path):
