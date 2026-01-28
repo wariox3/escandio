@@ -10,6 +10,7 @@ from general.models.archivo import GenArchivo
 from contenedor.models import CtnDireccion
 from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador
 from ruteo.servicios.visita import VisitaServicio
+from contenedor.servicios.direccion import DireccionServicio
 from datetime import datetime
 from django.utils import timezone
 from utilidades.holmio import Holmio
@@ -165,8 +166,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             data_modelo = []
             errores = False
             errores_datos = []    
-            franjas = RutFranja.objects.all()
-            google = Google()
+            franjas = RutFranja.objects.all()            
             total_registros = sheet.max_row - 1
             if total_registros <= 1000:
                 for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):                
@@ -202,25 +202,16 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                         'resultados': None
                     }                 
                     if direccion_destinatario:                   
-                        direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
-                        if direccion:
+                        respuesta = DireccionServicio.decodificar(direccion_destinatario)
+                        if respuesta['error'] == False:
+                            direccion = respuesta['datos']
                             data['estado_decodificado'] = True            
-                            data['latitud'] = direccion.latitud                        
-                            data['longitud'] = direccion.longitud
-                            data['destinatario_direccion_formato'] = direccion.direccion_formato
-                            data['resultados'] = direccion.resultados
-                            if direccion.cantidad_resultados > 1:
-                                data['estado_decodificado_alerta'] = True                                
-                        else:
-                            respuesta = google.decodificar_direccion(data['destinatario_direccion'])
-                            if respuesta['error'] == False:   
-                                data['estado_decodificado'] = True            
-                                data['latitud'] = respuesta['latitud']
-                                data['longitud'] = respuesta['longitud']
-                                data['destinatario_direccion_formato'] = respuesta['direccion_formato']
-                                data['resultados'] = respuesta['resultados']
-                                if respuesta['cantidad_resultados'] > 1:
-                                    data['estado_decodificado_alerta'] = True
+                            data['latitud'] = direccion['latitud']
+                            data['longitud'] = direccion['longitud']
+                            data['destinatario_direccion_formato'] = direccion['direccion_formato']
+                            data['resultados'] = direccion['resultados']
+                            if direccion['cantidad_resultados'] > 1:
+                                data['estado_decodificado_alerta'] = True                                                        
                     if data['estado_decodificado'] == True:
                         respuesta = VisitaServicio.ubicar_punto(franjas, data['latitud'], data['longitud'])
                         if respuesta['encontrado']:

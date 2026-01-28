@@ -195,6 +195,7 @@ class VisitaServicio():
                 } 
                 if direccion_destinatario:                   
                     if configuracion['rut_decodificar_direcciones']:
+                        # Ojo usar el servicio de direccion
                         direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
                         if direccion:
                             data['estado_decodificado'] = True            
