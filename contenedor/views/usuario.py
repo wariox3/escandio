@@ -225,7 +225,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 img.thumbnail(thumbnail_size)
 
                 # Guardamos el original
-                archivo = f"itrio/{config('ENV')}/usuario/imagen_{usuario_id}.jpg"
+                archivo = f"escandio/{config('ENV')}/usuario/imagen_{usuario_id}.jpg"
                 spaceDo = SpaceDo()
                 spaceDo.putB64(archivo, base64Crudo, contentType)
 
@@ -233,7 +233,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 thumb_io = BytesIO()
                 img.save(thumb_io, format='JPEG', quality=85)  
                 thumb_data = thumb_io.getvalue()
-                archivo_thumb = f"itrio/{config('ENV')}/usuario/imagen_thumb_{usuario_id}.jpg"
+                archivo_thumb = f"escandio/{config('ENV')}/usuario/imagen_thumb_{usuario_id}.jpg"
                 spaceDo.putB64(archivo_thumb, base64.b64encode(thumb_data).decode('utf-8'), contentType)
 
                 usuario.imagen = archivo
@@ -256,8 +256,8 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 usuario = User.objects.get(pk=usuario_id)                
                 spaceDo = SpaceDo()
                 spaceDo.eliminar(usuario.imagen)
-                usuario.imagen = f"itrio/usuario_defecto.jpg"
-                usuario.imagen_thumbnail = f"itrio/usuario_defecto.jpg"
+                usuario.imagen = f"escandio/usuario_defecto.jpg"
+                usuario.imagen_thumbnail = f"escandio/usuario_defecto.jpg"
                 usuario.save()
                 return Response({'limpiar':True, 
                                  'imagen':f"https://{config('DO_BUCKET')}.{config('DO_REGION')}.digitaloceanspaces.com/{usuario.imagen}",
