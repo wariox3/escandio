@@ -19,7 +19,8 @@ class Google():
             #"address": f"{direccion_parametro}, COLOMBIA",
             "address": direccion_parametro,
             "key": api_key,
-            "components": "country:CO"
+            "region": "co",
+            #"components": "country:CO"
         }
         response = requests.get(base_url, params=params)
         
