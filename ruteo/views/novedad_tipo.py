@@ -5,10 +5,11 @@ from ruteo.models.novedad_tipo import RutNovedadTipo
 from ruteo.serializers.novedad_tipo import RutNovedadTipoSerializador
 from ruteo.filters.novedad_tipo import NovedadTipoFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import OrderingFilter
 
 class RutNovedadTipoViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]    
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = NovedadTipoFilter
     queryset = RutNovedadTipo.objects.all()
     serializer_class = RutNovedadTipoSerializador
