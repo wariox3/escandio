@@ -85,7 +85,7 @@ class VisitaServicio():
     def ordenar(visitas: RutVisita):                  
         configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud')[0]
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
-            return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
+            return Response({'mensaje':'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         
         latitud = float(configuracion['rut_latitud'])
         longitud = float(configuracion['rut_longitud'])
