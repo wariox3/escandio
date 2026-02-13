@@ -157,13 +157,13 @@ class FormatoOrdenEntrega:
             estilo_normal.fontName = "Helvetica"
             estilo_normal.fontSize = 7
             estilo_normal.leading = 9
-            estilo_normal.wordWrap = True
+            estilo_normal.wordWrap = "LTR"
 
             estilo_numero = estilos["Normal"].clone('numero_tabla')
             estilo_numero.fontName = "Helvetica"
             estilo_numero.fontSize = 7
             estilo_numero.alignment = 2
-            estilo_numero.wordWrap = True
+            estilo_numero.wordWrap = "LTR"
 
             for visita in visitas:
                 telefono = str(visita.destinatario_telefono) if visita.destinatario_telefono else ""
@@ -177,8 +177,8 @@ class FormatoOrdenEntrega:
 
                 peso_formateado = str(int(visita.peso)) if visita.peso else "0"
                 unidad_formateado = str(int(visita.unidades)) if visita.unidades else "0"
-                peso = Paragraph(peso_formateado, estilo_numero)
-                unidad = Paragraph(unidad_formateado, estilo_numero)
+                peso = Paragraph(peso_formateado)
+                unidad = Paragraph(unidad_formateado)
 
                 data.append([orden, id_visita, numero, documento, destinatario,
                              destinatario_telefono, direccion, unidad, peso])
@@ -195,27 +195,27 @@ class FormatoOrdenEntrega:
                 ancho_total * 0.05,
             ]
 
-            # table = Table(data, repeatRows=1, colWidths=anchos_columnas_visitas)
-            # table.setStyle(TableStyle([
-            #     ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-            #     ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-            #     ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            #     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            #     ("FONTSIZE", (0, 0), (-1, 0), 8),
-            #     ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            #     ("ALIGN", (0, 1), (-1, -1), "LEFT"),
-            #     ("ALIGN", (6, 1), (6, -1), "RIGHT"),
-            #     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            #     ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-            #     ("FONTSIZE", (0, 1), (-1, -1), 7),
-            #     ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-            #     ("WORDWRAP", (0, 0), (-1, -1)),
-            #     ("LEFTPADDING", (0, 0), (-1, -1), 3),
-            #     ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            #     ("TOPPADDING", (0, 0), (-1, -1), 2),
-            #     ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            # ]))
-            # elementos.append(table)
+            table = Table(data, repeatRows=1, colWidths=anchos_columnas_visitas)
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                ("ALIGN", (0, 1), (-1, -1), "LEFT"),
+                ("ALIGN", (6, 1), (6, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 1), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("WORDWRAP", (0, 0), (-1, -1)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            elementos.append(table)
 
         doc.build(
             elementos,
