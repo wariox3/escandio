@@ -170,6 +170,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",    
     "http://ruteoapi.online",    
     "http://app.ruteo.online",
+    "https://ruteoapi.co",    
+    "https://app.ruteo.co",    
 ]
 
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
