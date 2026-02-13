@@ -171,41 +171,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://ruteoapi.online",    
     "http://app.ruteo.online",
     "https://ruteoapi.co",    
-    "https://app.ruteo.co",
-    "http://127.0.0.1:9000",
-    "http://127.0.0.1:8000",
-    "https://example.com",
-    "https://sub.example.com",
-    "http://example.com",
-    "http://sub.example.com",
-    "http://localhost:8080",
-    "http://localhost:4200",
-    "http://localhost:4300",
-    "http://localhost:4400",
-    "http://localhost:8081",
-    "http://127.0.0.1:9000",
-    "http://127.0.0.1:8000",
-    "http://159.203.62.234",
-    "http://179.15.105.37",
-    "http://159.203.57.104",
-    "http://138.197.140.230",
-    "http://reddocapi.online",
-    "http://reddoc.online",
-    "http://app.reddoc.online",
-    "http://reddoc.co",
-    "https://reddoc.com.co",
-    "https://reddocapi.co",
-    "http://190.249.212.131",
-    "https://ruteo.co",
-    "http://ruteo.online",
-    "http://app.ruteo.online",
-    "http://cargamasiva.com",    
-]
-
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https?://(\w+\.)?ruteo\.co$",
-    r"^https?://(\w+\.)?ruteo\.online$",
-    r"http?://(\w+\.)?localhost:4200"
+    "https://app.ruteo.co",    
 ]
 
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
