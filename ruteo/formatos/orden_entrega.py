@@ -195,27 +195,27 @@ class FormatoOrdenEntrega:
                 ancho_total * 0.05,
             ]
 
-            table = Table(data, repeatRows=1, colWidths=anchos_columnas_visitas)
-            table.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-                ("ALIGN", (0, 1), (-1, -1), "LEFT"),
-                ("ALIGN", (6, 1), (6, -1), "RIGHT"),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 1), (-1, -1), 7),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-                ("WORDWRAP", (0, 0), (-1, -1)),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ]))
-            elementos.append(table)
+            # table = Table(data, repeatRows=1, colWidths=anchos_columnas_visitas)
+            # table.setStyle(TableStyle([
+            #     ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            #     ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+            #     ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            #     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            #     ("FONTSIZE", (0, 0), (-1, 0), 8),
+            #     ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            #     ("ALIGN", (0, 1), (-1, -1), "LEFT"),
+            #     ("ALIGN", (6, 1), (6, -1), "RIGHT"),
+            #     ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            #     ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+            #     ("FONTSIZE", (0, 1), (-1, -1), 7),
+            #     ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+            #     ("WORDWRAP", (0, 0), (-1, -1)),
+            #     ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            #     ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            #     ("TOPPADDING", (0, 0), (-1, -1), 2),
+            #     ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            # ]))
+            # elementos.append(table)
 
         doc.build(
             elementos,
