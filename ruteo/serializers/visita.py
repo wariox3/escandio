@@ -85,3 +85,8 @@ class RutVistaTraficoSerializador(serializers.ModelSerializer):
     class Meta:
         model = RutVisita
         fields = ['id', 'fecha', 'numero', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_telefono', 'estado_entregado', 'estado_novedad', 'unidades']
+
+class RutVistaEstadoSerializador(serializers.ModelSerializer):    
+    class Meta:
+        model = RutVisita
+        fields = ['id', 'fecha', 'numero', 'documento', 'estado_despacho', 'estado_entregado', 'estado_novedad', 'estado_devolucion', 'fecha_entrega']
