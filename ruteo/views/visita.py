@@ -8,7 +8,7 @@ from ruteo.models.flota import RutFlota
 from general.models.configuracion import GenConfiguracion
 from general.models.archivo import GenArchivo
 from contenedor.models import CtnDireccion
-from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador
+from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
 from contenedor.servicios.direccion import DireccionServicio
 from datetime import datetime
@@ -963,3 +963,16 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, visita.datos_entrega)
         return Response({'mensaje': f'Entrega complemento {visitas.count()}'}, status=status.HTTP_200_OK)
     
+    @action(detail=False, methods=["get"], url_path=r'estado',)
+    def estado_action(self, request):           
+        id = request.query_params.get('id', 10)
+        if id:
+            try:
+                visita = RutVisita.objects.get(pk=id)                            
+                serializer = RutVistaEstadoSerializador(visita)        
+                return Response(serializer.data, status=status.HTTP_200_OK) 
+            except RutVisita.DoesNotExist:
+                return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        
