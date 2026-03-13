@@ -7,8 +7,8 @@ class RutVisitaSerializador(serializers.ModelSerializer):
     ciudad__nombre = serializers.CharField(source='ciudad.nombre', read_only=True, allow_null=True, default=None)
 
     def validate(self, data):
-        cita_inicio = data.get('cita_inicio')
-        cita_fin = data.get('cita_fin')
+        cita_inicio = data.get('cita_inicio', getattr(self.instance, 'cita_inicio', None) if self.instance else None)
+        cita_fin = data.get('cita_fin', getattr(self.instance, 'cita_fin', None) if self.instance else None)
         if cita_inicio and not cita_fin:
             raise serializers.ValidationError({'cita_fin': 'Si se define cita_inicio, cita_fin es obligatorio.'})
         if cita_fin and not cita_inicio:
