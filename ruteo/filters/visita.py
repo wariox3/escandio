@@ -21,4 +21,6 @@ class VisitaFilter(django_filters.FilterSet):
                   'fecha_entrega': ['gte', 'lte', 'gt', 'lt', 'exact'], 
                   'destinatario':['icontains'],
                   'franja_id': ['exact'],
+                  'cita_inicio': ['isnull', 'gte', 'lte'],
+                  'cita_fin': ['isnull', 'gte', 'lte'],
                   }
