@@ -182,6 +182,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     telefono_destinatario = str(row[5])
                     if telefono_destinatario:
                         telefono_destinatario[:50]                    
+                    cita_inicio = row[14] if len(row) > 14 and row[14] else None
+                    cita_fin = row[15] if len(row) > 15 and row[15] else None
                     data = {
                         'numero': row[0],
                         'fecha':fecha,
@@ -199,7 +201,9 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                         'tiempo_servicio': row[13],
                         'estado_franja': False,
                         'franja': None,
-                        'resultados': None
+                        'resultados': None,
+                        'cita_inicio': cita_inicio,
+                        'cita_fin': cita_fin,
                     }                 
                     if direccion_destinatario:                   
                         respuesta = DireccionServicio.decodificar(direccion_destinatario)
