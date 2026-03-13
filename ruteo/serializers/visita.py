@@ -13,8 +13,11 @@ class RutVisitaSerializador(serializers.ModelSerializer):
             raise serializers.ValidationError({'cita_fin': 'Si se define cita_inicio, cita_fin es obligatorio.'})
         if cita_fin and not cita_inicio:
             raise serializers.ValidationError({'cita_inicio': 'Si se define cita_fin, cita_inicio es obligatorio.'})
-        if cita_inicio and cita_fin and cita_fin <= cita_inicio:
-            raise serializers.ValidationError({'cita_fin': 'cita_fin debe ser mayor que cita_inicio.'})
+        if cita_inicio and cita_fin:
+            if cita_fin <= cita_inicio:
+                raise serializers.ValidationError({'cita_fin': 'cita_fin debe ser mayor que cita_inicio.'})
+            if cita_inicio.date() != cita_fin.date():
+                raise serializers.ValidationError({'cita_fin': 'cita_inicio y cita_fin deben ser del mismo día.'})
         return data
 
     class Meta:

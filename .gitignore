@@ -34,3 +34,7 @@ bd.py
 
 ### PyCharm ###
 .idea/
+
+### Claude ###
+CLAUDE.md
+.claude/

@@ -37,8 +37,8 @@ class RutVisita(models.Model):
     franja_id = models.IntegerField(null=True)
     franja_codigo = models.CharField(max_length=20, null=True)
     datos_entrega = models.JSONField(null=True, blank=True, default=dict, help_text="Datos de la entrega (nombre, identificación, teléfono, etc.)")    
-    cita_inicio = models.TimeField(null=True, blank=True)
-    cita_fin = models.TimeField(null=True, blank=True)
+    cita_inicio = models.DateTimeField(null=True, blank=True)
+    cita_fin = models.DateTimeField(null=True, blank=True)
     despacho = models.ForeignKey(RutDespacho, null=True, on_delete=models.PROTECT, related_name='visitas_despacho_rel')
     ciudad = models.ForeignKey(GenCiudad, null=True, on_delete=models.PROTECT, default=1, related_name='visitas_ciudad_rel')
 

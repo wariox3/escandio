@@ -142,11 +142,11 @@ class VisitaServicio():
 
     @staticmethod
     def _ordenar_con_ventanas(visitas: RutVisita, configuracion):
-        from datetime import time as dt_time
+        from django.utils import timezone
 
         latitud = float(configuracion['rut_latitud'])
         longitud = float(configuracion['rut_longitud'])
-        hora_inicio = configuracion['rut_hora_inicio'] or dt_time(7, 0)
+        ahora = timezone.now()
 
         punto_inicial = {'latitud': latitud, 'longitud': longitud}
         matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)
@@ -158,20 +158,20 @@ class VisitaServicio():
             for j in range(n):
                 time_matrix[i][j] = int(matriz[i][j] * 1.6)
 
-        # Horizonte de jornada en minutos (14 horas desde hora inicio)
+        # Horizonte de jornada en minutos (14 horas desde ahora)
         horizonte = 14 * 60
-
-        def tiempo_a_minutos(t, referencia):
-            """Convierte un TimeField a minutos desde la hora de referencia."""
-            return (t.hour - referencia.hour) * 60 + (t.minute - referencia.minute)
 
         # Construir ventanas horarias por nodo
         # Nodo 0 = depósito, nodos 1..n = visitas
         ventanas = [(0, horizonte)]  # Depósito: sin restricción
         for v in visitas:
             if v.cita_inicio and v.cita_fin:
-                tw_inicio = max(0, tiempo_a_minutos(v.cita_inicio, hora_inicio))
-                tw_fin = min(horizonte, tiempo_a_minutos(v.cita_fin, hora_inicio))
+                tw_inicio = int((v.cita_inicio - ahora).total_seconds() / 60)
+                tw_fin = int((v.cita_fin - ahora).total_seconds() / 60)
+                if tw_fin < 0:
+                    return {'error': True, 'mensaje': f'La cita de la visita {v.numero} ya pasó.', 'codigo': 14}
+                tw_inicio = max(0, tw_inicio)
+                tw_fin = min(horizonte, tw_fin)
                 ventanas.append((tw_inicio, tw_fin))
             else:
                 ventanas.append((0, horizonte))
