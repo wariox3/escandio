@@ -82,30 +82,38 @@ class VisitaServicio():
         return cantidad
 
     @staticmethod
-    def ordenar(visitas: RutVisita):                  
-        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud')[0]
+    def ordenar(visitas: RutVisita):
+        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud', 'rut_hora_inicio')[0]
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
             return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
-        
+
+        tiene_citas = any(v.cita_inicio is not None for v in visitas)
+        if tiene_citas:
+            return VisitaServicio._ordenar_con_ventanas(visitas, configuracion)
+        else:
+            return VisitaServicio._ordenar_distancia(visitas, configuracion)
+
+    @staticmethod
+    def _ordenar_distancia(visitas: RutVisita, configuracion):
         latitud = float(configuracion['rut_latitud'])
         longitud = float(configuracion['rut_longitud'])
 
-        punto_inicial = {'latitud': latitud, 'longitud': longitud}         
-        matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)                    
+        punto_inicial = {'latitud': latitud, 'longitud': longitud}
+        matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)
         manager = pywrapcp.RoutingIndexManager(len(matriz), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
-        
+
         def distancia_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             return int(matriz[from_node][to_node] * 1000)
-        
+
         transit_callback_index = routing.RegisterTransitCallback(distancia_callback)
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)                        
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        
-        solution = routing.SolveWithParameters(search_parameters)            
+
+        solution = routing.SolveWithParameters(search_parameters)
         if not solution:
             return None
 
@@ -115,23 +123,127 @@ class VisitaServicio():
             node = manager.IndexToNode(index)
             if node != 0:
                 orden.append(node - 1)
-            index = solution.Value(routing.NextVar(index))        
-        decimal_6_places = Decimal('0.000001')  # Para redondear a 6 decimales
-        
-        for idx, visita_idx in enumerate(orden):                        
-            '''visita_id = visitas[visita_idx]['id']            
-            tiempo_servicio = Decimal(visitas[visita_idx]['tiempo_servicio']).quantize(decimal_6_places, rounding=ROUND_HALF_UP)
-            distancia = matriz[0][visita_idx + 1] if idx == 0 else matriz[orden[idx - 1] + 1][visita_idx + 1]                    
-            tiempo_trayecto = (Decimal(distancia) * Decimal('1.6')).quantize(decimal_6_places, rounding=ROUND_HALF_UP)            
-            tiempo = (tiempo_servicio + tiempo_trayecto).quantize(decimal_6_places, rounding=ROUND_HALF_UP)            
-            RutVisita.objects.filter(id=visita_id).update(orden=idx + 1, distancia=distancia, tiempo_trayecto=tiempo_trayecto, tiempo=tiempo)'''
+            index = solution.Value(routing.NextVar(index))
+        decimal_6_places = Decimal('0.000001')
 
+        for idx, visita_idx in enumerate(orden):
             visita = visitas[visita_idx]
-            distancia = Decimal(matriz[0][visita_idx + 1] if idx == 0 else matriz[orden[idx - 1] + 1][visita_idx + 1]).quantize(decimal_6_places)            
+            distancia = Decimal(matriz[0][visita_idx + 1] if idx == 0 else matriz[orden[idx - 1] + 1][visita_idx + 1]).quantize(decimal_6_places)
             tiempo_trayecto = (distancia * Decimal('1.6')).quantize(decimal_6_places)
             tiempo_servicio = Decimal(visita.tiempo_servicio).quantize(decimal_6_places)
             tiempo = (tiempo_servicio + tiempo_trayecto).quantize(decimal_6_places)
-            
+
+            visita.orden = idx + 1
+            visita.distancia = Decimal(distancia)
+            visita.tiempo_trayecto = Decimal(tiempo_trayecto)
+            visita.tiempo = Decimal(tiempo)
+            visita.save()
+        return {'error': False}
+
+    @staticmethod
+    def _ordenar_con_ventanas(visitas: RutVisita, configuracion):
+        from datetime import time as dt_time
+
+        latitud = float(configuracion['rut_latitud'])
+        longitud = float(configuracion['rut_longitud'])
+        hora_inicio = configuracion['rut_hora_inicio'] or dt_time(7, 0)
+
+        punto_inicial = {'latitud': latitud, 'longitud': longitud}
+        matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)
+
+        # Convertir matriz de distancias (km) a matriz de tiempo (minutos): km * 1.6 min/km
+        n = len(matriz)
+        time_matrix = [[0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(n):
+                time_matrix[i][j] = int(matriz[i][j] * 1.6)
+
+        # Horizonte de jornada en minutos (14 horas desde hora inicio)
+        horizonte = 14 * 60
+
+        def tiempo_a_minutos(t, referencia):
+            """Convierte un TimeField a minutos desde la hora de referencia."""
+            return (t.hour - referencia.hour) * 60 + (t.minute - referencia.minute)
+
+        # Construir ventanas horarias por nodo
+        # Nodo 0 = depósito, nodos 1..n = visitas
+        ventanas = [(0, horizonte)]  # Depósito: sin restricción
+        for v in visitas:
+            if v.cita_inicio and v.cita_fin:
+                tw_inicio = max(0, tiempo_a_minutos(v.cita_inicio, hora_inicio))
+                tw_fin = min(horizonte, tiempo_a_minutos(v.cita_fin, hora_inicio))
+                ventanas.append((tw_inicio, tw_fin))
+            else:
+                ventanas.append((0, horizonte))
+
+        manager = pywrapcp.RoutingIndexManager(n, 1, 0)
+        routing = pywrapcp.RoutingModel(manager)
+
+        # Callback de distancia (para costo)
+        def distancia_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return int(matriz[from_node][to_node] * 1000)
+
+        dist_callback_index = routing.RegisterTransitCallback(distancia_callback)
+        routing.SetArcCostEvaluatorOfAllVehicles(dist_callback_index)
+
+        # Callback de tiempo (travel_time + service_time)
+        def tiempo_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            travel_time = time_matrix[from_node][to_node]
+            # Tiempo de servicio del nodo destino (nodo 0 = depósito, sin servicio)
+            if to_node > 0:
+                service_time = int(float(visitas[to_node - 1].tiempo_servicio))
+            else:
+                service_time = 0
+            return travel_time + service_time
+
+        time_callback_index = routing.RegisterTransitCallback(tiempo_callback)
+
+        # Dimensión de tiempo
+        routing.AddDimension(
+            time_callback_index,
+            horizonte,   # slack máximo (tiempo de espera permitido)
+            horizonte,   # tiempo máximo acumulado por vehículo
+            False,       # no forzar inicio en 0
+            'Time'
+        )
+        time_dimension = routing.GetDimensionOrDie('Time')
+
+        # Aplicar ventanas horarias a cada nodo
+        for i in range(n):
+            index = manager.NodeToIndex(i)
+            tw_inicio, tw_fin = ventanas[i]
+            time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
+
+        # Estrategia de búsqueda
+        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+        search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        search_parameters.time_limit.seconds = 5
+
+        solution = routing.SolveWithParameters(search_parameters)
+        if not solution:
+            return {'error': True, 'mensaje': 'No se encontró una solución factible. Verifique que las ventanas horarias (citas) sean compatibles entre sí.', 'codigo': 14}
+
+        index = routing.Start(0)
+        orden = []
+        while not routing.IsEnd(index):
+            node = manager.IndexToNode(index)
+            if node != 0:
+                orden.append(node - 1)
+            index = solution.Value(routing.NextVar(index))
+        decimal_6_places = Decimal('0.000001')
+
+        for idx, visita_idx in enumerate(orden):
+            visita = visitas[visita_idx]
+            distancia = Decimal(matriz[0][visita_idx + 1] if idx == 0 else matriz[orden[idx - 1] + 1][visita_idx + 1]).quantize(decimal_6_places)
+            tiempo_trayecto = (distancia * Decimal('1.6')).quantize(decimal_6_places)
+            tiempo_servicio = Decimal(visita.tiempo_servicio).quantize(decimal_6_places)
+            tiempo = (tiempo_servicio + tiempo_trayecto).quantize(decimal_6_places)
+
             visita.orden = idx + 1
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
@@ -191,7 +303,9 @@ class VisitaServicio():
                     'franja': None,
                     'resultados': None,
                     'despacho': despacho_id,
-                    'estado_despacho': despacho_id is not None
+                    'estado_despacho': despacho_id is not None,
+                    'cita_inicio': guia.get('citaInicio'),
+                    'cita_fin': guia.get('citaFin'),
                 } 
                 if direccion_destinatario:                   
                     if configuracion['rut_decodificar_direcciones']:
