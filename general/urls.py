@@ -6,6 +6,7 @@ from .views.archivo import ArchivoViewSet
 from .views.empresa import EmpresaViewSet
 from .views.configuracion import ConfiguracionViewSet
 from .views.complemento import ComplementoViewSet
+from .views.api_key import ApiKeyViewSet
 from rest_framework import routers
 
 router = routers.DefaultRouter()
@@ -14,6 +15,7 @@ router.register(r'archivo', ArchivoViewSet)
 router.register(r'empresa', EmpresaViewSet)
 router.register(r'configuracion', ConfiguracionViewSet)
 router.register(r'complemento', ComplementoViewSet)
+router.register(r'api-key', ApiKeyViewSet)
 
 urlpatterns = [    
     path('', include(router.urls)),
