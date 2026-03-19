@@ -4,12 +4,16 @@ from rest_framework import status
 from general.permisos.api_key import TieneApiKey
 from general.models.ciudad import GenCiudad
 from general.models.estado import GenEstado
+from general.models.archivo import GenArchivo
 from ruteo.models.visita import RutVisita
+from ruteo.models.novedad import RutNovedad
 from ruteo.models.franja import RutFranja
 from ruteo.serializers.visita import RutVisitaSerializador
 from ruteo.servicios.visita import VisitaServicio
 from contenedor.servicios.direccion import DireccionServicio
+from utilidades.backblaze import Backblaze
 from datetime import datetime
+import base64
 import logging
 
 logger = logging.getLogger('django')
@@ -108,3 +112,131 @@ def crear_guia(request):
             {'mensaje': 'Error en los datos', 'errores': serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([TieneApiKey])
+def consultar_estado(request):
+    numero = request.query_params.get('numero')
+    documento = request.query_params.get('documento')
+
+    if not numero and not documento:
+        return Response(
+            {'mensaje': 'Debe enviar el parámetro numero o documento'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    visitas = RutVisita.objects.select_related('despacho')
+    if numero:
+        visitas = visitas.filter(numero=numero)
+    if documento:
+        visitas = visitas.filter(documento=documento)
+
+    visitas = visitas.order_by('-id')
+    if not visitas.exists():
+        return Response(
+            {'mensaje': 'No se encontraron guías'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    resultados = []
+    backblaze = None
+
+    for visita in visitas:
+        # Determinar estado actual
+        if visita.estado_entregado:
+            estado_actual = 'ENTREGADO'
+        elif visita.estado_novedad:
+            estado_actual = 'NOVEDAD'
+        elif visita.estado_despacho:
+            estado_actual = 'DESPACHADO'
+        else:
+            estado_actual = 'PENDIENTE'
+
+        guia = {
+            'id': visita.id,
+            'numero': visita.numero,
+            'documento': visita.documento,
+            'destinatario': visita.destinatario,
+            'estado': estado_actual,
+            'despacho': None,
+            'novedades': [],
+            'entrega': None,
+        }
+
+        # DESPACHO
+        if visita.estado_despacho and visita.despacho:
+            guia['despacho'] = {
+                'fecha': visita.despacho.fecha_salida,
+            }
+
+        # NOVEDADES
+        novedades = RutNovedad.objects.filter(visita=visita).select_related('novedad_tipo').order_by('-id')
+        for novedad in novedades:
+            novedad_data = {
+                'tipo': novedad.novedad_tipo.nombre if novedad.novedad_tipo else None,
+                'fecha': novedad.fecha,
+                'descripcion': novedad.descripcion,
+                'estado_solucion': novedad.estado_solucion,
+                'solucion': novedad.solucion,
+                'foto': None,
+            }
+            # Primera foto de la novedad
+            archivo = GenArchivo.objects.filter(
+                modelo='RutNovedad', codigo=novedad.id, archivo_tipo_id=2
+            ).first()
+            if archivo:
+                try:
+                    if backblaze is None:
+                        backblaze = Backblaze()
+                    contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
+                    if contenido:
+                        novedad_data['foto'] = base64.b64encode(contenido).decode('utf-8')
+                except Exception as e:
+                    logger.error(f'Error descargando foto novedad {novedad.id}: {e}')
+
+            guia['novedades'].append(novedad_data)
+
+        # ENTREGA
+        if visita.estado_entregado:
+            entrega_data = {
+                'fecha': visita.fecha_entrega,
+                'datos': visita.datos_entrega or {},
+                'fotos': [],
+                'firma': None,
+            }
+
+            # Fotos de entrega (hasta 5)
+            archivos_fotos = GenArchivo.objects.filter(
+                modelo='RutVisita', codigo=visita.id, archivo_tipo_id=2
+            ).order_by('id')[:5]
+            for archivo in archivos_fotos:
+                try:
+                    if backblaze is None:
+                        backblaze = Backblaze()
+                    contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
+                    if contenido:
+                        entrega_data['fotos'].append(base64.b64encode(contenido).decode('utf-8'))
+                except Exception as e:
+                    logger.error(f'Error descargando foto entrega visita {visita.id}: {e}')
+
+            # Firma
+            archivo_firma = GenArchivo.objects.filter(
+                modelo='RutVisita', codigo=visita.id, archivo_tipo_id=3
+            ).first()
+            if archivo_firma:
+                try:
+                    if backblaze is None:
+                        backblaze = Backblaze()
+                    contenido = backblaze.descargar_bytes(archivo_firma.almacenamiento_id)
+                    if contenido:
+                        entrega_data['firma'] = base64.b64encode(contenido).decode('utf-8')
+                except Exception as e:
+                    logger.error(f'Error descargando firma visita {visita.id}: {e}')
+
+            guia['entrega'] = entrega_data
+
+        resultados.append(guia)
+
+    return Response(resultados, status=status.HTTP_200_OK)
