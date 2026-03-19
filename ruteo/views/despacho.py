@@ -20,6 +20,7 @@ from datetime import datetime
 from django.db import transaction
 from utilidades.google import Google
 from utilidades.holmio import Holmio
+from ruteo.servicios.notificacion import NotificacionServicio
 
 
 class RutDespachoViewSet(viewsets.ModelViewSet):
@@ -93,8 +94,9 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         entrega.save()                   
                         despacho.estado_aprobado = True
                         despacho.fecha_salida = datetime.now()
-                        despacho.entrega_id = entrega.id             
-                        despacho.save()                             
+                        despacho.entrega_id = entrega.id
+                        despacho.save()
+                        NotificacionServicio.notificar_despacho_aprobado(despacho.id)
                         return Response({'mensaje': 'Se aprobo el despacho'}, status=status.HTTP_200_OK)                
                     else:
                         return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                        
