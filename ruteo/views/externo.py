@@ -101,7 +101,7 @@ def crear_guia(request):
 
     serializer = RutVisitaSerializador(data=visita_data)
     if serializer.is_valid():
-        visita = serializer.save()
+        visita = serializer.save(api_key=request.api_key)
         return Response({
             'mensaje': 'Guía creada exitosamente',
             'id': visita.id,
@@ -127,7 +127,7 @@ def consultar_estado(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    visitas = RutVisita.objects.select_related('despacho')
+    visitas = RutVisita.objects.select_related('despacho').filter(api_key=request.api_key)
     if numero:
         visitas = visitas.filter(numero=numero)
     if documento:
