@@ -330,8 +330,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             else:
                 visitas = visitas.filter(**{propiedad: filtro['valor1']})
         if visitas.exists():
-            respuesta = VisitaServicio.ordenar(visitas) 
-            if respuesta['error'] == True:
+            respuesta = VisitaServicio.ordenar(visitas)
+            if respuesta and respuesta.get('error') == True:
                 return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'mensaje':'visitas ordenadas'}, status=status.HTTP_200_OK)
         
