@@ -151,7 +151,7 @@ class FormatoOrdenEntrega:
         if not visitas.exists():
             elementos.append(Paragraph("No hay visitas registradas.", estilos["Normal"]))
         else:
-            data = [["", "Id", "Número", "Documento", "Destinatario", "Teléfono", "Dirección", "Und", "Peso"]]
+            data = [["", "Id", "Número", "Documento", "Destinatario", "Teléfono", "Dirección", "Cita", "Und", "Peso"]]
 
             estilo_normal = estilos["Normal"].clone('normal_tabla')
             estilo_normal.fontName = "Helvetica"
@@ -175,22 +175,28 @@ class FormatoOrdenEntrega:
                 destinatario_telefono = Paragraph(telefono, estilo_normal)
                 direccion = Paragraph(str(visita.destinatario_direccion), estilo_normal)
 
+                cita_texto = ""
+                if visita.cita_inicio and visita.cita_fin:
+                    cita_texto = f"{visita.cita_inicio.strftime('%H:%M')} - {visita.cita_fin.strftime('%H:%M')}"
+                cita = Paragraph(cita_texto, estilo_normal)
+
                 peso_formateado = str(int(visita.peso)) if visita.peso else "0"
                 unidad_formateado = str(int(visita.unidades)) if visita.unidades else "0"
                 peso = Paragraph(peso_formateado)
                 unidad = Paragraph(unidad_formateado)
 
                 data.append([orden, id_visita, numero, documento, destinatario,
-                             destinatario_telefono, direccion, unidad, peso])
+                             destinatario_telefono, direccion, cita, unidad, peso])
 
             anchos_columnas_visitas = [
                 ancho_total * 0.04,
                 ancho_total * 0.06,
                 ancho_total * 0.08,
                 ancho_total * 0.10,
-                ancho_total * 0.22,
+                ancho_total * 0.19,
                 ancho_total * 0.10,
-                ancho_total * 0.30,
+                ancho_total * 0.22,
+                ancho_total * 0.11,
                 ancho_total * 0.05,
                 ancho_total * 0.05,
             ]

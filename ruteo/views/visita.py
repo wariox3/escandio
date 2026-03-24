@@ -375,6 +375,11 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     visitas = visitas.filter(**{f'{propiedad}__{operador}': (filtro['valor1'], filtro['valor2'])})
                 elif operador:
                     visitas = visitas.filter(**{f'{propiedad}__{operador}': filtro['valor1']})
+        visitas_a_ordenar = visitas.filter(estado_decodificado=True)
+        if visitas_a_ordenar.exists():
+            resultado_orden = VisitaServicio.ordenar(visitas_a_ordenar)
+            if resultado_orden and resultado_orden.get('error'):
+                return Response({'mensaje': resultado_orden['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
         visitas = visitas.order_by('orden')
         visitas_pendientes = list(visitas)
         despachos_creados = 0
