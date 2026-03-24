@@ -146,7 +146,20 @@ class VisitaServicio():
 
         latitud = float(configuracion['rut_latitud'])
         longitud = float(configuracion['rut_longitud'])
-        ahora = timezone.now()
+
+        # Hora de salida del vehículo: fecha de la primera visita + hora de inicio configurada
+        hora_inicio = configuracion.get('rut_hora_inicio')
+        fecha_referencia = None
+        for v in visitas:
+            if v.fecha:
+                fecha_referencia = v.fecha
+                break
+        if fecha_referencia and hora_inicio:
+            hora_salida = timezone.make_aware(
+                datetime.combine(fecha_referencia.date(), hora_inicio)
+            ) if timezone.is_naive(datetime.combine(fecha_referencia.date(), hora_inicio)) else datetime.combine(fecha_referencia.date(), hora_inicio)
+        else:
+            hora_salida = timezone.now()
 
         punto_inicial = {'latitud': latitud, 'longitud': longitud}
         matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)
@@ -158,16 +171,16 @@ class VisitaServicio():
             for j in range(n):
                 time_matrix[i][j] = int(matriz[i][j] * 1.6)
 
-        # Horizonte de jornada en minutos (14 horas desde ahora)
+        # Horizonte de jornada en minutos (14 horas desde hora de salida)
         horizonte = 14 * 60
 
-        # Construir ventanas horarias por nodo
+        # Construir ventanas horarias por nodo (minutos relativos a hora_salida)
         # Nodo 0 = depósito, nodos 1..n = visitas
-        ventanas = [(0, horizonte)]  # Depósito: sin restricción
+        ventanas = [(0, 0)]  # Depósito: salida inmediata
         for v in visitas:
             if v.cita_inicio and v.cita_fin:
-                tw_inicio = int((v.cita_inicio - ahora).total_seconds() / 60)
-                tw_fin = int((v.cita_fin - ahora).total_seconds() / 60)
+                tw_inicio = int((v.cita_inicio - hora_salida).total_seconds() / 60)
+                tw_fin = int((v.cita_fin - hora_salida).total_seconds() / 60)
                 if tw_fin < 0:
                     return {'error': True, 'mensaje': f'La cita de la visita {v.numero} ya pasó.', 'codigo': 14}
                 tw_inicio = max(0, tw_inicio)
@@ -179,21 +192,11 @@ class VisitaServicio():
         manager = pywrapcp.RoutingIndexManager(n, 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
-        # Callback de distancia (para costo)
-        def distancia_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return int(matriz[from_node][to_node] * 1000)
-
-        dist_callback_index = routing.RegisterTransitCallback(distancia_callback)
-        routing.SetArcCostEvaluatorOfAllVehicles(dist_callback_index)
-
-        # Callback de tiempo (travel_time + service_time)
+        # Callback de tiempo (travel_time + service_time) — usado como costo y dimensión
         def tiempo_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             travel_time = time_matrix[from_node][to_node]
-            # Tiempo de servicio del nodo destino (nodo 0 = depósito, sin servicio)
             if to_node > 0:
                 service_time = int(float(visitas[to_node - 1].tiempo_servicio))
             else:
@@ -202,12 +205,15 @@ class VisitaServicio():
 
         time_callback_index = routing.RegisterTransitCallback(tiempo_callback)
 
-        # Dimensión de tiempo
+        # Costo = tiempo (trayecto + servicio), para que el solver minimice tiempo total
+        routing.SetArcCostEvaluatorOfAllVehicles(time_callback_index)
+
+        # Dimensión de tiempo para aplicar ventanas horarias
         routing.AddDimension(
             time_callback_index,
             horizonte,   # slack máximo (tiempo de espera permitido)
             horizonte,   # tiempo máximo acumulado por vehículo
-            False,       # no forzar inicio en 0
+            True,        # forzar inicio en 0 (salida inmediata)
             'Time'
         )
         time_dimension = routing.GetDimensionOrDie('Time')
@@ -217,6 +223,9 @@ class VisitaServicio():
             index = manager.NodeToIndex(i)
             tw_inicio, tw_fin = ventanas[i]
             time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
+
+        # Minimizar el tiempo total acumulado (penaliza esperas largas)
+        time_dimension.SetGlobalSpanCostCoefficient(10)
 
         # Estrategia de búsqueda
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
