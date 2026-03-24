@@ -116,6 +116,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             'resultados': None,
             'latitud': None,
             'longitud': None,
+            'cita_inicio': request.data.get('cita_inicio', None),
+            'cita_fin': request.data.get('cita_fin', None),
         }
         if direccion_destinatario:                   
             direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
@@ -729,6 +731,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 visita.unidades = unidades
                 visita.peso = peso
                 visita.volumen = volumen
+                visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
+                visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
                 visita.save()               
                 return Response({'mensaje': 'Se actualizo la visita'}, status=status.HTTP_200_OK)
             except RutVisita.DoesNotExist:
