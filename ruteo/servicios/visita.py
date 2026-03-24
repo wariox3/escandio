@@ -147,17 +147,12 @@ class VisitaServicio():
         latitud = float(configuracion['rut_latitud'])
         longitud = float(configuracion['rut_longitud'])
 
-        # Hora de salida del vehículo: fecha de la primera visita + hora de inicio configurada
+        # Hora de salida del vehículo: fecha de hoy + hora de inicio configurada
         hora_inicio = configuracion.get('rut_hora_inicio')
-        fecha_referencia = None
-        for v in visitas:
-            if v.fecha:
-                fecha_referencia = v.fecha
-                break
-        if fecha_referencia and hora_inicio:
-            hora_salida = timezone.make_aware(
-                datetime.combine(fecha_referencia.date(), hora_inicio)
-            ) if timezone.is_naive(datetime.combine(fecha_referencia.date(), hora_inicio)) else datetime.combine(fecha_referencia.date(), hora_inicio)
+        hoy = timezone.now().date()
+        if hora_inicio:
+            hora_salida_naive = datetime.combine(hoy, hora_inicio)
+            hora_salida = timezone.make_aware(hora_salida_naive) if timezone.is_naive(hora_salida_naive) else hora_salida_naive
         else:
             hora_salida = timezone.now()
 
