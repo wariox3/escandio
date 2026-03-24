@@ -89,7 +89,10 @@ class VisitaServicio():
 
         tiene_citas = any(v.cita_inicio is not None for v in visitas)
         if tiene_citas:
-            return VisitaServicio._ordenar_con_ventanas(visitas, configuracion)
+            resultado = VisitaServicio._ordenar_con_ventanas(visitas, configuracion)
+            if resultado and resultado.get('error'):
+                return VisitaServicio._ordenar_distancia(visitas, configuracion)
+            return resultado
         else:
             return VisitaServicio._ordenar_distancia(visitas, configuracion)
 
