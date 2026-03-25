@@ -62,15 +62,9 @@ class NotificacionServicio():
                 for telefono, datos in destinatarios.items():
                     documentos_texto = ', '.join(datos['documentos']) if datos['documentos'] else ''
 
-                    variables = [
-                        {'type': 'text', 'text': datos['nombre']},
-                        {'type': 'text', 'text': documentos_texto},
-                    ]
-
                     resultado = gc.enviar_plantilla(
                         id_plantilla=id_plantilla,
                         destino=telefono,
-                        variables=variables
                     )
 
                     if resultado['error']:
