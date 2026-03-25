@@ -45,10 +45,6 @@ def prueba_globalconnect_enviar(request):
     resultado = gc.enviar_plantilla(
         id_plantilla=id_plantilla,
         destino=telefono_normalizado,
-        variables=[
-            {'type': 'text', 'text': nombre},
-            {'type': 'text', 'text': documento},
-        ]
     )
     return Response({'telefono_normalizado': telefono_normalizado, 'resultado': resultado})
 
