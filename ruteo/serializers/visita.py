@@ -16,7 +16,9 @@ class RutVisitaSerializador(serializers.ModelSerializer):
         if cita_inicio and cita_fin:
             if cita_fin <= cita_inicio:
                 raise serializers.ValidationError({'cita_fin': 'cita_fin debe ser mayor que cita_inicio.'})
-            if cita_inicio.date() != cita_fin.date():
+            inicio_date = cita_inicio.date() if hasattr(cita_inicio, 'date') else cita_inicio
+            fin_date = cita_fin.date() if hasattr(cita_fin, 'date') else cita_fin
+            if inicio_date != fin_date:
                 raise serializers.ValidationError({'cita_fin': 'cita_inicio y cita_fin deben ser del mismo día.'})
         return data
 
