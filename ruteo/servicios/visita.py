@@ -87,6 +87,7 @@ class VisitaServicio():
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
             return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
 
+        visitas = list(visitas)
         tiene_citas = any(v.cita_inicio is not None for v in visitas)
         if tiene_citas:
             return VisitaServicio._ordenar_con_ventanas(visitas, configuracion)

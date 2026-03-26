@@ -5,6 +5,7 @@ from ruteo.models.despacho import RutDespacho
 from ruteo.models.visita import RutVisita
 from ruteo.models.vehiculo import RutVehiculo
 from vertical.models.entrega import VerEntrega
+from vertical.models.entrega_detalle import VerEntregaDetalle
 from ruteo.servicios.visita import VisitaServicio
 from ruteo.servicios.despacho import DespachoServicio
 from ruteo.serializers.despacho import RutDespachoSerializador, RutDespachoTraficoSerializador
@@ -90,11 +91,28 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         entrega.visitas_entregadas = despacho.visitas_entregadas
                         entrega.contenedor_id = request.tenant.id
                         entrega.schema_name = request.tenant.schema_name
-                        entrega.save()                   
+                        entrega.save()
+                        visitas = RutVisita.objects.filter(despacho_id=despacho.id)
+                        detalles = []
+                        for visita in visitas:
+                            detalles.append(VerEntregaDetalle(
+                                entrega=entrega,
+                                visita_id=visita.id,
+                                numero=visita.numero,
+                                documento=visita.documento,
+                                destinatario=visita.destinatario,
+                                destinatario_direccion=visita.destinatario_direccion,
+                                destinatario_telefono=visita.destinatario_telefono,
+                                unidades=visita.unidades,
+                                peso=visita.peso,
+                                volumen=visita.volumen,
+                                orden=visita.orden,
+                            ))
+                        VerEntregaDetalle.objects.bulk_create(detalles)
                         despacho.estado_aprobado = True
                         despacho.fecha_salida = datetime.now()
-                        despacho.entrega_id = entrega.id             
-                        despacho.save()                             
+                        despacho.entrega_id = entrega.id
+                        despacho.save()
                         return Response({'mensaje': 'Se aprobo el despacho'}, status=status.HTTP_200_OK)                
                     else:
                         return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                        

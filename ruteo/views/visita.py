@@ -308,10 +308,14 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             return Response({'mensaje': 'No hay guias pendientes por decodificar'}, status=status.HTTP_200_OK) 
 
     @action(detail=False, methods=["post"], url_path=r'ordenar',)
-    def ordenar_action(self, request):      
+    def ordenar_action(self, request):
         raw = request.data
-        filtros = raw.get('filtros', [])           
-        visitas = RutVisita.objects.filter(estado_despacho=False, estado_decodificado=True)        
+        filtros = raw.get('filtros', [])
+        despacho_id = raw.get('despacho_id', None)
+        if despacho_id:
+            visitas = RutVisita.objects.filter(despacho_id=despacho_id, estado_decodificado=True)
+        else:
+            visitas = RutVisita.objects.filter(estado_despacho=False, estado_decodificado=True)
         for filtro in filtros:
             operador = filtro.get('operador')
             propiedad = filtro['propiedad']
