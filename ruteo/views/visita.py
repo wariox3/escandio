@@ -116,21 +116,22 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             'resultados': None,
             'latitud': None,
             'longitud': None,
+            'estado_decodificado': False,
         }
-        if direccion_destinatario:                   
+        if direccion_destinatario:
             direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
             if direccion:
-                data['estado_decodificado'] = True            
-                data['latitud'] = direccion.latitud                        
+                data['estado_decodificado'] = True
+                data['latitud'] = direccion.latitud
                 data['longitud'] = direccion.longitud
                 data['destinatario_direccion_formato'] = direccion.direccion_formato
                 data['resultados'] = direccion.resultados
                 if direccion.cantidad_resultados > 1:
-                    data['estado_decodificado_alerta'] = True                                
+                    data['estado_decodificado_alerta'] = True
             else:
                 respuesta = google.decodificar_direccion(data['destinatario_direccion'])
-                if respuesta['error'] == False:   
-                    data['estado_decodificado'] = True            
+                if respuesta['error'] == False:
+                    data['estado_decodificado'] = True
                     data['latitud'] = respuesta['latitud']
                     data['longitud'] = respuesta['longitud']
                     data['destinatario_direccion_formato'] = respuesta['direccion_formato']
@@ -181,7 +182,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     direccion_destinatario = VisitaServicio.limpiar_direccion(row[4])
                     telefono_destinatario = str(row[5])
                     if telefono_destinatario:
-                        telefono_destinatario[:50]                    
+                        telefono_destinatario = telefono_destinatario[:50]
                     cita_inicio = row[14] if len(row) > 14 and row[14] else None
                     cita_fin = row[15] if len(row) > 15 and row[15] else None
                     data = {
@@ -267,11 +268,11 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
             #visitas = RutVisita.objects.filter(estado_despacho = False, estado_decodificado = True)
-            VisitaServicio.ubicar(visitas)            
-            VisitaServicio.ordenar(visitas)            
+            VisitaServicio.ubicar(visitas)
+            VisitaServicio.ordenar(visitas)
             return Response({'mensaje': f'Se importaron {cantidad} guias con exito'}, status=status.HTTP_200_OK)
         else:
-            return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'mensaje': respuesta['mensaje'], 'validaciones': respuesta.get('validaciones')}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'decodificar',)
     def decodificar_action(self, request):
@@ -588,10 +589,14 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
                     errores = errores.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
                     alertas = alertas.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
-                else:
+                elif operador:
                     visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
                     errores = errores.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
                     alertas = alertas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
+                else:
+                    visitas = visitas.filter(**{filtro['propiedad']: filtro['valor1']})
+                    errores = errores.filter(**{filtro['propiedad']: filtro['valor1']})
+                    alertas = alertas.filter(**{filtro['propiedad']: filtro['valor1']})
 
 
         visitas = visitas.aggregate(
@@ -627,8 +632,10 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 
                 if operador == 'range':
                     visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
+                elif operador:
+                    visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
                 else:
-                    visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})                    
+                    visitas = visitas.filter(**{filtro['propiedad']: filtro['valor1']})
         visitas = visitas.values('franja_codigo').annotate(
             cantidad=Count('id'), 
             peso=Coalesce(Sum('peso'), 0.0),
@@ -884,7 +891,9 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                                     'base64': base64_encoded,
                                 })                                                                                                                                                                                                     
                         VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
-            return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)                                                                     
+                return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
+            else:
+                return Response({'mensaje': 'La visita ya fue entregada', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
