@@ -3,6 +3,11 @@ from ruteo.models.despacho import RutDespacho
 from ruteo.models.franja import RutFranja
 from general.models.ciudad import GenCiudad
 
+CITA_TIPO_CHOICES = [
+    ('obligatoria', 'Obligatoria'),
+    ('preferente', 'Preferente'),
+]
+
 class RutVisita(models.Model):
     numero = models.IntegerField(null=True)
     fecha = models.DateTimeField(null=True)  
@@ -39,11 +44,18 @@ class RutVisita(models.Model):
     datos_entrega = models.JSONField(null=True, blank=True, default=dict, help_text="Datos de la entrega (nombre, identificación, teléfono, etc.)")    
     cita_inicio = models.DateTimeField(null=True, blank=True)
     cita_fin = models.DateTimeField(null=True, blank=True)
+    cita_tipo = models.CharField(max_length=20, choices=CITA_TIPO_CHOICES, null=True, blank=True)
     despacho = models.ForeignKey(RutDespacho, null=True, on_delete=models.PROTECT, related_name='visitas_despacho_rel')
     ciudad = models.ForeignKey(GenCiudad, null=True, on_delete=models.PROTECT, default=1, related_name='visitas_ciudad_rel')
 
-    def save(self, *args, **kwargs):        
+    def save(self, *args, **kwargs):
         self.tiempo = self.tiempo_servicio + self.tiempo_trayecto
+        if self.cita_inicio and self.cita_fin and not self.cita_tipo:
+            from general.models.configuracion import GenConfiguracion
+            config = GenConfiguracion.objects.filter(pk=1).values('rut_cita_tipo_defecto').first()
+            self.cita_tipo = config['rut_cita_tipo_defecto'] if config else 'obligatoria'
+        elif not self.cita_inicio and not self.cita_fin:
+            self.cita_tipo = None
         super().save(*args, **kwargs)
 
     class Meta:
