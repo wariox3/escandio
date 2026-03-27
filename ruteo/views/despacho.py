@@ -60,14 +60,15 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                 self.pagination_class = None
             return super().list(request, *args, **kwargs)
 
-    def destroy(self, request, *args, **kwargs):        
+    def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.estado_aprobado:
-                return Response({'mensaje': 'No se puede eliminar un despacho aprobado.'}, status=status.HTTP_400_BAD_REQUEST)        
-        RutVisita.objects.filter(despacho_id=instance.id).update(despacho=None, estado_despacho=False)
-        if instance.vehiculo_id:
-            RutVehiculo.objects.filter(id=instance.vehiculo_id).update(estado_asignado=False)
-        self.perform_destroy(instance)
+            return Response({'mensaje': 'No se puede eliminar un despacho aprobado.'}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            RutVisita.objects.filter(despacho_id=instance.id).update(despacho=None, estado_despacho=False)
+            if instance.vehiculo_id:
+                RutVehiculo.objects.filter(id=instance.vehiculo_id).update(estado_asignado=False)
+            self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)    
     
     @action(detail=False, methods=["post"], url_path=r'aprobar',)
@@ -122,58 +123,57 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)     
 
     @action(detail=False, methods=["post"], url_path=r'terminar',)
-    def terminar(self, request):             
+    def terminar(self, request):
         raw = request.data
         id = raw.get('id')
         if id:
-            try:                
-                despacho = RutDespacho.objects.get(pk=id)  
-                if despacho.estado_aprobado == True:
-                    if despacho.estado_terminado == False:
-                        visitas = RutVisita.objects.filter(despacho_id=id, estado_entregado=False, estado_novedad=False).first()
-                        if visitas:
-                            return Response({'mensaje':'El despacho tiene visitas sin entregar', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                        despacho.estado_terminado = True                
-                        despacho.save()              
-                        vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
-                        vehiculo.estado_asignado = False
-                        vehiculo.save() 
-                        return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)                
+            try:
+                with transaction.atomic():
+                    despacho = RutDespacho.objects.get(pk=id)
+                    if despacho.estado_aprobado == True:
+                        if despacho.estado_terminado == False:
+                            visitas = RutVisita.objects.filter(despacho_id=id, estado_entregado=False, estado_novedad=False).first()
+                            if visitas:
+                                return Response({'mensaje':'El despacho tiene visitas sin entregar', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                            despacho.estado_terminado = True
+                            despacho.save()
+                            if despacho.vehiculo_id:
+                                vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
+                                vehiculo.estado_asignado = False
+                                vehiculo.save()
+                            return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)
+                        else:
+                            return Response({'mensaje':'El despacho ya esta terminado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                     else:
-                        return Response({'mensaje':'El despacho ya esta terminado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                                                
-                else:
-                    return Response({'mensaje':'El despacho no esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                        
+                        return Response({'mensaje':'El despacho no esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             except RutDespacho.DoesNotExist:
                 return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST) 
 
     @action(detail=False, methods=["post"], url_path=r'anular',)
-    def anular(self, request):             
+    def anular(self, request):
         raw = request.data
         id = raw.get('id')
         if id:
-            try:                
-                despacho = RutDespacho.objects.get(pk=id)  
-                if despacho.estado_aprobado == True and despacho.estado_anulado == False and despacho.estado_terminado == False:
-                    visitas = RutVisita.objects.filter(despacho_id=id, estado_entregado=True).first()
-                    if visitas:
-                        return Response({'mensaje':'El despacho tiene visitas entregadas', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                    visitas = RutVisita.objects.filter(despacho_id=id)
-                    for visita in visitas:
-                        visita.estado_despacho = False
-                        visita.despacho = None
-                        visita.save()
-                    despacho.estado_anulado = True
-                    despacho.estado_terminado = True                                    
-                    despacho.save()   
-                    vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
-                    vehiculo.estado_asignado = False
-                    vehiculo.save() 
-
-                    return Response({'mensaje': 'Se anulo el despacho'}, status=status.HTTP_200_OK)                                                              
-                else:
-                    return Response({'mensaje':'El despacho debe estar aprobado, sin terminar y sin anular', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                        
+            try:
+                with transaction.atomic():
+                    despacho = RutDespacho.objects.get(pk=id)
+                    if despacho.estado_aprobado == True and despacho.estado_anulado == False and despacho.estado_terminado == False:
+                        visitas_entregadas = RutVisita.objects.filter(despacho_id=id, estado_entregado=True).first()
+                        if visitas_entregadas:
+                            return Response({'mensaje':'El despacho tiene visitas entregadas', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                        RutVisita.objects.filter(despacho_id=id).update(estado_despacho=False, despacho=None)
+                        despacho.estado_anulado = True
+                        despacho.estado_terminado = True
+                        despacho.save()
+                        if despacho.vehiculo_id:
+                            vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
+                            vehiculo.estado_asignado = False
+                            vehiculo.save()
+                        return Response({'mensaje': 'Se anulo el despacho'}, status=status.HTTP_200_OK)
+                    else:
+                        return Response({'mensaje':'El despacho debe estar aprobado, sin terminar y sin anular', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             except RutDespacho.DoesNotExist:
                 return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
@@ -187,7 +187,9 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
         trafico = raw.get('trafico', False)
         if id and visita_id:
             try:                
-                despacho = RutDespacho.objects.get(pk=id)  
+                despacho = RutDespacho.objects.get(pk=id)
+                if despacho.estado_aprobado == True and trafico == False:
+                    return Response({'mensaje':'No se puede adicionar visitas a un despacho aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                 if despacho.estado_terminado == False:
                     visita = RutVisita.objects.get(pk=visita_id)
                     if visita.estado_despacho == True: 
@@ -318,9 +320,11 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
             try:                
                 despacho = RutDespacho.objects.get(pk=id) 
                 google = Google()
-                visitas = list(RutVisita.objects.filter(despacho_id=id).order_by('orden').values('latitud', 'longitud'))
+                visitas = list(RutVisita.objects.filter(despacho_id=id).order_by('orden').values('latitud', 'longitud', 'cita_inicio'))
                 if visitas:
+                    tiene_citas = [bool(v.get('cita_inicio')) for v in visitas]
                     respuesta = google.direcciones(visitas)
+                    respuesta['tiene_citas'] = tiene_citas
                     return Response({'respuesta': respuesta}, status=status.HTTP_200_OK) 
                 else:
                     return Response({'respuesta': None}, status=status.HTTP_200_OK)             
@@ -366,7 +370,7 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                             DespachoServicio.regenerar_valores(despacho)
                             return Response({'mensaje': f'Se creo el despacho con exito'}, status=status.HTTP_200_OK)
                         else:
-                            return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': despacho.errors}, status=status.HTTP_400_BAD_REQUEST)                              
+                            return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)                              
                 else:
                     return Response({'mensaje':f'No existe el vehiculo {despacho_complemento["vehiculoPlaca"]}', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)            
             else:

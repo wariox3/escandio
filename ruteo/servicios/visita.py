@@ -116,7 +116,7 @@ class VisitaServicio():
 
         solution = routing.SolveWithParameters(search_parameters)
         if not solution:
-            return None
+            return {'error': True, 'mensaje': 'No se encontró una solución factible para ordenar las visitas.', 'codigo': 14}
 
         index = routing.Start(0)
         orden = []

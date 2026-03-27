@@ -141,18 +141,42 @@ class Google():
 
             # 4. Extraer la geometría detallada de cada tramo (leg)
             puntos_ruta = []
+            puntos_por_tramo = []
             for leg in data['routes'][0]['legs']:
+                puntos_tramo = []
                 for step in leg['steps']:
                     # Decodificar el polyline de cada segmento
                     puntos = self._decode_polyline(step['polyline']['points'])
                     puntos_ruta.extend(puntos)
+                    puntos_tramo.extend(puntos)
+                puntos_por_tramo.append(puntos_tramo)
             
+            total_distancia_m = sum(leg['distance']['value'] for leg in data['routes'][0]['legs'])
+            total_duracion_s = sum(leg['duration']['value'] for leg in data['routes'][0]['legs'])
+            distancia_km = total_distancia_m / 1000
+            duracion_min = total_duracion_s / 60
+
+            if distancia_km >= 1:
+                distancia_text = f"{distancia_km:.1f} km"
+            else:
+                distancia_text = f"{total_distancia_m} m"
+
+            if duracion_min >= 60:
+                horas = int(duracion_min // 60)
+                mins = int(duracion_min % 60)
+                duracion_text = f"{horas} h {mins} min"
+            else:
+                duracion_text = f"{int(duracion_min)} min"
+
             return {
                 "error": False,
-                "puntos_detallados": puntos_ruta,  # Coordenadas que siguen calles
+                "puntos_detallados": puntos_ruta,
+                "puntos_por_tramo": puntos_por_tramo,
                 "ruta_simplificada": data['routes'][0]['overview_polyline']['points'],
-                "distancia": data['routes'][0]['legs'][0]['distance']['text'],
-                "duracion": data['routes'][0]['legs'][0]['duration']['text'],
+                "distancia": distancia_text,
+                "duracion": duracion_text,
+                "distancia_total": total_distancia_m,
+                "duracion_total": total_duracion_s,
                 "data": data
             }
 
