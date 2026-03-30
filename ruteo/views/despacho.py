@@ -214,8 +214,11 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                     despacho.tiempo = despacho.tiempo + visita.tiempo
                     despacho.tiempo_servicio = despacho.tiempo_servicio + visita.tiempo_servicio
                     despacho.tiempo_trayecto = despacho.tiempo_trayecto + visita.tiempo_trayecto
-                    despacho.visitas = despacho.visitas + 1                                   
-                    despacho.save()               
+                    despacho.visitas = despacho.visitas + 1
+                    despacho.save()
+                    visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id, estado_decodificado=True)
+                    if visitas_despacho.count() > 1:
+                        VisitaServicio.ordenar(visitas_despacho)
                     return Response({'mensaje': 'Se adiciono la visita'}, status=status.HTTP_200_OK)                              
                 else:
                     return Response({'mensaje':'El despacho esta terminado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                        
@@ -257,6 +260,12 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
 
                             visita.despacho = despacho
                             visita.save()
+                        visitas_destino = RutVisita.objects.filter(despacho_id=despacho.id, estado_decodificado=True)
+                        if visitas_destino.count() > 1:
+                            VisitaServicio.ordenar(visitas_destino)
+                        visitas_origen = RutVisita.objects.filter(despacho_id=despacho_origen.id, estado_decodificado=True)
+                        if visitas_origen.count() > 1:
+                            VisitaServicio.ordenar(visitas_origen)
                         return Response({'mensaje': 'Se trasbordaron las visitas pendientes por entrega'}, status=status.HTTP_200_OK)                            
                     else:                          
                         return Response({'mensaje':'El despacho origen no puede estar terminado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                       
@@ -274,7 +283,7 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
         if id:
             try:                
                 despacho = RutDespacho.objects.get(pk=id)    
-                visitas = RutVisita.objects.filter(despacho_id=id).values('numero').order_by('orden')                
+                visitas = RutVisita.objects.filter(despacho_id=id).values('numero', 'cita_inicio', 'cita_fin').order_by('orden')
                 field_names = list(visitas[0].keys()) if visitas else []
                 field_names.append('orden')
                 orden = 0
@@ -289,6 +298,8 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         value = row.get(field)
                         if value is None:
                             row_data.append("")
+                        elif field in ('cita_inicio', 'cita_fin') and isinstance(value, datetime):
+                            row_data.append(value.strftime('%d/%m/%Y %H:%M'))
                         elif isinstance(value, datetime) and value.tzinfo is not None:
                             row_data.append(value.replace(tzinfo=None))
                         else:
