@@ -87,6 +87,7 @@ class VisitaServicio():
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
             return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
 
+        visitas = list(visitas)
         tiene_citas = any(v.cita_inicio is not None for v in visitas)
         if tiene_citas:
             return VisitaServicio._ordenar_con_ventanas(visitas, configuracion)
@@ -115,7 +116,7 @@ class VisitaServicio():
 
         solution = routing.SolveWithParameters(search_parameters)
         if not solution:
-            return None
+            return {'error': True, 'mensaje': 'No se encontró una solución factible para ordenar las visitas.', 'codigo': 14}
 
         index = routing.Start(0)
         orden = []
@@ -161,20 +162,52 @@ class VisitaServicio():
         # Horizonte de jornada en minutos (14 horas desde ahora)
         horizonte = 14 * 60
 
-        # Construir ventanas horarias por nodo
+        # Construir ventanas horarias y tipos por nodo
         # Nodo 0 = depósito, nodos 1..n = visitas
-        ventanas = [(0, horizonte)]  # Depósito: sin restricción
+        ventanas = [(0, horizonte)]
+        tipos_cita = [None]  # depósito no tiene tipo
         for v in visitas:
             if v.cita_inicio and v.cita_fin:
                 tw_inicio = int((v.cita_inicio - ahora).total_seconds() / 60)
                 tw_fin = int((v.cita_fin - ahora).total_seconds() / 60)
-                if tw_fin < 0:
-                    return {'error': True, 'mensaje': f'La cita de la visita {v.numero} ya pasó.', 'codigo': 14}
+
+                tipo = getattr(v, 'cita_tipo', 'obligatoria') or 'obligatoria'
+
+                # Validación previa para citas obligatorias
+                if tipo == 'obligatoria':
+                    if tw_fin < 0:
+                        return {
+                            'error': True,
+                            'mensaje': f'La cita obligatoria de la visita {v.numero} ya pasó.',
+                            'codigo': 14
+                        }
+                    # Verificar si es físicamente posible llegar desde el origen
+                    tiempo_minimo_desde_origen = time_matrix[0][len(ventanas)]
+                    if tiempo_minimo_desde_origen > tw_fin:
+                        return {
+                            'error': True,
+                            'mensaje': (
+                                f'Imposible cumplir la cita obligatoria de la visita {v.numero}. '
+                                f'Cita: {v.cita_inicio.strftime("%H:%M")}-{v.cita_fin.strftime("%H:%M")}. '
+                                f'Tiempo mínimo de traslado: {tiempo_minimo_desde_origen} min. '
+                                f'Tiempo disponible: {max(0, tw_fin)} min.'
+                            ),
+                            'codigo': 14
+                        }
+
                 tw_inicio = max(0, tw_inicio)
                 tw_fin = min(horizonte, tw_fin)
-                ventanas.append((tw_inicio, tw_fin))
+
+                # Para preferentes con ventana ya pasada, abrir ventana completa
+                if tipo == 'preferente' and tw_fin <= 0:
+                    ventanas.append((0, horizonte))
+                    tipos_cita.append('preferente')
+                else:
+                    ventanas.append((tw_inicio, tw_fin))
+                    tipos_cita.append(tipo)
             else:
                 ventanas.append((0, horizonte))
+                tipos_cita.append(None)
 
         manager = pywrapcp.RoutingIndexManager(n, 1, 0)
         routing = pywrapcp.RoutingModel(manager)
@@ -193,7 +226,6 @@ class VisitaServicio():
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             travel_time = time_matrix[from_node][to_node]
-            # Tiempo de servicio del nodo destino (nodo 0 = depósito, sin servicio)
             if to_node > 0:
                 service_time = int(float(visitas[to_node - 1].tiempo_servicio))
             else:
@@ -205,18 +237,33 @@ class VisitaServicio():
         # Dimensión de tiempo
         routing.AddDimension(
             time_callback_index,
-            horizonte,   # slack máximo (tiempo de espera permitido)
-            horizonte,   # tiempo máximo acumulado por vehículo
-            False,       # no forzar inicio en 0
+            horizonte,
+            horizonte,
+            False,
             'Time'
         )
         time_dimension = routing.GetDimensionOrDie('Time')
 
-        # Aplicar ventanas horarias a cada nodo
+        # Penalización para citas preferentes (1000 por minuto fuera de ventana)
+        PENALIZACION_PREFERENTE = 1000
+
+        # Aplicar ventanas horarias según tipo
         for i in range(n):
             index = manager.NodeToIndex(i)
             tw_inicio, tw_fin = ventanas[i]
-            time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
+            tipo = tipos_cita[i]
+
+            if tipo == 'obligatoria':
+                # Hard constraint: DEBE llegar dentro de la ventana
+                time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
+            elif tipo == 'preferente':
+                # Soft constraint: intenta llegar pero puede violar con penalización
+                time_dimension.CumulVar(index).SetRange(0, horizonte)
+                time_dimension.SetCumulVarSoftLowerBound(index, tw_inicio, PENALIZACION_PREFERENTE)
+                time_dimension.SetCumulVarSoftUpperBound(index, tw_fin, PENALIZACION_PREFERENTE)
+            else:
+                # Sin cita: ventana abierta
+                time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
 
         # Estrategia de búsqueda
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -226,7 +273,11 @@ class VisitaServicio():
 
         solution = routing.SolveWithParameters(search_parameters)
         if not solution:
-            return {'error': True, 'mensaje': 'No se encontró una solución factible. Verifique que las ventanas horarias (citas) sean compatibles entre sí.', 'codigo': 14}
+            return {
+                'error': True,
+                'mensaje': 'No se encontró una solución factible. Verifique que las ventanas horarias (citas obligatorias) sean compatibles entre sí.',
+                'codigo': 14
+            }
 
         index = routing.Start(0)
         orden = []

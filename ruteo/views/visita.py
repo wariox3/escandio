@@ -88,10 +88,13 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 else:
                     despacho.peso = despacho.peso - visita.peso
                     despacho.volumen = despacho.volumen - visita.volumen
+                    despacho.tiempo = despacho.tiempo - visita.tiempo
+                    despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
+                    despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
                     despacho.visitas -= 1
-                    despacho.save()        
+                    despacho.save()
         self.perform_destroy(visita)
-        return Response(status=status.HTTP_204_NO_CONTENT) 
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["post"], url_path=r'nuevo',)
     def nuevo(self, request):
@@ -116,21 +119,22 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             'resultados': None,
             'latitud': None,
             'longitud': None,
+            'estado_decodificado': False,
         }
-        if direccion_destinatario:                   
+        if direccion_destinatario:
             direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
             if direccion:
-                data['estado_decodificado'] = True            
-                data['latitud'] = direccion.latitud                        
+                data['estado_decodificado'] = True
+                data['latitud'] = direccion.latitud
                 data['longitud'] = direccion.longitud
                 data['destinatario_direccion_formato'] = direccion.direccion_formato
                 data['resultados'] = direccion.resultados
                 if direccion.cantidad_resultados > 1:
-                    data['estado_decodificado_alerta'] = True                                
+                    data['estado_decodificado_alerta'] = True
             else:
                 respuesta = google.decodificar_direccion(data['destinatario_direccion'])
-                if respuesta['error'] == False:   
-                    data['estado_decodificado'] = True            
+                if respuesta['error'] == False:
+                    data['estado_decodificado'] = True
                     data['latitud'] = respuesta['latitud']
                     data['longitud'] = respuesta['longitud']
                     data['destinatario_direccion_formato'] = respuesta['direccion_formato']
@@ -181,7 +185,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     direccion_destinatario = VisitaServicio.limpiar_direccion(row[4])
                     telefono_destinatario = str(row[5])
                     if telefono_destinatario:
-                        telefono_destinatario[:50]                    
+                        telefono_destinatario = telefono_destinatario[:50]
                     cita_inicio = row[14] if len(row) > 14 and row[14] else None
                     cita_fin = row[15] if len(row) > 15 and row[15] else None
                     data = {
@@ -267,11 +271,11 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
             #visitas = RutVisita.objects.filter(estado_despacho = False, estado_decodificado = True)
-            VisitaServicio.ubicar(visitas)            
-            VisitaServicio.ordenar(visitas)            
+            VisitaServicio.ubicar(visitas)
+            VisitaServicio.ordenar(visitas)
             return Response({'mensaje': f'Se importaron {cantidad} guias con exito'}, status=status.HTTP_200_OK)
         else:
-            return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'mensaje': respuesta['mensaje'], 'validaciones': respuesta.get('validaciones')}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'decodificar',)
     def decodificar_action(self, request):
@@ -307,10 +311,14 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             return Response({'mensaje': 'No hay guias pendientes por decodificar'}, status=status.HTTP_200_OK) 
 
     @action(detail=False, methods=["post"], url_path=r'ordenar',)
-    def ordenar_action(self, request):      
+    def ordenar_action(self, request):
         raw = request.data
-        filtros = raw.get('filtros', [])           
-        visitas = RutVisita.objects.filter(estado_despacho=False, estado_decodificado=True)        
+        filtros = raw.get('filtros', [])
+        despacho_id = raw.get('despacho_id', None)
+        if despacho_id:
+            visitas = RutVisita.objects.filter(despacho_id=despacho_id, estado_decodificado=True)
+        else:
+            visitas = RutVisita.objects.filter(estado_despacho=False, estado_decodificado=True)
         for filtro in filtros:
             operador = filtro.get('operador')
             propiedad = filtro['propiedad']
@@ -328,9 +336,12 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             else:
                 visitas = visitas.filter(**{propiedad: filtro['valor1']})
         if visitas.exists():
-            respuesta = VisitaServicio.ordenar(visitas) 
-            if respuesta['error'] == True:
-                return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                respuesta = VisitaServicio.ordenar(visitas)
+                if respuesta and respuesta.get('error') == True:
+                    return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({'mensaje': f'Error al ordenar: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'mensaje':'visitas ordenadas'}, status=status.HTTP_200_OK)
         
     @action(detail=False, methods=["post"], url_path=r'rutear')
@@ -339,23 +350,24 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
         filtros = raw.get('filtros')
 
         decimal_6_places = Decimal('0.000001')
-        
+
         configuracion = GenConfiguracion.objects.filter(id=1).first()
         rutear_franja = getattr(configuracion, 'rut_rutear_franja', False)
 
         flota_disponible = list(
             RutFlota.objects.filter(vehiculo__estado_asignado=False)
             .select_related('vehiculo')
-            .order_by('prioridad') 
+            .order_by('prioridad')
         )
         if not flota_disponible:
-            return Response({'mensaje': 'No hay vehículos disponibles'}, 
+            return Response({'mensaje': 'No hay vehículos disponibles'},
                         status=status.HTTP_400_BAD_REQUEST)
 
         visitas = RutVisita.objects.filter(
-            estado_despacho=False, 
-            estado_devolucion=False, 
-            estado_novedad=False
+            estado_despacho=False,
+            estado_devolucion=False,
+            estado_novedad=False,
+            estado_decodificado=True
         )
 
         if filtros:
@@ -376,8 +388,12 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
         visitas = visitas.order_by('orden')
         visitas_pendientes = list(visitas)
         despachos_creados = 0
+
         def vehiculo_puede_tomar_visita(vehiculo, visita, peso_actual, tiempo_actual, verificar_franja):
-            if (peso_actual + visita.peso > vehiculo.capacidad or 
+            if (visita.peso is None or visita.tiempo is None or
+                vehiculo.capacidad is None or vehiculo.tiempo is None):
+                return False
+            if (peso_actual + visita.peso > vehiculo.capacidad or
                 tiempo_actual + visita.tiempo > vehiculo.tiempo):
                 return False
             
@@ -386,156 +402,135 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 
             return vehiculo.franjas.filter(id=visita.franja_id).exists()
 
-        if rutear_franja:
-            for flota_item in flota_disponible:
-                vehiculo = flota_item.vehiculo
-                peso_total = 0
-                tiempo_total = 0
-                unidades_total = 0
-                despacho = None
+        with transaction.atomic():
+            if rutear_franja:
+                for flota_item in flota_disponible:
+                    vehiculo = flota_item.vehiculo
+                    peso_total = 0
+                    tiempo_total = 0
+                    unidades_total = 0
+                    despacho = None
+                    visitas_asignadas = []
 
-                # Procesar solo si el vehículo no está ya asignado
-                if vehiculo.estado_asignado:
-                    continue
+                    if vehiculo.estado_asignado:
+                        continue
 
-                # Intentar asignar todas las visitas posibles a este vehículo
-                for visita in list(visitas_pendientes):
-                    if vehiculo_puede_tomar_visita(vehiculo, visita, peso_total, tiempo_total, True):
-                        if despacho is None:
-                            despacho = RutDespacho.objects.create(
-                                fecha=timezone.now(),
-                                vehiculo=vehiculo,
-                                peso=visita.peso,
-                                volumen=visita.volumen,
-                                tiempo=visita.tiempo,
-                                tiempo_servicio=visita.tiempo_servicio,
-                                tiempo_trayecto=visita.tiempo_trayecto,
-                                unidades=visita.unidades,
-                                visitas=1
-                            )
-                            vehiculo.estado_asignado = True
-                            vehiculo.save()
-                            despachos_creados += 1
-                        else:
-                            despacho.peso += visita.peso
-                            despacho.volumen += visita.volumen
-                            despacho.tiempo = (Decimal(despacho.tiempo) + Decimal(visita.tiempo)).quantize(
-                                decimal_6_places,
-                                rounding=ROUND_HALF_UP
-                            )
-                            despacho.tiempo_servicio = (Decimal(despacho.tiempo_servicio) + Decimal(visita.tiempo_servicio)).quantize(
-                                decimal_6_places,
-                                rounding=ROUND_HALF_UP
-                            )
-                            despacho.tiempo_trayecto = (Decimal(despacho.tiempo_trayecto) + Decimal(visita.tiempo_trayecto)).quantize(
-                                decimal_6_places,
-                                rounding=ROUND_HALF_UP
-                            )
-                            despacho.unidades += visita.unidades
-                            despacho.visitas += 1
-                            despacho.save()
+                    for visita in list(visitas_pendientes):
+                        if vehiculo_puede_tomar_visita(vehiculo, visita, peso_total, tiempo_total, True):
+                            if despacho is None:
+                                despacho = RutDespacho.objects.create(
+                                    fecha=timezone.now(),
+                                    vehiculo=vehiculo,
+                                    peso=visita.peso,
+                                    volumen=visita.volumen,
+                                    tiempo=visita.tiempo,
+                                    tiempo_servicio=visita.tiempo_servicio,
+                                    tiempo_trayecto=visita.tiempo_trayecto,
+                                    unidades=visita.unidades,
+                                    visitas=1
+                                )
+                                vehiculo.estado_asignado = True
+                                vehiculo.save()
+                                despachos_creados += 1
+                            else:
+                                despacho.peso += visita.peso
+                                despacho.volumen += visita.volumen
+                                despacho.tiempo = (Decimal(despacho.tiempo) + Decimal(visita.tiempo)).quantize(
+                                    decimal_6_places, rounding=ROUND_HALF_UP)
+                                despacho.tiempo_servicio = (Decimal(despacho.tiempo_servicio) + Decimal(visita.tiempo_servicio)).quantize(
+                                    decimal_6_places, rounding=ROUND_HALF_UP)
+                                despacho.tiempo_trayecto = (Decimal(despacho.tiempo_trayecto) + Decimal(visita.tiempo_trayecto)).quantize(
+                                    decimal_6_places, rounding=ROUND_HALF_UP)
+                                despacho.unidades += visita.unidades
+                                despacho.visitas += 1
 
-                        peso_total += visita.peso
-                        tiempo_total += visita.tiempo
-                        unidades_total += visita.unidades
-                        
-                        visita.estado_despacho = True
-                        visita.despacho = despacho
-                        visita.save()
-                        
-                        visitas_pendientes.remove(visita)
+                            peso_total += visita.peso
+                            tiempo_total += visita.tiempo
+                            unidades_total += visita.unidades
 
-                if visitas_pendientes:
-                    continue
-                else:
-                    break 
+                            visita.estado_despacho = True
+                            visita.despacho = despacho
+                            visitas_asignadas.append(visita)
+                            visitas_pendientes.remove(visita)
 
-            mensaje = (
-                f"Operación completada: {despachos_creados} rutas creadas"
-                + (f"Pendientes: {len(visitas_pendientes)} visitas (IDs: {', '.join(str(v.id) for v in visitas_pendientes)})" 
-                if visitas_pendientes else "")
-            )
-            return Response({
-                'mensaje': mensaje,
-                'status': status.HTTP_200_OK
-            })
+                    if despacho and despacho.pk:
+                        despacho.save()
+                    if visitas_asignadas:
+                        RutVisita.objects.bulk_update(visitas_asignadas, ['estado_despacho', 'despacho'])
 
-        else:
-            vehiculo_index = 0
-            while vehiculo_index < len(flota_disponible) and visitas_pendientes:
-                flota_item = flota_disponible[vehiculo_index]
-                vehiculo = flota_item.vehiculo
-                
-                if vehiculo.estado_asignado:
+                    if not visitas_pendientes:
+                        break
+
+            else:
+                vehiculo_index = 0
+                while vehiculo_index < len(flota_disponible) and visitas_pendientes:
+                    flota_item = flota_disponible[vehiculo_index]
+                    vehiculo = flota_item.vehiculo
+
+                    if vehiculo.estado_asignado:
+                        vehiculo_index += 1
+                        continue
+
+                    peso_total = 0
+                    tiempo_total = 0
+                    unidades_total = 0
+                    despacho = None
+                    visitas_asignadas = []
+
+                    for visita in list(visitas_pendientes):
+                        if vehiculo_puede_tomar_visita(vehiculo, visita, peso_total, tiempo_total, False):
+                            if despacho is None:
+                                despacho = RutDespacho.objects.create(
+                                    fecha=timezone.now(),
+                                    vehiculo=vehiculo,
+                                    peso=visita.peso,
+                                    volumen=visita.volumen,
+                                    tiempo=visita.tiempo,
+                                    tiempo_servicio=visita.tiempo_servicio,
+                                    tiempo_trayecto=visita.tiempo_trayecto,
+                                    unidades=visita.unidades,
+                                    visitas=1
+                                )
+                                vehiculo.estado_asignado = True
+                                vehiculo.save()
+                                despachos_creados += 1
+                            else:
+                                despacho.peso += visita.peso
+                                despacho.volumen += visita.volumen
+                                despacho.tiempo = (Decimal(despacho.tiempo) + Decimal(visita.tiempo)).quantize(
+                                    decimal_6_places, rounding=ROUND_HALF_UP)
+                                despacho.tiempo_servicio = (Decimal(despacho.tiempo_servicio) + Decimal(visita.tiempo_servicio)).quantize(
+                                    decimal_6_places, rounding=ROUND_HALF_UP)
+                                despacho.tiempo_trayecto = (Decimal(despacho.tiempo_trayecto) + Decimal(visita.tiempo_trayecto)).quantize(
+                                    decimal_6_places, rounding=ROUND_HALF_UP)
+                                despacho.unidades += visita.unidades
+                                despacho.visitas += 1
+
+                            peso_total += visita.peso
+                            tiempo_total += visita.tiempo
+                            unidades_total += visita.unidades
+
+                            visita.estado_despacho = True
+                            visita.despacho = despacho
+                            visitas_asignadas.append(visita)
+                            visitas_pendientes.remove(visita)
+
+                    if despacho and despacho.pk:
+                        despacho.save()
+                    if visitas_asignadas:
+                        RutVisita.objects.bulk_update(visitas_asignadas, ['estado_despacho', 'despacho'])
+
                     vehiculo_index += 1
-                    continue
-                    
-                peso_total = 0
-                tiempo_total = 0
-                unidades_total = 0
-                despacho = None
-                visitas_asignadas_este_vehiculo = 0
 
-                # Hacer copia para iterar seguramente mientras removemos
-                for visita in list(visitas_pendientes):
-                    if vehiculo_puede_tomar_visita(vehiculo, visita, peso_total, tiempo_total, False):
-                        if despacho is None:
-                            despacho = RutDespacho.objects.create(
-                                fecha=timezone.now(),
-                                vehiculo=vehiculo,
-                                peso=visita.peso,
-                                volumen=visita.volumen,
-                                tiempo=visita.tiempo,
-                                tiempo_servicio=visita.tiempo_servicio,
-                                tiempo_trayecto=visita.tiempo_trayecto,
-                                unidades=visita.unidades,
-                                visitas=1
-                            )
-                            vehiculo.estado_asignado = True
-                            vehiculo.save()
-                            despachos_creados += 1
-                        else:
-                            despacho.peso += visita.peso
-                            despacho.volumen += visita.volumen
-                            despacho.tiempo = (Decimal(despacho.tiempo) + Decimal(visita.tiempo)).quantize(
-                                decimal_6_places,
-                                rounding=ROUND_HALF_UP
-                            )
-                            despacho.tiempo_servicio = (Decimal(despacho.tiempo_servicio) + Decimal(visita.tiempo_servicio)).quantize(
-                                decimal_6_places,
-                                rounding=ROUND_HALF_UP
-                            )
-                            despacho.tiempo_trayecto = (Decimal(despacho.tiempo_trayecto) + Decimal(visita.tiempo_trayecto)).quantize(
-                                decimal_6_places,
-                                rounding=ROUND_HALF_UP
-                            )
-                            despacho.unidades += visita.unidades
-                            despacho.visitas += 1
-                            despacho.save()
-
-                        peso_total += visita.peso
-                        tiempo_total += visita.tiempo
-                        unidades_total += visita.unidades
-                        
-                        visita.estado_despacho = True
-                        visita.despacho = despacho
-                        visita.save()
-                        
-                        visitas_pendientes.remove(visita)
-                        visitas_asignadas_este_vehiculo += 1
-
-                vehiculo_index += 1
-
-            mensaje = (
-                f"Operación completada: {despachos_creados} rutas creadas"
-                + (f"Pendientes: {len(visitas_pendientes)} visitas (IDs: {', '.join(str(v.id) for v in visitas_pendientes)})" 
-                if visitas_pendientes else "")
-            )
-
-            return Response({
-                'mensaje': mensaje,
-                'status': status.HTTP_200_OK
-            })
+        mensaje = (
+            f"Operación completada: {despachos_creados} rutas creadas"
+            + (f". Pendientes: {len(visitas_pendientes)} visitas"
+            if visitas_pendientes else "")
+        )
+        return Response({
+            'mensaje': mensaje,
+            'status': status.HTTP_200_OK
+        })
         
     @action(detail=False, methods=["post"], url_path=r'ubicar',)
     def ubicar_action(self, request):             
@@ -588,10 +583,14 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
                     errores = errores.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
                     alertas = alertas.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
-                else:
+                elif operador:
                     visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
                     errores = errores.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
                     alertas = alertas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
+                else:
+                    visitas = visitas.filter(**{filtro['propiedad']: filtro['valor1']})
+                    errores = errores.filter(**{filtro['propiedad']: filtro['valor1']})
+                    alertas = alertas.filter(**{filtro['propiedad']: filtro['valor1']})
 
 
         visitas = visitas.aggregate(
@@ -627,8 +626,10 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 
                 if operador == 'range':
                     visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: (filtro['valor1'], filtro['valor2'])})
+                elif operador:
+                    visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})
                 else:
-                    visitas = visitas.filter(**{filtro['propiedad']+'__'+operador: filtro['valor1']})                    
+                    visitas = visitas.filter(**{filtro['propiedad']: filtro['valor1']})
         visitas = visitas.values('franja_codigo').annotate(
             cantidad=Count('id'), 
             peso=Coalesce(Sum('peso'), 0.0),
@@ -737,63 +738,75 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
 
     @action(detail=False, methods=["post"], url_path=r'despacho-retirar',)
-    def despacho_retirar(self, request):             
+    def despacho_retirar(self, request):
         raw = request.data
         id = raw.get('id')
         if id:
-            try:                               
-                visita = RutVisita.objects.get(pk=id) 
-                despacho = RutDespacho.objects.get(pk=visita.despacho_id)
-                if despacho.estado_aprobado == True:
-                    return Response({'mensaje': 'No se puede retirar la visita porque el despacho esta aprobado.'}, status=status.HTTP_400_BAD_REQUEST)        
-                else:
-                    despacho.peso = despacho.peso - visita.peso
-                    despacho.volumen = despacho.volumen - visita.volumen
-                    despacho.visitas -= 1
-                    despacho.save()                 
-                    visita.despacho = None
-                    visita.estado_despacho = False
-                    visita.save()               
-                    return Response({'mensaje': 'Se retiro la visita del despacho'}, status=status.HTTP_200_OK)
+            try:
+                with transaction.atomic():
+                    visita = RutVisita.objects.get(pk=id)
+                    despacho = RutDespacho.objects.get(pk=visita.despacho_id)
+                    if despacho.estado_aprobado == True:
+                        return Response({'mensaje': 'No se puede retirar la visita porque el despacho esta aprobado.'}, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        despacho.peso = despacho.peso - visita.peso
+                        despacho.volumen = despacho.volumen - visita.volumen
+                        despacho.tiempo = despacho.tiempo - visita.tiempo
+                        despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
+                        despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
+                        despacho.visitas -= 1
+                        despacho.save()
+                        visita.despacho = None
+                        visita.estado_despacho = False
+                        visita.save()
+                        return Response({'mensaje': 'Se retiro la visita del despacho'}, status=status.HTTP_200_OK)
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+            except RutDespacho.DoesNotExist:
+                return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)     
 
     @action(detail=False, methods=["post"], url_path=r'despacho-cambiar',)
-    def despacho_cambiar(self, request):             
+    def despacho_cambiar(self, request):
         raw = request.data
         id = raw.get('id')
         despacho_id = raw.get('despacho_id')
-        if id and despacho_id:            
-            try:                               
-                visita = RutVisita.objects.get(pk=id) 
-                if visita.despacho_id != despacho_id:               
-                    try:
+        if id and despacho_id:
+            try:
+                with transaction.atomic():
+                    visita = RutVisita.objects.get(pk=id)
+                    if visita.despacho_id != despacho_id:
                         despacho_nuevo = RutDespacho.objects.get(pk=despacho_id)
-                        if visita.despacho_id:                                                
+                        if visita.despacho_id:
                             despacho_actual = RutDespacho.objects.get(pk=visita.despacho_id)
                             despacho_actual.peso = despacho_actual.peso - visita.peso
                             despacho_actual.volumen = despacho_actual.volumen - visita.volumen
+                            despacho_actual.tiempo = despacho_actual.tiempo - visita.tiempo
+                            despacho_actual.tiempo_servicio = despacho_actual.tiempo_servicio - visita.tiempo_servicio
+                            despacho_actual.tiempo_trayecto = despacho_actual.tiempo_trayecto - visita.tiempo_trayecto
                             despacho_actual.visitas -= 1
                             despacho_actual.save()
 
                             despacho_nuevo.peso = despacho_nuevo.peso + visita.peso
                             despacho_nuevo.volumen = despacho_nuevo.volumen + visita.volumen
+                            despacho_nuevo.tiempo = despacho_nuevo.tiempo + visita.tiempo
+                            despacho_nuevo.tiempo_servicio = despacho_nuevo.tiempo_servicio + visita.tiempo_servicio
+                            despacho_nuevo.tiempo_trayecto = despacho_nuevo.tiempo_trayecto + visita.tiempo_trayecto
                             despacho_nuevo.visitas += 1
                             despacho_nuevo.save()
 
                             visita.despacho = despacho_nuevo
-                            visita.save() 
-                            return Response({'mensaje': 'Se cambio la visita de despacho'}, status=status.HTTP_200_OK)                        
+                            visita.save()
+                            return Response({'mensaje': 'Se cambio la visita de despacho'}, status=status.HTTP_200_OK)
                         else:
-                            return Response({'mensaje':'La visita no tiene despacho', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                                                                            
-                    except RutDespacho.DoesNotExist:
-                        return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)                
-                else:
-                    return Response({'mensaje':'La visita ya está en este despacho', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                
+                            return Response({'mensaje':'La visita no tiene despacho', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        return Response({'mensaje':'La visita ya está en este despacho', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+            except RutDespacho.DoesNotExist:
+                return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -884,7 +897,9 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                                     'base64': base64_encoded,
                                 })                                                                                                                                                                                                     
                         VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
-            return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)                                                                     
+                return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
+            else:
+                return Response({'mensaje': 'La visita ya fue entregada', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
