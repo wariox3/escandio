@@ -25,7 +25,6 @@ class NotificacionServicio():
 
     @staticmethod
     def notificar_despacho_aprobado(despacho_id):
-        id_plantilla = config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='', cast=int if config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='') else str)
         try:
             id_plantilla = int(config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='0'))
         except (ValueError, TypeError):
@@ -60,11 +59,18 @@ class NotificacionServicio():
                 enviados = 0
                 errores = 0
                 for telefono, datos in destinatarios.items():
-                    documentos_texto = ', '.join(datos['documentos']) if datos['documentos'] else ''
+                    documentos_texto = ', '.join(datos['documentos']) if datos['documentos'] else 'N/A'
+
+                    variables = [
+                        {'type': 'text', 'text': datos['nombre']},
+                        {'type': 'text', 'text': documentos_texto},
+                        {'type': 'text', 'text': 'Ruteo.co'},
+                    ]
 
                     resultado = gc.enviar_plantilla(
                         id_plantilla=id_plantilla,
                         destino=telefono,
+                        variables=variables,
                     )
 
                     if resultado['error']:
