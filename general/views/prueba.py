@@ -42,9 +42,15 @@ def prueba_globalconnect_enviar(request):
     if not id_plantilla:
         return Response({'mensaje': 'GLOBALCONNECT_PLANTILLA_DESPACHO no configurada'}, status=status.HTTP_400_BAD_REQUEST)
     gc = GlobalConnect()
+    variables = [
+        {'type': 'text', 'text': nombre},
+        {'type': 'text', 'text': documento},
+        {'type': 'text', 'text': 'Ruteo.co'},
+    ]
     resultado = gc.enviar_plantilla(
         id_plantilla=id_plantilla,
         destino=telefono_normalizado,
+        variables=variables,
     )
     return Response({'telefono_normalizado': telefono_normalizado, 'resultado': resultado})
 
