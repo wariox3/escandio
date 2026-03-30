@@ -115,10 +115,10 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         despacho.fecha_salida = datetime.now()
                         despacho.entrega_id = entrega.id
                         despacho.save()
-                        NotificacionServicio.notificar_despacho_aprobado(despacho.id)
-                        return Response({'mensaje': 'Se aprobo el despacho'}, status=status.HTTP_200_OK)                
                     else:
-                        return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                        
+                        return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                NotificacionServicio.notificar_despacho_aprobado(despacho.id)
+                return Response({'mensaje': 'Se aprobo el despacho'}, status=status.HTTP_200_OK)
             except RutDespacho.DoesNotExist:
                 return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
