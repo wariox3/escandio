@@ -2,6 +2,7 @@ from django.db import models
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.franja import RutFranja
 from general.models.ciudad import GenCiudad
+from general.models.api_key import GenApiKey
 
 CITA_TIPO_CHOICES = [
     ('obligatoria', 'Obligatoria'),
@@ -47,6 +48,7 @@ class RutVisita(models.Model):
     cita_tipo = models.CharField(max_length=20, choices=CITA_TIPO_CHOICES, null=True, blank=True)
     despacho = models.ForeignKey(RutDespacho, null=True, on_delete=models.PROTECT, related_name='visitas_despacho_rel')
     ciudad = models.ForeignKey(GenCiudad, null=True, on_delete=models.PROTECT, default=1, related_name='visitas_ciudad_rel')
+    api_key = models.ForeignKey(GenApiKey, null=True, blank=True, on_delete=models.SET_NULL, related_name='visitas_api_key_rel')
 
     def save(self, *args, **kwargs):
         self.tiempo = self.tiempo_servicio + self.tiempo_trayecto

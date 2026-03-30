@@ -120,6 +120,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             'latitud': None,
             'longitud': None,
             'estado_decodificado': False,
+            'cita_inicio': request.data.get('cita_inicio', None),
+            'cita_fin': request.data.get('cita_fin', None),
         }
         if direccion_destinatario:
             direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
@@ -336,12 +338,9 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             else:
                 visitas = visitas.filter(**{propiedad: filtro['valor1']})
         if visitas.exists():
-            try:
-                respuesta = VisitaServicio.ordenar(visitas)
-                if respuesta and respuesta.get('error') == True:
-                    return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
-            except Exception as e:
-                return Response({'mensaje': f'Error al ordenar: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+            respuesta = VisitaServicio.ordenar(visitas)
+            if respuesta and respuesta.get('error') == True:
+                return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'mensaje':'visitas ordenadas'}, status=status.HTTP_200_OK)
         
     @action(detail=False, methods=["post"], url_path=r'rutear')
@@ -385,6 +384,11 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     visitas = visitas.filter(**{f'{propiedad}__{operador}': (filtro['valor1'], filtro['valor2'])})
                 elif operador:
                     visitas = visitas.filter(**{f'{propiedad}__{operador}': filtro['valor1']})
+        visitas_a_ordenar = visitas.filter(estado_decodificado=True)
+        if visitas_a_ordenar.exists():
+            resultado_orden = VisitaServicio.ordenar(visitas_a_ordenar)
+            if resultado_orden and resultado_orden.get('error'):
+                return Response({'mensaje': resultado_orden['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
         visitas = visitas.order_by('orden')
         visitas_pendientes = list(visitas)
         despachos_creados = 0
@@ -730,6 +734,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 visita.unidades = unidades
                 visita.peso = peso
                 visita.volumen = volumen
+                visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
+                visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
                 visita.save()               
                 return Response({'mensaje': 'Se actualizo la visita'}, status=status.HTTP_200_OK)
             except RutVisita.DoesNotExist:
