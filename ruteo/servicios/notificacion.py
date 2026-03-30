@@ -2,6 +2,7 @@ import re
 import threading
 import logging
 from decouple import config
+from django.db import connection
 from ruteo.models.visita import RutVisita
 from utilidades.globalconnect import GlobalConnect
 
@@ -24,7 +25,7 @@ class NotificacionServicio():
         return numero if len(numero) >= 10 else None
 
     @staticmethod
-    def notificar_despacho_aprobado(despacho_id):
+    def notificar_despacho_aprobado(despacho_id, schema_name=None):
         try:
             id_plantilla = int(config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='0'))
         except (ValueError, TypeError):
@@ -34,8 +35,12 @@ class NotificacionServicio():
             logger.warning('GLOBALCONNECT_PLANTILLA_DESPACHO no configurada, no se envian notificaciones WhatsApp')
             return
 
+        if not schema_name:
+            schema_name = connection.schema_name
+
         def enviar_mensajes():
             try:
+                connection.set_schema(schema_name)
                 gc = GlobalConnect()
                 visitas = RutVisita.objects.filter(
                     despacho_id=despacho_id
