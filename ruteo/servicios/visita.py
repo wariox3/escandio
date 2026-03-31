@@ -92,6 +92,12 @@ class VisitaServicio():
         if tiene_citas:
             resultado = VisitaServicio._ordenar_con_ventanas(visitas, configuracion)
             if resultado and resultado.get('error'):
+                tiene_obligatorias = any(
+                    getattr(v, 'cita_tipo', 'obligatoria') == 'obligatoria'
+                    for v in visitas if v.cita_inicio is not None
+                )
+                if tiene_obligatorias:
+                    return resultado
                 return VisitaServicio._ordenar_distancia(visitas, configuracion)
             return resultado
         else:
