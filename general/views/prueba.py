@@ -44,8 +44,8 @@ def prueba_globalconnect_enviar(request):
     gc = GlobalConnect()
     variables = [
         {'type': 'text', 'text': nombre},
-        {'type': 'text', 'text': documento},
         {'type': 'text', 'text': 'Ruteo.co'},
+        {'type': 'text', 'text': documento},
     ]
     resultado = gc.enviar_plantilla(
         id_plantilla=id_plantilla,
