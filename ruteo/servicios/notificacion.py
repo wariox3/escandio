@@ -68,8 +68,8 @@ class NotificacionServicio():
 
                     variables = [
                         {'type': 'text', 'text': datos['nombre']},
-                        {'type': 'text', 'text': documentos_texto},
                         {'type': 'text', 'text': 'Ruteo.co'},
+                        {'type': 'text', 'text': documentos_texto},
                     ]
 
                     resultado = gc.enviar_plantilla(
