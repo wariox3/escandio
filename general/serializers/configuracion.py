@@ -14,6 +14,7 @@ class GenConfiguracionSerializador(serializers.ModelSerializer):
             'rut_latitud',
             'rut_longitud',
             'rut_decodificar_direcciones',
+            'rut_hora_inicio',
             'rut_whatsapp_habilitado'
         ]   
         select_related_fields = ['empresa']   
