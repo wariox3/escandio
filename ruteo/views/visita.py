@@ -341,6 +341,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             respuesta = VisitaServicio.ordenar(visitas)
             if respuesta and respuesta.get('error') == True:
                 return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'mensaje':'visitas ordenadas', 'debug': respuesta.get('debug')}, status=status.HTTP_200_OK)
         return Response({'mensaje':'visitas ordenadas'}, status=status.HTTP_200_OK)
         
     @action(detail=False, methods=["post"], url_path=r'rutear')
