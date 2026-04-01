@@ -251,8 +251,16 @@ class VisitaServicio():
 
         time_callback_index = routing.RegisterTransitCallback(tiempo_callback)
 
-        # Costo = tiempo (trayecto + servicio), para que el solver minimice tiempo total
-        routing.SetArcCostEvaluatorOfAllVehicles(time_callback_index)
+        # Callback de distancia — usado como costo para priorizar proximidad
+        def distancia_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return int(matriz[from_node][to_node] * 1000)
+
+        distancia_callback_index = routing.RegisterTransitCallback(distancia_callback)
+
+        # Costo = distancia, para que el solver minimice recorrido total
+        routing.SetArcCostEvaluatorOfAllVehicles(distancia_callback_index)
 
         # Dimensión de tiempo para aplicar ventanas horarias
         routing.AddDimension(
