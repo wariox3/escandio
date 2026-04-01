@@ -9,13 +9,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from utilidades.utilidades import Utilidades
-from datetime import datetime
+from datetime import datetime, time
 from shapely.geometry import Point, Polygon
 from math import radians, cos, sin, asin, sqrt, atan2
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from decimal import Decimal, ROUND_HALF_UP
 import numpy as np
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 class VisitaServicio():
 
@@ -160,11 +163,10 @@ class VisitaServicio():
         # Hora de salida del vehículo: fecha de hoy + hora de inicio configurada
         hora_inicio = configuracion.get('rut_hora_inicio')
         hoy = timezone.now().date()
-        if hora_inicio:
-            hora_salida_naive = datetime.combine(hoy, hora_inicio)
-            hora_salida = timezone.make_aware(hora_salida_naive) if timezone.is_naive(hora_salida_naive) else hora_salida_naive
-        else:
-            hora_salida = timezone.now()
+        if not hora_inicio:
+            hora_inicio = time(7, 0)
+        hora_salida_naive = datetime.combine(hoy, hora_inicio)
+        hora_salida = timezone.make_aware(hora_salida_naive) if timezone.is_naive(hora_salida_naive) else hora_salida_naive
 
         punto_inicial = {'latitud': latitud, 'longitud': longitud}
         matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)
@@ -225,6 +227,10 @@ class VisitaServicio():
             else:
                 ventanas.append((0, horizonte))
                 tipos_cita.append(None)
+
+        logger.info(f'Ventanas horarias: hora_salida={hora_salida}, horizonte={horizonte}min')
+        for i, v in enumerate(visitas):
+            logger.info(f'  Visita {v.numero} ({v.destinatario[:20]}): ventana={ventanas[i+1]}, tipo={tipos_cita[i+1]}')
 
         manager = pywrapcp.RoutingIndexManager(n, 1, 0)
         routing = pywrapcp.RoutingModel(manager)
