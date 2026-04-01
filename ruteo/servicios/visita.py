@@ -86,7 +86,7 @@ class VisitaServicio():
 
     @staticmethod
     def ordenar(visitas: RutVisita):
-        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud', 'rut_hora_inicio')[0]
+        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud', 'rut_hora_inicio', 'rut_estrategia_ruteo')[0]
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
             return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
 
@@ -251,7 +251,7 @@ class VisitaServicio():
 
         time_callback_index = routing.RegisterTransitCallback(tiempo_callback)
 
-        # Callback de distancia — usado como costo para priorizar proximidad
+        # Callback de distancia
         def distancia_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
@@ -259,8 +259,12 @@ class VisitaServicio():
 
         distancia_callback_index = routing.RegisterTransitCallback(distancia_callback)
 
-        # Costo = distancia, para que el solver minimice recorrido total
-        routing.SetArcCostEvaluatorOfAllVehicles(distancia_callback_index)
+        # Seleccionar costo según estrategia
+        estrategia = configuracion.get('rut_estrategia_ruteo', 'balanceado')
+        if estrategia == 'distancia':
+            routing.SetArcCostEvaluatorOfAllVehicles(distancia_callback_index)
+        else:
+            routing.SetArcCostEvaluatorOfAllVehicles(time_callback_index)
 
         # Dimensión de tiempo para aplicar ventanas horarias
         routing.AddDimension(
@@ -293,8 +297,13 @@ class VisitaServicio():
                 # Sin cita: ventana abierta
                 time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
 
-        # Coeficiente bajo para priorizar proximidad sobre evitar esperas
-        time_dimension.SetGlobalSpanCostCoefficient(1)
+        # Coeficiente de span según estrategia
+        if estrategia == 'distancia':
+            time_dimension.SetGlobalSpanCostCoefficient(0)
+        elif estrategia == 'tiempo':
+            time_dimension.SetGlobalSpanCostCoefficient(10)
+        else:  # balanceado
+            time_dimension.SetGlobalSpanCostCoefficient(3)
 
         # Estrategia de búsqueda
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
