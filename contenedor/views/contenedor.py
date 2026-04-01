@@ -174,7 +174,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         except Contenedor.DoesNotExist:
             return Response({'mensaje':'La empresa no existe', 'codigo':15}, status=status.HTTP_404_NOT_FOUND)     
 
-    @action(detail=False, methods=["post"], url_path=r'toggle-whatsapp',)
+    @action(detail=False, methods=["post"], url_path=r'toggle-whatsapp', permission_classes=[permissions.IsAdminUser])
     def toggle_whatsapp(self, request):
         contenedor_id = request.data.get('id')
         if not contenedor_id:
@@ -190,7 +190,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         except Contenedor.DoesNotExist:
             return Response({'mensaje': 'El contenedor no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=["get"], url_path=r'admin-lista',)
+    @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
     def admin_lista(self, request):
         contenedores = Contenedor.objects.exclude(schema_name='public').values(
             'id', 'schema_name', 'nombre', 'acceso_whatsapp', 'fecha', 'usuarios'
