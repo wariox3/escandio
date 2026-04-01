@@ -162,7 +162,7 @@ class VisitaServicio():
 
         # Hora de salida del vehículo: la mayor entre hora configurada y hora actual
         hora_inicio = configuracion.get('rut_hora_inicio')
-        ahora = timezone.now()
+        ahora = timezone.localtime(timezone.now())
         hoy = ahora.date()
         if not hora_inicio:
             hora_inicio = time(7, 0)
