@@ -320,8 +320,15 @@ class VisitaServicio():
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
             visita.save()
-        return {'error': False}
-    
+        return {
+            'error': False,
+            'debug': {
+                'hora_salida': str(hora_salida),
+                'ventanas': {str(visitas[i].numero): {'ventana': ventanas[i+1], 'tipo': tipos_cita[i+1]} for i in range(len(visitas))},
+                'orden_resultado': [visitas[i].numero for i in orden],
+            }
+        }
+
     @staticmethod
     def importar_complemento(limite=100, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=None, despacho_id=None):        
         parametros = {
