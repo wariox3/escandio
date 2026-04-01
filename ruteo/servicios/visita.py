@@ -285,8 +285,8 @@ class VisitaServicio():
                 # Sin cita: ventana abierta
                 time_dimension.CumulVar(index).SetRange(tw_inicio, tw_fin)
 
-        # Minimizar el tiempo total acumulado (penaliza esperas largas)
-        time_dimension.SetGlobalSpanCostCoefficient(10)
+        # Coeficiente bajo para priorizar proximidad sobre evitar esperas
+        time_dimension.SetGlobalSpanCostCoefficient(1)
 
         # Estrategia de búsqueda
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
