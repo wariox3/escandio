@@ -7,13 +7,14 @@ from decouple import config
 class GenConfiguracionSerializador(serializers.ModelSerializer):
     class Meta:
         model = GenConfiguracion
-        fields = ['id', 'empresa', 'informacion_factura', 'informacion_factura_superior',         
-            'rut_sincronizar_complemento', 
-            'rut_rutear_franja', 
-            'rut_direccion_origen', 
-            'rut_latitud', 
+        fields = ['id', 'empresa', 'informacion_factura', 'informacion_factura_superior',
+            'rut_sincronizar_complemento',
+            'rut_rutear_franja',
+            'rut_direccion_origen',
+            'rut_latitud',
             'rut_longitud',
-            'rut_decodificar_direcciones'
+            'rut_decodificar_direcciones',
+            'rut_whatsapp_habilitado'
         ]   
         select_related_fields = ['empresa']   
 

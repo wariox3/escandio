@@ -174,6 +174,29 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         except Contenedor.DoesNotExist:
             return Response({'mensaje':'La empresa no existe', 'codigo':15}, status=status.HTTP_404_NOT_FOUND)     
 
+    @action(detail=False, methods=["post"], url_path=r'toggle-whatsapp',)
+    def toggle_whatsapp(self, request):
+        contenedor_id = request.data.get('id')
+        if not contenedor_id:
+            return Response({'mensaje': 'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+            contenedor.acceso_whatsapp = not contenedor.acceso_whatsapp
+            contenedor.save()
+            return Response({
+                'mensaje': f'WhatsApp {"activado" if contenedor.acceso_whatsapp else "desactivado"} para {contenedor.nombre}',
+                'acceso_whatsapp': contenedor.acceso_whatsapp
+            }, status=status.HTTP_200_OK)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje': 'El contenedor no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["get"], url_path=r'admin-lista',)
+    def admin_lista(self, request):
+        contenedores = Contenedor.objects.exclude(schema_name='public').values(
+            'id', 'schema_name', 'nombre', 'acceso_whatsapp', 'fecha', 'usuarios'
+        ).order_by('nombre')
+        return Response(list(contenedores), status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path=r'conectar',)
     def conectar(self, request):
         raw = request.data
