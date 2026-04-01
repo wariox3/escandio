@@ -16,6 +16,7 @@ class GenConfiguracion(models.Model):
     rut_longitud = models.DecimalField(max_digits=25, decimal_places=15, null=True)
     rut_hora_inicio = models.TimeField(null=True, default='07:00')
     rut_cita_tipo_defecto = models.CharField(max_length=20, choices=[('obligatoria', 'Obligatoria'), ('preferente', 'Preferente')], default='obligatoria')
+    rut_whatsapp_habilitado = models.BooleanField(default=False)
     tte_usuario_rndc = models.CharField(max_length=50, null=True)
     tte_clave_rndc = models.CharField(max_length=50, null=True)
     tte_numero_poliza = models.CharField(max_length=50, null=True)

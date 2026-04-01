@@ -3,6 +3,8 @@ import threading
 import logging
 from decouple import config
 from django.db import connection
+from contenedor.models import Contenedor
+from general.models.configuracion import GenConfiguracion
 from ruteo.models.visita import RutVisita
 from utilidades.globalconnect import GlobalConnect
 
@@ -25,7 +27,7 @@ class NotificacionServicio():
         return numero if len(numero) >= 10 else None
 
     @staticmethod
-    def notificar_despacho_aprobado(despacho_id, schema_name=None, nombre_empresa=None):
+    def notificar_despacho_aprobado(despacho_id, schema_name=None, nombre_empresa=None, contenedor_id=None):
         try:
             id_plantilla = int(config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='0'))
         except (ValueError, TypeError):
@@ -35,12 +37,26 @@ class NotificacionServicio():
             logger.warning('GLOBALCONNECT_PLANTILLA_DESPACHO no configurada, no se envian notificaciones WhatsApp')
             return
 
+        if contenedor_id:
+            try:
+                contenedor = Contenedor.objects.get(pk=contenedor_id)
+                if not contenedor.acceso_whatsapp:
+                    logger.info(f'Despacho {despacho_id}: WhatsApp no autorizado por admin para contenedor {contenedor_id}')
+                    return
+            except Contenedor.DoesNotExist:
+                logger.warning(f'Despacho {despacho_id}: contenedor {contenedor_id} no encontrado')
+                return
+
         if not schema_name:
             schema_name = connection.schema_name
 
         def enviar_mensajes():
             try:
                 connection.set_schema(schema_name)
+                config_tenant = GenConfiguracion.objects.filter(pk=1).values('rut_whatsapp_habilitado').first()
+                if not config_tenant or not config_tenant.get('rut_whatsapp_habilitado', False):
+                    logger.info(f'Despacho {despacho_id}: WhatsApp deshabilitado por configuración del tenant')
+                    return
                 gc = GlobalConnect()
                 visitas = RutVisita.objects.filter(
                     despacho_id=despacho_id

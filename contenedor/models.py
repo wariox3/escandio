@@ -68,11 +68,12 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 class Contenedor(TenantMixin):
     schema_name = models.CharField(max_length=100)
-    nombre = models.CharField(max_length=200, null=True)    
+    nombre = models.CharField(max_length=200, null=True)
     fecha = models.DateTimeField(auto_now_add=True)
     fecha_ultima_conexion = models.DateTimeField(auto_now_add=True, null=True)
-    imagen = models.TextField(null=True)    
-    usuarios = models.IntegerField(default=1)         
+    imagen = models.TextField(null=True)
+    usuarios = models.IntegerField(default=1)
+    acceso_whatsapp = models.BooleanField(default=False)
     auto_create_schema = True
     auto_drop_schema = True
     usuario = models.ForeignKey(User, on_delete=models.PROTECT, null=True)
