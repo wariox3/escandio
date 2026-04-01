@@ -160,13 +160,16 @@ class VisitaServicio():
         latitud = float(configuracion['rut_latitud'])
         longitud = float(configuracion['rut_longitud'])
 
-        # Hora de salida del vehículo: fecha de hoy + hora de inicio configurada
+        # Hora de salida del vehículo: la mayor entre hora configurada y hora actual
         hora_inicio = configuracion.get('rut_hora_inicio')
-        hoy = timezone.now().date()
+        ahora = timezone.now()
+        hoy = ahora.date()
         if not hora_inicio:
             hora_inicio = time(7, 0)
         hora_salida_naive = datetime.combine(hoy, hora_inicio)
         hora_salida = timezone.make_aware(hora_salida_naive) if timezone.is_naive(hora_salida_naive) else hora_salida_naive
+        if ahora > hora_salida:
+            hora_salida = ahora
 
         punto_inicial = {'latitud': latitud, 'longitud': longitud}
         matriz = VisitaServicio.construir_matriz_distancias(visitas, punto_inicial)
