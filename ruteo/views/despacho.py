@@ -117,7 +117,7 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         despacho.save()
                     else:
                         return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                NotificacionServicio.notificar_despacho_aprobado(despacho.id, schema_name=request.tenant.schema_name)
+                NotificacionServicio.notificar_despacho_aprobado(despacho.id, schema_name=request.tenant.schema_name, nombre_empresa=request.tenant.nombre)
                 return Response({'mensaje': 'Se aprobo el despacho'}, status=status.HTTP_200_OK)
             except RutDespacho.DoesNotExist:
                 return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
