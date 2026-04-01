@@ -27,39 +27,40 @@ class RutVisitaSerializador(serializers.ModelSerializer):
         fields = ['id', 'numero', 'fecha', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
                   'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
                   'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'franja_id', 'franja_codigo', 'resultados',
-                  'datos_entrega', 'remitente', 'cobro', 'cita_inicio', 'cita_fin',
+                  'datos_entrega', 'remitente', 'cobro', 'observacion', 'cita_inicio', 'cita_fin',
                   'estado_decodificado', 'estado_novedad', 'estado_devolucion', 'estado_decodificado_alerta',
                   'estado_entregado', 'estado_entregado_complemento', 'estado_despacho']
         select_related_fields = ['despacho', 'ciudad']
 
-class RutVistaListaSerializador(serializers.ModelSerializer):    
+class RutVistaListaSerializador(serializers.ModelSerializer):
     class Meta:
         model = RutVisita
         fields = [
-            'id', 
-            'numero', 
-            'fecha', 
-            'documento', 
+            'id',
+            'numero',
+            'fecha',
+            'documento',
             'remitente',
-            'destinatario', 
-            'destinatario_direccion', 
-            'destinatario_direccion_formato', 
-            'destinatario_telefono', 
-            'destinatario_correo', 
+            'destinatario',
+            'destinatario_direccion',
+            'destinatario_direccion_formato',
+            'destinatario_telefono',
+            'destinatario_correo',
             'unidades',
-            'peso', 
-            'volumen', 
-            'cobro', 
-            'tiempo', 
-            'tiempo_servicio', 
+            'peso',
+            'volumen',
+            'cobro',
+            'tiempo',
+            'tiempo_servicio',
             'tiempo_trayecto',
-            'latitud', 
-            'longitud', 
-            'orden', 
-            'distancia', 
+            'latitud',
+            'longitud',
+            'orden',
+            'distancia',
             'despacho_id',
-            'franja_id', 
+            'franja_id',
             'franja_codigo',
+            'observacion',
             'estado_novedad',
             'estado_devolucion',
             'estado_entregado',
@@ -68,15 +69,15 @@ class RutVistaListaSerializador(serializers.ModelSerializer):
             'cita_fin'
         ]
 
-class RutVisitaDetalleSerializador(serializers.ModelSerializer):    
+class RutVisitaDetalleSerializador(serializers.ModelSerializer):
     ciudad__nombre = serializers.CharField(source='ciudad.nombre', read_only=True, allow_null=True, default=None)
-    
+
     class Meta:
         model = RutVisita
         fields = ['id', 'numero', 'fecha', 'documento', 'remitente', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
                   'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
                   'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'franja_id', 'franja_codigo', 'resultados',
-                  'datos_entrega', 'cita_inicio', 'cita_fin',
+                  'datos_entrega', 'observacion', 'cita_inicio', 'cita_fin',
                   'estado_decodificado', 'estado_novedad', 'estado_devolucion', 'estado_decodificado_alerta',
                   'estado_entregado', 'estado_entregado_complemento', 'estado_despacho']
         select_related_fields = ['despacho', 'ciudad']

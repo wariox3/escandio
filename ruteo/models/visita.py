@@ -43,6 +43,7 @@ class RutVisita(models.Model):
     franja_id = models.IntegerField(null=True)
     franja_codigo = models.CharField(max_length=20, null=True)
     datos_entrega = models.JSONField(null=True, blank=True, default=dict, help_text="Datos de la entrega (nombre, identificación, teléfono, etc.)")    
+    observacion = models.TextField(null=True, blank=True)
     cita_inicio = models.DateTimeField(null=True, blank=True)
     cita_fin = models.DateTimeField(null=True, blank=True)
     cita_tipo = models.CharField(max_length=20, choices=CITA_TIPO_CHOICES, null=True, blank=True)
