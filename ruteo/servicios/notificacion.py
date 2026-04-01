@@ -25,7 +25,7 @@ class NotificacionServicio():
         return numero if len(numero) >= 10 else None
 
     @staticmethod
-    def notificar_despacho_aprobado(despacho_id, schema_name=None):
+    def notificar_despacho_aprobado(despacho_id, schema_name=None, nombre_empresa=None):
         try:
             id_plantilla = int(config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='0'))
         except (ValueError, TypeError):
@@ -68,7 +68,7 @@ class NotificacionServicio():
 
                     variables = [
                         {'type': 'text', 'text': datos['nombre']},
-                        {'type': 'text', 'text': 'Ruteo.co'},
+                        {'type': 'text', 'text': nombre_empresa or 'Ruteo.co'},
                         {'type': 'text', 'text': documentos_texto},
                     ]
 
