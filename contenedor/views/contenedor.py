@@ -10,12 +10,16 @@ from general.serializers.configuracion import GenConfiguracionSerializador
 from contenedor.models import User
 from django.core.management import call_command
 from django.shortcuts import get_object_or_404
+from django.db import connection
+from django.db.models import Sum, Count, Q
 from decouple import config
 from utilidades.space_do import SpaceDo
 from django_tenants.utils import schema_context
 import os
+import io
 from datetime import datetime
 from django.utils import timezone
+from django.http import HttpResponse
 from threading import Thread
 
 def cargar_fixtures_en_segundo_plano(schema_name):
@@ -196,6 +200,140 @@ class ContenedorViewSet(viewsets.ModelViewSet):
             'id', 'schema_name', 'nombre', 'acceso_whatsapp', 'fecha', 'usuarios'
         ).order_by('nombre')
         return Response(list(contenedores), status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path=r'admin-entregas', permission_classes=[permissions.IsAdminUser])
+    def admin_entregas(self, request):
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
+        if not fecha_desde or not fecha_hasta:
+            return Response(
+                {'mensaje': 'Se requieren los parámetros fecha_desde y fecha_hasta', 'codigo': 1},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from ruteo.models.despacho import RutDespacho
+
+        contenedores = Contenedor.objects.exclude(schema_name='public').values(
+            'id', 'schema_name', 'nombre'
+        ).order_by('nombre')
+
+        resultados = []
+        totales = {
+            'total_despachos': 0,
+            'visitas': 0,
+            'visitas_entregadas': 0,
+            'visitas_novedad': 0,
+            'unidades': 0,
+            'peso': 0.0,
+            'volumen': 0.0,
+        }
+
+        for contenedor in contenedores:
+            try:
+                with schema_context(contenedor['schema_name']):
+                    agregados = RutDespacho.objects.filter(
+                        estado_aprobado=True,
+                        estado_anulado=False,
+                        fecha__date__gte=fecha_desde,
+                        fecha__date__lte=fecha_hasta,
+                    ).aggregate(
+                        total_despachos=Count('id'),
+                        visitas=Sum('visitas'),
+                        visitas_entregadas=Sum('visitas_entregadas'),
+                        visitas_novedad=Sum('visitas_novedad'),
+                        unidades=Sum('unidades'),
+                        peso=Sum('peso'),
+                        volumen=Sum('volumen'),
+                    )
+
+                datos = {
+                    'contenedor_id': contenedor['id'],
+                    'schema_name': contenedor['schema_name'],
+                    'nombre': contenedor['nombre'] or contenedor['schema_name'],
+                    'total_despachos': agregados['total_despachos'] or 0,
+                    'visitas': agregados['visitas'] or 0,
+                    'visitas_entregadas': agregados['visitas_entregadas'] or 0,
+                    'visitas_novedad': agregados['visitas_novedad'] or 0,
+                    'unidades': agregados['unidades'] or 0,
+                    'peso': round(agregados['peso'] or 0, 1),
+                    'volumen': round(agregados['volumen'] or 0, 1),
+                }
+
+                if datos['total_despachos'] > 0:
+                    resultados.append(datos)
+                    for key in totales:
+                        totales[key] += datos[key]
+            except Exception:
+                continue
+
+        totales['peso'] = round(totales['peso'], 1)
+        totales['volumen'] = round(totales['volumen'], 1)
+
+        formato = request.query_params.get('formato')
+        if formato == 'xlsx':
+            return self._generar_excel_entregas(resultados, totales, fecha_desde, fecha_hasta)
+
+        return Response({
+            'resultados': resultados,
+            'totales': totales,
+        }, status=status.HTTP_200_OK)
+
+    def _generar_excel_entregas(self, resultados, totales, fecha_desde, fecha_hasta):
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Entregas por empresa'
+
+        encabezados = [
+            'Empresa', 'Subdominio', 'Despachos', 'Visitas',
+            'Entregadas', 'Novedades', 'Unidades', 'Peso (kg)', 'Volumen (m³)'
+        ]
+        header_font = Font(bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='0098D7', end_color='0098D7', fill_type='solid')
+
+        for col, titulo in enumerate(encabezados, 1):
+            celda = ws.cell(row=1, column=col, value=titulo)
+            celda.font = header_font
+            celda.fill = header_fill
+            celda.alignment = Alignment(horizontal='center')
+
+        for fila, empresa in enumerate(resultados, 2):
+            ws.cell(row=fila, column=1, value=empresa['nombre'])
+            ws.cell(row=fila, column=2, value=empresa['schema_name'])
+            ws.cell(row=fila, column=3, value=empresa['total_despachos'])
+            ws.cell(row=fila, column=4, value=empresa['visitas'])
+            ws.cell(row=fila, column=5, value=empresa['visitas_entregadas'])
+            ws.cell(row=fila, column=6, value=empresa['visitas_novedad'])
+            ws.cell(row=fila, column=7, value=empresa['unidades'])
+            ws.cell(row=fila, column=8, value=empresa['peso'])
+            ws.cell(row=fila, column=9, value=empresa['volumen'])
+
+        fila_total = len(resultados) + 2
+        total_font = Font(bold=True)
+        ws.cell(row=fila_total, column=1, value='TOTAL').font = total_font
+        ws.cell(row=fila_total, column=3, value=totales['total_despachos']).font = total_font
+        ws.cell(row=fila_total, column=4, value=totales['visitas']).font = total_font
+        ws.cell(row=fila_total, column=5, value=totales['visitas_entregadas']).font = total_font
+        ws.cell(row=fila_total, column=6, value=totales['visitas_novedad']).font = total_font
+        ws.cell(row=fila_total, column=7, value=totales['unidades']).font = total_font
+        ws.cell(row=fila_total, column=8, value=totales['peso']).font = total_font
+        ws.cell(row=fila_total, column=9, value=totales['volumen']).font = total_font
+
+        for col in range(1, 10):
+            ws.column_dimensions[chr(64 + col)].width = 18
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="entregas_{fecha_desde}_{fecha_hasta}.xlsx"'
+        return response
 
     @action(detail=False, methods=["post"], url_path=r'conectar',)
     def conectar(self, request):
