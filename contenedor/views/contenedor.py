@@ -109,6 +109,10 @@ class ContenedorViewSet(viewsets.ModelViewSet):
             return Response({'mensaje': 'Faltan datos para el consumo de la api', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                   
         except User.DoesNotExist:
             return Response({'mensaje':'No existe el usuario para crear la empresa', 'codigo':17}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({'mensaje': f'Error interno: {str(e)}', 'codigo': 500}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def retrieve(self, request, pk=None):
         contenedor = self.get_object(pk)
