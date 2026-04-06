@@ -212,6 +212,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
             )
 
         from ruteo.models.despacho import RutDespacho
+        from ruteo.models.visita import RutVisita
 
         contenedores = Contenedor.objects.exclude(schema_name='public').values(
             'id', 'schema_name', 'nombre'
@@ -226,6 +227,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
             'unidades': 0,
             'peso': 0.0,
             'volumen': 0.0,
+            'decodificadas': 0,
         }
 
         for contenedor in contenedores:
@@ -246,6 +248,12 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                         volumen=Sum('volumen'),
                     )
 
+                    decodificadas = RutVisita.objects.filter(
+                        estado_decodificado=True,
+                        fecha__date__gte=fecha_desde,
+                        fecha__date__lte=fecha_hasta,
+                    ).count()
+
                 datos = {
                     'contenedor_id': contenedor['id'],
                     'schema_name': contenedor['schema_name'],
@@ -257,9 +265,10 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                     'unidades': agregados['unidades'] or 0,
                     'peso': round(agregados['peso'] or 0, 1),
                     'volumen': round(agregados['volumen'] or 0, 1),
+                    'decodificadas': decodificadas,
                 }
 
-                if datos['total_despachos'] > 0:
+                if datos['total_despachos'] > 0 or datos['decodificadas'] > 0:
                     resultados.append(datos)
                     for key in totales:
                         totales[key] += datos[key]
@@ -287,7 +296,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         ws.title = 'Entregas por empresa'
 
         encabezados = [
-            'Empresa', 'Subdominio', 'Despachos', 'Visitas',
+            'Empresa', 'Subdominio', 'Decodificadas', 'Despachos', 'Visitas',
             'Entregadas', 'Novedades', 'Unidades', 'Peso (kg)', 'Volumen (m³)'
         ]
         header_font = Font(bold=True, color='FFFFFF')
@@ -302,26 +311,28 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         for fila, empresa in enumerate(resultados, 2):
             ws.cell(row=fila, column=1, value=empresa['nombre'])
             ws.cell(row=fila, column=2, value=empresa['schema_name'])
-            ws.cell(row=fila, column=3, value=empresa['total_despachos'])
-            ws.cell(row=fila, column=4, value=empresa['visitas'])
-            ws.cell(row=fila, column=5, value=empresa['visitas_entregadas'])
-            ws.cell(row=fila, column=6, value=empresa['visitas_novedad'])
-            ws.cell(row=fila, column=7, value=empresa['unidades'])
-            ws.cell(row=fila, column=8, value=empresa['peso'])
-            ws.cell(row=fila, column=9, value=empresa['volumen'])
+            ws.cell(row=fila, column=3, value=empresa['decodificadas'])
+            ws.cell(row=fila, column=4, value=empresa['total_despachos'])
+            ws.cell(row=fila, column=5, value=empresa['visitas'])
+            ws.cell(row=fila, column=6, value=empresa['visitas_entregadas'])
+            ws.cell(row=fila, column=7, value=empresa['visitas_novedad'])
+            ws.cell(row=fila, column=8, value=empresa['unidades'])
+            ws.cell(row=fila, column=9, value=empresa['peso'])
+            ws.cell(row=fila, column=10, value=empresa['volumen'])
 
         fila_total = len(resultados) + 2
         total_font = Font(bold=True)
         ws.cell(row=fila_total, column=1, value='TOTAL').font = total_font
-        ws.cell(row=fila_total, column=3, value=totales['total_despachos']).font = total_font
-        ws.cell(row=fila_total, column=4, value=totales['visitas']).font = total_font
-        ws.cell(row=fila_total, column=5, value=totales['visitas_entregadas']).font = total_font
-        ws.cell(row=fila_total, column=6, value=totales['visitas_novedad']).font = total_font
-        ws.cell(row=fila_total, column=7, value=totales['unidades']).font = total_font
-        ws.cell(row=fila_total, column=8, value=totales['peso']).font = total_font
-        ws.cell(row=fila_total, column=9, value=totales['volumen']).font = total_font
+        ws.cell(row=fila_total, column=3, value=totales['decodificadas']).font = total_font
+        ws.cell(row=fila_total, column=4, value=totales['total_despachos']).font = total_font
+        ws.cell(row=fila_total, column=5, value=totales['visitas']).font = total_font
+        ws.cell(row=fila_total, column=6, value=totales['visitas_entregadas']).font = total_font
+        ws.cell(row=fila_total, column=7, value=totales['visitas_novedad']).font = total_font
+        ws.cell(row=fila_total, column=8, value=totales['unidades']).font = total_font
+        ws.cell(row=fila_total, column=9, value=totales['peso']).font = total_font
+        ws.cell(row=fila_total, column=10, value=totales['volumen']).font = total_font
 
-        for col in range(1, 10):
+        for col in range(1, 11):
             ws.column_dimensions[chr(64 + col)].width = 18
 
         buffer = io.BytesIO()
