@@ -297,6 +297,67 @@ class ContenedorViewSet(viewsets.ModelViewSet):
             'totales': totales,
         }, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=["get"], url_path=r'admin-entregas/(?P<schema_name>[^/.]+)', permission_classes=[permissions.IsAdminUser])
+    def admin_entregas_detalle(self, request, schema_name=None):
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
+        if not fecha_desde or not fecha_hasta:
+            return Response(
+                {'mensaje': 'Se requieren los parámetros fecha_desde y fecha_hasta', 'codigo': 1},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            contenedor = Contenedor.objects.get(schema_name=schema_name)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje': 'Empresa no encontrada', 'codigo': 15}, status=status.HTTP_404_NOT_FOUND)
+
+        from ruteo.models.despacho import RutDespacho
+        from ruteo.models.visita import RutVisita
+
+        with schema_context(schema_name):
+            despachos = list(RutDespacho.objects.filter(
+                estado_aprobado=True,
+                estado_anulado=False,
+                fecha__date__gte=fecha_desde,
+                fecha__date__lte=fecha_hasta,
+            ).select_related('vehiculo').order_by('-fecha').values(
+                'id', 'fecha', 'fecha_salida', 'vehiculo__placa',
+                'visitas', 'visitas_entregadas', 'visitas_novedad', 'visitas_liberadas',
+                'unidades', 'peso', 'volumen',
+                'estado_terminado', 'tiempo_servicio', 'tiempo_trayecto',
+            ))
+
+            despacho_ids = [d['id'] for d in despachos]
+
+            visitas = list(RutVisita.objects.filter(
+                despacho_id__in=despacho_ids,
+            ).order_by('despacho_id', 'orden').values(
+                'id', 'numero', 'documento', 'destinatario',
+                'destinatario_direccion', 'destinatario_telefono',
+                'unidades', 'peso',
+                'estado_entregado', 'estado_novedad', 'estado_decodificado',
+                'orden', 'despacho_id',
+                'datos_entrega',
+            ))
+
+        visitas_por_despacho = {}
+        for v in visitas:
+            did = v.pop('despacho_id')
+            visitas_por_despacho.setdefault(did, []).append(v)
+
+        for d in despachos:
+            d['visitas_detalle'] = visitas_por_despacho.get(d['id'], [])
+
+        return Response({
+            'empresa': {
+                'contenedor_id': contenedor.id,
+                'schema_name': contenedor.schema_name,
+                'nombre': contenedor.nombre or contenedor.schema_name,
+            },
+            'despachos': despachos,
+        }, status=status.HTTP_200_OK)
+
     def _generar_excel_entregas(self, resultados, totales, fecha_desde, fecha_hasta):
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill
