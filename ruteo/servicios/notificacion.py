@@ -6,6 +6,7 @@ from django.db import connection
 from contenedor.models import Contenedor
 from general.models.configuracion import GenConfiguracion
 from ruteo.models.visita import RutVisita
+from ruteo.models.notificacion import RutNotificacion
 from utilidades.globalconnect import GlobalConnect
 
 logger = logging.getLogger(__name__)
@@ -97,9 +98,19 @@ class NotificacionServicio():
                     if resultado['error']:
                         errores += 1
                         logger.error(f'Despacho {despacho_id}: error enviando WhatsApp a {telefono}: {resultado["mensaje"]}')
+                        RutNotificacion.objects.create(
+                            despacho_id=despacho_id,
+                            telefono=telefono,
+                            estado_enviado=False,
+                        )
                     else:
                         enviados += 1
                         logger.info(f'Despacho {despacho_id}: WhatsApp enviado a {telefono}, guias=[{documentos_texto}], id={resultado["id"]}')
+                        RutNotificacion.objects.create(
+                            despacho_id=despacho_id,
+                            telefono=telefono,
+                            estado_enviado=True,
+                        )
 
                 logger.info(f'Despacho {despacho_id}: notificaciones WhatsApp completadas. Enviados={enviados}, Errores={errores}')
             except Exception as e:
