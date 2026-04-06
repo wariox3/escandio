@@ -216,7 +216,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         from ruteo.models.notificacion import RutNotificacion
 
         contenedores = Contenedor.objects.exclude(schema_name='public').values(
-            'id', 'schema_name', 'nombre'
+            'id', 'schema_name', 'nombre', 'fecha_ultima_conexion'
         ).order_by('nombre')
 
         resultados = []
@@ -266,6 +266,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                     'contenedor_id': contenedor['id'],
                     'schema_name': contenedor['schema_name'],
                     'nombre': contenedor['nombre'] or contenedor['schema_name'],
+                    'fecha_ultima_conexion': contenedor['fecha_ultima_conexion'],
                     'total_despachos': agregados['total_despachos'] or 0,
                     'visitas': agregados['visitas'] or 0,
                     'visitas_entregadas': agregados['visitas_entregadas'] or 0,
