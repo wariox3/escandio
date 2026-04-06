@@ -61,14 +61,15 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                 dominio = '.' + config('DOMINIO_BACKEND')
                 usuario = User.objects.get(pk=usuario_id)
                 imagenReferencia = f"escandio/logo_defecto.jpg"
-                call_command('create_tenant', 
-                             schema_name=subdominio, 
-                             domain_domain=subdominio+dominio, 
-                             nombre=nombre, 
-                             domain_is_primary='0', 
-                             imagen=imagenReferencia,                              
+                call_command('create_tenant',
+                             schema_name=subdominio,
+                             domain_domain=subdominio+dominio,
+                             nombre=nombre,
+                             domain_is_primary='0',
+                             imagen=imagenReferencia,
                              usuarios=1,
-                             usuario_id=usuario.id)  
+                             usuario_id=usuario.id,
+                             interactive=False)
                 #os.system(f"python manage.py tenant_command actualizar_fixtures general/fixtures/ --schema={subdominio}")
                 #os.system(f"python manage.py tenant_command actualizar_fixtures general/fixtures_inicio/ --schema={subdominio}")                                           
                 thread = Thread(
