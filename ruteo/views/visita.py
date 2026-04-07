@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
+from ruteo.models.vehiculo import RutVehiculo
 from ruteo.models.franja import RutFranja
 from ruteo.models.flota import RutFlota
 from general.models.configuracion import GenConfiguracion
