@@ -429,7 +429,10 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             if not visita.franja_id:
                 return True
 
-            return vehiculo.franjas.filter(id=visita.franja_id).exists()
+            if not vehiculo.franjas.filter(id=visita.franja_id).exists():
+                rechazos[visita.numero] = f'franja {visita.franja_codigo or visita.franja_id} no asignada al vehículo {vehiculo.placa}'
+                return False
+            return True
 
         with transaction.atomic():
             if rutear_franja:
