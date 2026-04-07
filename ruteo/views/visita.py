@@ -354,6 +354,18 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
         configuracion = GenConfiguracion.objects.filter(id=1).first()
         rutear_franja = getattr(configuracion, 'rut_rutear_franja', False)
 
+        # Liberar vehículos atascados en despachos no aprobados
+        despachos_huerfanos = RutDespacho.objects.filter(
+            estado_aprobado=False, estado_terminado=False, estado_anulado=False
+        )
+        vehiculos_liberados = 0
+        for despacho_huerfano in despachos_huerfanos:
+            if despacho_huerfano.vehiculo_id:
+                RutVehiculo.objects.filter(id=despacho_huerfano.vehiculo_id).update(estado_asignado=False)
+                vehiculos_liberados += 1
+            RutVisita.objects.filter(despacho_id=despacho_huerfano.id).update(despacho=None, estado_despacho=False)
+        despachos_huerfanos.delete()
+
         flota_disponible = list(
             RutFlota.objects.filter(vehiculo__estado_asignado=False)
             .select_related('vehiculo')
@@ -374,13 +386,13 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             for filtro in filtros:
                 operador = filtro.get('operador')
                 propiedad = filtro['propiedad']
-                valor = filtro['valor1']  
-                if operador == 'in' and isinstance(valor, str):                      
+                valor = filtro['valor1']
+                if operador == 'in' and isinstance(valor, str):
                     if ',' in valor:
                         valor = [int(v.strip()) for v in valor.split(',')]
                     else:
                         valor = [int(valor.strip())]
-                    filtro['valor1'] = valor                               
+                    filtro['valor1'] = valor
                 if operador == 'range':
                     visitas = visitas.filter(**{f'{propiedad}__{operador}': (filtro['valor1'], filtro['valor2'])})
                 elif operador:
@@ -393,18 +405,29 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
         visitas = visitas.order_by('orden')
         visitas_pendientes = list(visitas)
         despachos_creados = 0
+        rechazos = {}
 
         def vehiculo_puede_tomar_visita(vehiculo, visita, peso_actual, tiempo_actual, verificar_franja):
-            if (visita.peso is None or visita.tiempo is None or
-                vehiculo.capacidad is None or vehiculo.tiempo is None):
+            if visita.peso is None or visita.tiempo is None:
+                rechazos[visita.numero] = f'peso={visita.peso} o tiempo={visita.tiempo} es None'
                 return False
-            if (peso_actual + visita.peso > vehiculo.capacidad or
-                tiempo_actual + visita.tiempo > vehiculo.tiempo):
+            if vehiculo.capacidad is None or vehiculo.tiempo is None:
+                rechazos[visita.numero] = f'vehículo {vehiculo.placa} sin capacidad o tiempo configurado'
                 return False
-            
+            if peso_actual + visita.peso > vehiculo.capacidad:
+                rechazos[visita.numero] = f'excede capacidad ({peso_actual + visita.peso:.1f} > {vehiculo.capacidad})'
+                return False
+            if tiempo_actual + visita.tiempo > vehiculo.tiempo:
+                rechazos[visita.numero] = f'excede tiempo ({tiempo_actual + visita.tiempo:.1f} > {vehiculo.tiempo})'
+                return False
+
             if not verificar_franja:
                 return True
-                
+
+            # Si la visita no tiene franja, permitirla en cualquier vehículo
+            if not visita.franja_id:
+                return True
+
             return vehiculo.franjas.filter(id=visita.franja_id).exists()
 
         with transaction.atomic():
@@ -457,6 +480,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                             visita.despacho = despacho
                             visitas_asignadas.append(visita)
                             visitas_pendientes.remove(visita)
+                            # Limpiar rechazo previo si fue asignada
+                            rechazos.pop(visita.numero, None)
 
                     if despacho and despacho.pk:
                         despacho.save()
@@ -519,6 +544,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                             visita.despacho = despacho
                             visitas_asignadas.append(visita)
                             visitas_pendientes.remove(visita)
+                            rechazos.pop(visita.numero, None)
 
                     if despacho and despacho.pk:
                         despacho.save()
@@ -527,13 +553,14 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
 
                     vehiculo_index += 1
 
-        mensaje = (
-            f"Operación completada: {despachos_creados} rutas creadas"
-            + (f". Pendientes: {len(visitas_pendientes)} visitas"
-            if visitas_pendientes else "")
-        )
+        mensaje = f"Operación completada: {despachos_creados} rutas creadas"
+        if vehiculos_liberados > 0:
+            mensaje += f" ({vehiculos_liberados} vehículos liberados)"
+        if visitas_pendientes:
+            mensaje += f". Pendientes: {len(visitas_pendientes)} visitas"
         return Response({
             'mensaje': mensaje,
+            'rechazos': rechazos if visitas_pendientes else {},
             'status': status.HTTP_200_OK
         })
         
