@@ -8,6 +8,7 @@ from .views.ubicacion import RutUbicacionViewSet
 from .views.novedad_tipo import RutNovedadTipoViewSet
 from .views.novedad import RutNovedadViewSet
 from .views.seguimiento import RutSeguimientoViewSet
+from .views.alerta import RutAlertaViewSet
 from rest_framework import routers
 
 router = routers.DefaultRouter()
@@ -20,6 +21,7 @@ router.register(r'ubicacion', RutUbicacionViewSet)
 router.register(r'novedad', RutNovedadViewSet)
 router.register(r'novedad_tipo', RutNovedadTipoViewSet)
 router.register(r'seguimiento', RutSeguimientoViewSet)
+router.register(r'alerta', RutAlertaViewSet)
 
 urlpatterns = [    
     path('', include(router.urls)),
