@@ -937,7 +937,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                         VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
                 return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
             else:
-                return Response({'mensaje': 'La visita ya fue entregada', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
