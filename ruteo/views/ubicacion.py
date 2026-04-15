@@ -6,6 +6,7 @@ from ruteo.serializers.ubicacion import RutUbicacionSerializador, RutUbicacionTr
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.ubicacion import UbicacionFilter
+from ruteo.servicios.alerta import AlertaServicio
 from decouple import config
 import requests
 
@@ -43,6 +44,7 @@ class RutUbicacionViewSet(viewsets.ModelViewSet):
             ubicacion.despacho.latitud = ubicacion.latitud
             ubicacion.despacho.longitud = ubicacion.longitud
             ubicacion.despacho.save(update_fields=['fecha_ubicacion', 'latitud', 'longitud'])
+            AlertaServicio.evaluar(ubicacion)
 
     @action(detail=False, methods=["post"], url_path=r'autocompletar')
     def autocompletar(self, request):
