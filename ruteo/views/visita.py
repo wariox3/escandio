@@ -367,6 +367,15 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             RutVisita.objects.filter(despacho_id=despacho_huerfano.id).update(despacho=None, estado_despacho=False)
         despachos_huerfanos.delete()
 
+        vehiculos_en_ruta_ids = RutDespacho.objects.filter(
+            estado_aprobado=True, estado_terminado=False, estado_anulado=False,
+            vehiculo_id__isnull=False,
+        ).values_list('vehiculo_id', flat=True).distinct()
+        vehiculos_desbloqueados = RutVehiculo.objects.filter(estado_asignado=True).exclude(
+            id__in=list(vehiculos_en_ruta_ids)
+        ).update(estado_asignado=False)
+        vehiculos_liberados += vehiculos_desbloqueados
+
         flota_disponible = list(
             RutFlota.objects.filter(vehiculo__estado_asignado=False)
             .select_related('vehiculo')
