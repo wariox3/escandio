@@ -38,7 +38,8 @@ class ExcelExportar:
         'estado_anulado': 'Anulado',
         'estado_electronico': 'Electronico',
         'estado_electronico_enviado': 'Electronico enviado',
-        'estado_electronico_notificado': 'Electronico notificado'
+        'estado_electronico_notificado': 'Electronico notificado',
+        'despacho__vehiculo__placa': 'Placa',
     }
 			
     def __init__(self, data, nombre_hoja="documentos", nombre_archivo="documentos.xlsx", titulo='Documentos'):
