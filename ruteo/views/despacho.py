@@ -22,6 +22,7 @@ from django.db import transaction
 from utilidades.google import Google
 from utilidades.holmio import Holmio
 from ruteo.servicios.notificacion import NotificacionServicio
+from general.models.configuracion import GenConfiguracion
 
 
 class RutDespachoViewSet(viewsets.ModelViewSet):
@@ -376,7 +377,8 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         serializador = RutDespachoSerializador(data=data)
                         if serializador.is_valid():
                             despacho = serializador.save()
-                            respuesta = VisitaServicio.importar_complemento(limite=300, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
+                            limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
+                            respuesta = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
                             #visitas = RutVisita.objects.filter(despacho_id=despacho.id)
                             #VisitaServicio.ubicar(visitas)
                             #VisitaServicio.ordenar(visitas) 

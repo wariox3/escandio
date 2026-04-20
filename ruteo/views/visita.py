@@ -175,7 +175,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             errores_datos = []    
             franjas = RutFranja.objects.all()            
             total_registros = sheet.max_row - 1
-            if total_registros <= 500:
+            limite_importacion = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_importacion', flat=True).first() or 500
+            if total_registros <= limite_importacion:
                 for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):                
                     if len(row) < 14:
                         return Response({'mensaje':'El archivo no tiene la estructura requerida', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
@@ -252,7 +253,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     gc.collect()                    
                     return Response({'mensaje':'Errores de validación', 'codigo':1, 'errores_validador': errores_datos}, status=status.HTTP_400_BAD_REQUEST)                                    
             else:
-                return Response({'mensaje':'Solo se permiten importar hasta 500 registros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'mensaje': f'Solo se permiten importar hasta {limite_importacion} registros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
     
