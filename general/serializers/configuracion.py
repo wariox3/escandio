@@ -22,6 +22,9 @@ class GenConfiguracionSerializador(serializers.ModelSerializer):
             'rut_alerta_parada_minutos',
             'rut_alerta_parada_radio_metros',
             'rut_alerta_geocerca_activa',
+            'rut_limite_complemento',
+            'rut_limite_importacion',
+            'rut_alertas_intervalo_segundos',
         ]
         select_related_fields = ['empresa']
 
