@@ -151,4 +151,34 @@ class CtnVerificacion(models.Model):
     usuario_invitado_username = models.EmailField(max_length = 255, null=True)
 
     class Meta:
-        db_table = "ctn_verificacion"         
+        db_table = "ctn_verificacion"
+
+
+class CtnWhatsappConexion(models.Model):
+    ESTADO_PENDIENTE = 'pendiente'
+    ESTADO_ACTIVO = 'activo'
+    ESTADO_ERROR = 'error'
+    ESTADO_CHOICES = [
+        (ESTADO_PENDIENTE, 'Pendiente'),
+        (ESTADO_ACTIVO, 'Activo'),
+        (ESTADO_ERROR, 'Error'),
+    ]
+
+    contenedor = models.OneToOneField(Contenedor, on_delete=models.CASCADE, related_name='whatsapp_conexion')
+    phone_number_id = models.CharField(max_length=50, unique=True)
+    waba_id = models.CharField(max_length=50)
+    display_phone_number = models.CharField(max_length=30, null=True)
+    verified_name = models.CharField(max_length=100, null=True)
+    access_token_cifrado = models.TextField()
+    app_secret_cifrado = models.TextField(null=True)
+    verify_token = models.CharField(max_length=50)
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default=ESTADO_PENDIENTE)
+    error_mensaje = models.TextField(null=True, blank=True)
+    fecha_conexion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ctn_whatsapp_conexion"
+
+    def __str__(self):
+        return f'{self.contenedor.schema_name} -> {self.display_phone_number or self.phone_number_id}'

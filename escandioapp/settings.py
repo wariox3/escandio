@@ -34,7 +34,8 @@ SHARED_APPS = (
 
 TENANT_APPS = (
     'ruteo',
-    'general'
+    'general',
+    'mensajeria'
 )
 
 INSTALLED_APPS = [
@@ -50,7 +51,8 @@ INSTALLED_APPS = [
     'contenedor',
     'vertical',
     'ruteo',
-    'general'
+    'general',
+    'mensajeria'
 ]
 
 MIDDLEWARE = [
