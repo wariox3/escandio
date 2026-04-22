@@ -11,6 +11,7 @@ urlpatterns = [
     path('general/', include("general.urls")),
     path('vertical/', include("vertical.urls")),
     path('contenedor/', include("contenedor.urls")),
+    path('mensajeria/', include("mensajeria.urls")),
     path('seguridad/login/', Login.as_view(), name='login'),
     path('seguridad/admin-login/', AdminLogin.as_view(), name='admin-login'),
     path('seguridad/token/', jwt_views.TokenObtainPairView.as_view(), name='token_obtain_pair'),
