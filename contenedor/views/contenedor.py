@@ -201,10 +201,133 @@ class ContenedorViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
     def admin_lista(self, request):
-        contenedores = Contenedor.objects.exclude(schema_name='public').values(
+        from contenedor.models import CtnWhatsappConexion
+        contenedores = list(Contenedor.objects.exclude(schema_name='public').values(
             'id', 'schema_name', 'nombre', 'acceso_whatsapp', 'fecha', 'usuarios'
-        ).order_by('nombre')
-        return Response(list(contenedores), status=status.HTTP_200_OK)
+        ).order_by('nombre'))
+        conexiones = {
+            c.contenedor_id: c for c in CtnWhatsappConexion.objects.select_related('contenedor').all()
+        }
+        for c in contenedores:
+            conexion = conexiones.get(c['id'])
+            c['whatsapp_phone_number_id'] = conexion.phone_number_id if conexion else None
+            c['whatsapp_display'] = conexion.display_phone_number if conexion else None
+            c['whatsapp_estado'] = conexion.estado if conexion else None
+        return Response(contenedores, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path=r'admin-whatsapp/numeros', permission_classes=[permissions.IsAdminUser])
+    def admin_whatsapp_numeros(self, request):
+        """Lista los numeros disponibles en la WABA de Rutenio + a quien estan asignados."""
+        from mensajeria.servicios.admin_meta import AdminMetaServicio
+        from contenedor.models import CtnWhatsappConexion
+
+        servicio = AdminMetaServicio()
+        resultado = servicio.listar_numeros()
+        if resultado['error']:
+            return Response({'mensaje': resultado['mensaje'], 'data': []}, status=status.HTTP_502_BAD_GATEWAY)
+
+        asignaciones = {
+            c.phone_number_id: {
+                'contenedor_id': c.contenedor_id,
+                'contenedor_nombre': c.contenedor.nombre,
+                'schema_name': c.contenedor.schema_name,
+                'estado': c.estado,
+            }
+            for c in CtnWhatsappConexion.objects.select_related('contenedor')
+        }
+
+        numeros = []
+        for n in resultado['data']:
+            asignado = asignaciones.get(n.get('id'))
+            numeros.append({
+                'phone_number_id': n.get('id'),
+                'display_phone_number': n.get('display_phone_number'),
+                'verified_name': n.get('verified_name'),
+                'quality_rating': n.get('quality_rating'),
+                'code_verification_status': n.get('code_verification_status'),
+                'asignado_a': asignado,
+            })
+        return Response({'data': numeros}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path=r'admin-whatsapp/asignar', permission_classes=[permissions.IsAdminUser])
+    def admin_whatsapp_asignar(self, request):
+        """
+        Asigna un numero a un contenedor. Body: {contenedor_id, phone_number_id}.
+        Usa credenciales admin globales para poblar CtnWhatsappConexion.
+        """
+        from mensajeria.servicios.admin_meta import AdminMetaServicio
+        from mensajeria.servicios.cifrado import CifradoServicio
+        from contenedor.models import CtnWhatsappConexion
+        import secrets
+
+        contenedor_id = request.data.get('contenedor_id')
+        phone_number_id = (request.data.get('phone_number_id') or '').strip()
+        if not contenedor_id or not phone_number_id:
+            return Response({'mensaje': 'contenedor_id y phone_number_id son requeridos', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje': 'Contenedor no existe', 'codigo': 15}, status=status.HTTP_404_NOT_FOUND)
+
+        # Evitar asignar el mismo numero a 2 contenedores
+        otro = CtnWhatsappConexion.objects.filter(phone_number_id=phone_number_id).exclude(contenedor=contenedor).first()
+        if otro:
+            return Response({
+                'mensaje': f'Ese número ya está asignado a {otro.contenedor.nombre}',
+                'codigo': 16,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        servicio = AdminMetaServicio()
+        detalle = servicio.consultar_numero(phone_number_id)
+        if detalle['error']:
+            return Response({'mensaje': f'No se pudo validar el número: {detalle["mensaje"]}'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        datos = detalle.get('data') or {}
+        conexion, _ = CtnWhatsappConexion.objects.update_or_create(
+            contenedor=contenedor,
+            defaults={
+                'phone_number_id': phone_number_id,
+                'waba_id': servicio.waba_id,
+                'display_phone_number': datos.get('display_phone_number'),
+                'verified_name': datos.get('verified_name'),
+                'access_token_cifrado': CifradoServicio.cifrar(servicio.access_token),
+                'verify_token': secrets.token_urlsafe(24),
+                'estado': CtnWhatsappConexion.ESTADO_ACTIVO,
+                'error_mensaje': None,
+            }
+        )
+        contenedor.acceso_whatsapp = True
+        contenedor.save(update_fields=['acceso_whatsapp'])
+
+        return Response({
+            'mensaje': f'Número {datos.get("display_phone_number")} asignado a {contenedor.nombre}',
+            'conexion': {
+                'id': conexion.id,
+                'phone_number_id': conexion.phone_number_id,
+                'display_phone_number': conexion.display_phone_number,
+                'estado': conexion.estado,
+            }
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path=r'admin-whatsapp/desasignar', permission_classes=[permissions.IsAdminUser])
+    def admin_whatsapp_desasignar(self, request):
+        """Quita la asignación de WhatsApp a un contenedor. Body: {contenedor_id}."""
+        from contenedor.models import CtnWhatsappConexion
+
+        contenedor_id = request.data.get('contenedor_id')
+        if not contenedor_id:
+            return Response({'mensaje': 'contenedor_id requerido'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje': 'Contenedor no existe'}, status=status.HTTP_404_NOT_FOUND)
+
+        CtnWhatsappConexion.objects.filter(contenedor=contenedor).delete()
+        contenedor.acceso_whatsapp = False
+        contenedor.save(update_fields=['acceso_whatsapp'])
+        return Response({'mensaje': f'WhatsApp desasignado de {contenedor.nombre}'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path=r'admin-entregas', permission_classes=[permissions.IsAdminUser])
     def admin_entregas(self, request):
