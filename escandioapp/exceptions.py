@@ -41,9 +41,9 @@ def custom_exception_handler(exc, context):
             "exception_value": str(exc),
             "exception_location": traceback_completo,
             "raised_during": f"{context['view'].__class__.__module__}.{context['view'].__class__.__name__}",
-        }              
+        }
 
-        datos = {            
+        datos = {
             'mensaje': mensaje,
             'archivo': "path",
             'ruta': request.path,
@@ -56,10 +56,5 @@ def custom_exception_handler(exc, context):
             'contenedor_objeto': [],
             'data': request.data
         }
-        requests.post(
-            'http://niquel.semantica.com.co/api/error/nuevo',
-            json=datos,
-            headers={'Content-Type': 'application/json'},
-            timeout=5
-        )
+        # TODO: hacer logs de la excepcion usando `datos` en vez de reportar a niquel.
     return response
