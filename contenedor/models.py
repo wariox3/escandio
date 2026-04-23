@@ -74,6 +74,7 @@ class Contenedor(TenantMixin):
     imagen = models.TextField(null=True)
     usuarios = models.IntegerField(default=1)
     acceso_whatsapp = models.BooleanField(default=False)
+    acceso_whatsapp_notificaciones = models.BooleanField(default=False)
     auto_create_schema = True
     auto_drop_schema = True
     usuario = models.ForeignKey(User, on_delete=models.PROTECT, null=True)

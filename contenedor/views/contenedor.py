@@ -199,11 +199,27 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         except Contenedor.DoesNotExist:
             return Response({'mensaje': 'El contenedor no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=["post"], url_path=r'toggle-whatsapp-notificaciones', permission_classes=[permissions.IsAdminUser])
+    def toggle_whatsapp_notificaciones(self, request):
+        contenedor_id = request.data.get('id')
+        if not contenedor_id:
+            return Response({'mensaje': 'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+            contenedor.acceso_whatsapp_notificaciones = not contenedor.acceso_whatsapp_notificaciones
+            contenedor.save()
+            return Response({
+                'mensaje': f'Notificaciones WhatsApp {"activadas" if contenedor.acceso_whatsapp_notificaciones else "desactivadas"} para {contenedor.nombre}',
+                'acceso_whatsapp_notificaciones': contenedor.acceso_whatsapp_notificaciones,
+            }, status=status.HTTP_200_OK)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje': 'El contenedor no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
     def admin_lista(self, request):
         from contenedor.models import CtnWhatsappConexion
         contenedores = list(Contenedor.objects.exclude(schema_name='public').values(
-            'id', 'schema_name', 'nombre', 'acceso_whatsapp', 'fecha', 'usuarios'
+            'id', 'schema_name', 'nombre', 'acceso_whatsapp', 'acceso_whatsapp_notificaciones', 'fecha', 'usuarios'
         ).order_by('nombre'))
         conexiones = {
             c.contenedor_id: c for c in CtnWhatsappConexion.objects.select_related('contenedor').all()
