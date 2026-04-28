@@ -1033,19 +1033,32 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path=r'imprimir-rotulo',)
     def imprimir_rotulo(self, request):
         raw = request.data
-        id = raw.get('id')
-        if not id:
+        ids = raw.get('ids')
+        single_id = raw.get('id')
+        formato_pdf = (raw.get('formato') or 'termica').lower()
+        if formato_pdf not in ('termica', 'a4'):
+            formato_pdf = 'termica'
+        if ids and isinstance(ids, list):
+            visita_ids = [int(x) for x in ids if x is not None]
+        elif single_id:
+            visita_ids = [int(single_id)]
+        else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            formato = FormatoRotulo()
-            pdf = formato.generar_pdf(id)
-            nombre_archivo = f"rotulo_{id}.pdf"
-            response = HttpResponse(pdf, content_type='application/pdf')
-            response['Access-Control-Expose-Headers'] = 'Content-Disposition'
-            response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
-            return response
-        except RutVisita.DoesNotExist:
-            return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+
+        existentes = list(RutVisita.objects.filter(id__in=visita_ids).values_list('id', flat=True))
+        if not existentes:
+            return Response({'mensaje':'Las visitas no existen', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+
+        formato = FormatoRotulo()
+        pdf = formato.generar_pdf_lote(existentes, formato=formato_pdf)
+        if len(existentes) == 1:
+            nombre_archivo = f"rotulo_{existentes[0]}.pdf"
+        else:
+            nombre_archivo = f"rotulos_{len(existentes)}.pdf"
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+        response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+        return response
 
     @action(detail=False, methods=["post"], url_path=r'entrega-complemento',)
     def entrega_complemento_action(self, request):   
