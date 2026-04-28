@@ -105,6 +105,64 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["post"], url_path=r'admin-asignar-contenedor', permission_classes=[permissions.IsAdminUser])
+    def admin_asignar_contenedor(self, request):
+        """Asigna un usuario a un contenedor con rol específico.
+        rol='admin' → reemplaza Contenedor.usuario (el anterior pasa a 'usuario').
+        rol='usuario' → crea/actualiza UsuarioContenedor con rol='usuario'.
+        Identifica el contenedor por schema_name o contenedor_id."""
+        from contenedor.models import Contenedor, UsuarioContenedor
+        raw = request.data
+        usuario_id = raw.get('usuario_id')
+        schema_name = raw.get('schema_name')
+        contenedor_id = raw.get('contenedor_id')
+        rol = (raw.get('rol') or 'usuario').lower()
+        if rol not in ('admin', 'usuario'):
+            return Response({'mensaje':'rol debe ser admin o usuario', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        if not usuario_id or (not schema_name and not contenedor_id):
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            if schema_name:
+                contenedor = Contenedor.objects.get(schema_name=schema_name)
+            else:
+                contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje':'Contenedor no existe', 'codigo':13}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            nuevo = User.objects.get(pk=usuario_id)
+        except User.DoesNotExist:
+            return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
+
+        if rol == 'admin':
+            admin_anterior_id = contenedor.usuario_id
+            if admin_anterior_id == nuevo.id:
+                return Response({'mensaje':'Ese usuario ya es admin', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+            contenedor.usuario = nuevo
+            contenedor.save()
+            UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+            if admin_anterior_id and admin_anterior_id != nuevo.id:
+                UsuarioContenedor.objects.get_or_create(
+                    usuario_id=admin_anterior_id,
+                    contenedor_id=contenedor.id,
+                    defaults={'rol': 'usuario'},
+                )
+            return Response({'mensaje':'Asignado como admin', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
+        else:
+            if contenedor.usuario_id == nuevo.id:
+                return Response({'mensaje':'Ese usuario ya es admin del contenedor', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+            uc, creado = UsuarioContenedor.objects.get_or_create(
+                usuario_id=nuevo.id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'usuario'},
+            )
+            if not creado and uc.rol != 'usuario':
+                uc.rol = 'usuario'
+                uc.save()
+            if creado:
+                contenedor.usuarios = (contenedor.usuarios or 0) + 1
+                contenedor.save()
+            return Response({'mensaje':'Asignado como usuario', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path=r'admin-cambiar-admin-contenedor', permission_classes=[permissions.IsAdminUser])
     def admin_cambiar_admin_contenedor(self, request):
         """Asigna a un usuario como admin (Contenedor.usuario) de un contenedor.
