@@ -105,6 +105,46 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["post"], url_path=r'admin-cambiar-admin-contenedor', permission_classes=[permissions.IsAdminUser])
+    def admin_cambiar_admin_contenedor(self, request):
+        """Asigna a un usuario como admin (Contenedor.usuario) de un contenedor.
+        Identifica el contenedor por schema_name. Quien era admin pasa a 'usuario'."""
+        from contenedor.models import Contenedor, UsuarioContenedor
+        raw = request.data
+        usuario_id = raw.get('usuario_id')
+        schema_name = raw.get('schema_name')
+        contenedor_id = raw.get('contenedor_id')
+        if not usuario_id or (not schema_name and not contenedor_id):
+            return Response({'mensaje':'Faltan parametros (usuario_id y schema_name o contenedor_id)', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            if schema_name:
+                contenedor = Contenedor.objects.get(schema_name=schema_name)
+            else:
+                contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje':'Contenedor no existe', 'codigo':13}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            nuevo = User.objects.get(pk=usuario_id)
+        except User.DoesNotExist:
+            return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
+
+        admin_anterior_id = contenedor.usuario_id
+        contenedor.usuario = nuevo
+        contenedor.save()
+        # Si el nuevo era invitado, sale de invitados
+        UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+        # El admin anterior queda como invitado
+        if admin_anterior_id and admin_anterior_id != nuevo.id:
+            UsuarioContenedor.objects.get_or_create(
+                usuario_id=admin_anterior_id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'usuario'},
+            )
+        return Response(
+            {'mensaje': 'Admin cambiado', 'contenedor_id': contenedor.id},
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=False, methods=["get"], url_path=r'seleccionar')
     def seleccionar_action(self, request):
         limit = request.query_params.get('limit', 10)
