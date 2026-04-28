@@ -1,19 +1,44 @@
 from io import BytesIO
 from datetime import datetime
-from reportlab.lib.pagesizes import inch
-from reportlab.lib.units import mm
+
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from general.models.empresa import GenEmpresa
 from ruteo.models.visita import RutVisita
-from utilidades.utilidades import generar_qr
 
 
 PAGE_WIDTH = 100 * mm
 PAGE_HEIGHT = 150 * mm
+MARGEN = 4 * mm
+CONTENIDO_ANCHO = PAGE_WIDTH - 2 * MARGEN
+
+
+def _qr(data, lado_mm=22):
+    """Genera un QR escalado a un tamaño fijo en milímetros."""
+    widget = QrCodeWidget(str(data))
+    x1, y1, x2, y2 = widget.getBounds()
+    ancho_widget = x2 - x1
+    alto_widget = y2 - y1
+    objetivo = lado_mm * mm
+    drawing = Drawing(
+        objetivo,
+        objetivo,
+        transform=[objetivo / ancho_widget, 0, 0, objetivo / alto_widget, 0, 0],
+    )
+    drawing.add(widget)
+    return drawing
 
 
 class FormatoRotulo:
@@ -22,10 +47,10 @@ class FormatoRotulo:
         doc = SimpleDocTemplate(
             buffer,
             pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
-            leftMargin=4 * mm,
-            rightMargin=4 * mm,
-            topMargin=4 * mm,
-            bottomMargin=4 * mm,
+            leftMargin=MARGEN,
+            rightMargin=MARGEN,
+            topMargin=MARGEN,
+            bottomMargin=MARGEN,
         )
 
         visita = (
@@ -37,123 +62,93 @@ class FormatoRotulo:
         empresa = GenEmpresa.objects.first()
         nombre_empresa = empresa.nombre_corto if empresa else ''
 
+        guia = ParagraphStyle(
+            'guia', fontName='Helvetica-Bold', fontSize=14, leading=15, alignment=TA_LEFT,
+        )
+        doc_cliente = ParagraphStyle(
+            'doc', fontName='Helvetica-Bold', fontSize=10, leading=11, alignment=TA_LEFT,
+        )
+        etiqueta = ParagraphStyle(
+            'etiqueta', fontName='Helvetica-Bold', fontSize=7, leading=8, alignment=TA_LEFT,
+        )
+        dato = ParagraphStyle(
+            'dato', fontName='Helvetica', fontSize=8, leading=10, alignment=TA_LEFT,
+        )
+        destino = ParagraphStyle(
+            'destino', fontName='Helvetica-Bold', fontSize=11, leading=12, alignment=TA_LEFT,
+        )
+        info = ParagraphStyle(
+            'info', fontName='Helvetica', fontSize=8, leading=9, alignment=TA_CENTER,
+        )
+        pie = ParagraphStyle(
+            'pie', fontName='Helvetica', fontSize=6.5, leading=8, alignment=TA_CENTER,
+        )
+
         elementos = []
-
-        estilo_titulo = ParagraphStyle(
-            'titulo',
-            fontName='Helvetica-Bold',
-            fontSize=14,
-            alignment=TA_LEFT,
-            leading=16,
-        )
-        estilo_cliente = ParagraphStyle(
-            'cliente',
-            fontName='Helvetica-Bold',
-            fontSize=11,
-            alignment=TA_LEFT,
-            leading=13,
-        )
-        estilo_etiqueta = ParagraphStyle(
-            'etiqueta',
-            fontName='Helvetica-Bold',
-            fontSize=8,
-            alignment=TA_LEFT,
-            leading=10,
-        )
-        estilo_dato = ParagraphStyle(
-            'dato',
-            fontName='Helvetica',
-            fontSize=8,
-            alignment=TA_LEFT,
-            leading=10,
-        )
-        estilo_destino = ParagraphStyle(
-            'destino',
-            fontName='Helvetica-Bold',
-            fontSize=10,
-            alignment=TA_LEFT,
-            leading=12,
-        )
-        estilo_pie = ParagraphStyle(
-            'pie',
-            fontName='Helvetica',
-            fontSize=7,
-            alignment=TA_CENTER,
-            leading=9,
-        )
-
         guia_numero = visita.numero if visita.numero is not None else visita.id
-        elementos.append(Paragraph(f'GUIA No. {guia_numero}', estilo_titulo))
+
+        elementos.append(Paragraph(f'GUIA No. {guia_numero}', guia))
         elementos.append(
-            Paragraph(f'DOC CLIENTE: {visita.documento or ""}', estilo_cliente)
+            Paragraph(f'DOC CLIENTE: {visita.documento or ""}', doc_cliente)
         )
         elementos.append(Spacer(1, 4))
 
-        elementos.append(Paragraph('DESTINATARIO:', estilo_etiqueta))
+        elementos.append(Paragraph('DESTINATARIO:', etiqueta))
+        elementos.append(Paragraph(visita.destinatario or '', dato))
+        elementos.append(Spacer(1, 2))
+
+        direccion = visita.destinatario_direccion or ''
+        if visita.destinatario_direccion_complemento:
+            direccion = f'{direccion} {visita.destinatario_direccion_complemento}'.strip()
+        elementos.append(Paragraph('DIRECCION:', etiqueta))
+        elementos.append(Paragraph(direccion, dato))
+        elementos.append(Spacer(1, 2))
+
+        elementos.append(Paragraph('DESTINO:', etiqueta))
         elementos.append(
-            Paragraph(visita.destinatario or '', estilo_dato)
+            Paragraph(visita.ciudad.nombre if visita.ciudad else '', destino)
         )
         elementos.append(Spacer(1, 2))
 
-        direccion_completa = visita.destinatario_direccion or ''
-        if visita.destinatario_direccion_complemento:
-            direccion_completa = (
-                f'{direccion_completa} {visita.destinatario_direccion_complemento}'.strip()
-            )
-        elementos.append(Paragraph('DIRECCION:', estilo_etiqueta))
-        elementos.append(Paragraph(direccion_completa, estilo_dato))
-        elementos.append(Spacer(1, 2))
-
-        ciudad_nombre = visita.ciudad.nombre if visita.ciudad else ''
-        elementos.append(Paragraph('DESTINO:', estilo_etiqueta))
-        elementos.append(Paragraph(ciudad_nombre, estilo_destino))
-        elementos.append(Spacer(1, 2))
-
         remitente = visita.remitente or nombre_empresa
-        elementos.append(Paragraph('REMITENTE:', estilo_etiqueta))
-        elementos.append(Paragraph(remitente, estilo_dato))
+        elementos.append(Paragraph('REMITENTE:', etiqueta))
+        elementos.append(Paragraph(remitente, dato))
         elementos.append(Spacer(1, 4))
 
         unidades = int(visita.unidades) if visita.unidades else 1
         cobro = int(visita.cobro) if visita.cobro else 0
-        info_data = [
-            [
-                Paragraph(f'<b>ZONA:</b> {visita.franja_codigo or ""}', estilo_dato),
-                Paragraph(f'<b>PIEZA</b> 1/{unidades}', estilo_dato),
-                Paragraph(f'<b>COBRO:</b> {cobro}', estilo_dato),
-            ]
-        ]
-        ancho_total = PAGE_WIDTH - (8 * mm)
-        info_table = Table(info_data, colWidths=[ancho_total / 3] * 3)
+        zona = visita.franja_codigo or ''
+        info_table = Table(
+            [[
+                Paragraph(f'<b>ZONA</b><br/>{zona}', info),
+                Paragraph(f'<b>PIEZA</b><br/>1/{unidades}', info),
+                Paragraph(f'<b>COBRO</b><br/>{cobro}', info),
+            ]],
+            colWidths=[CONTENIDO_ANCHO / 3] * 3,
+        )
         info_table.setStyle(
-            TableStyle(
-                [
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('TOPPADDING', (0, 0), (-1, -1), 1),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
-                ]
-            )
+            TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BOX', (0, 0), (-1, -1), 0.4, colors.black),
+                ('INNERGRID', (0, 0), (-1, -1), 0.4, colors.black),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ])
         )
         elementos.append(info_table)
         elementos.append(Spacer(1, 6))
 
-        qr_data = str(guia_numero)
-        qr_left = generar_qr(qr_data)
-        qr_right = generar_qr(qr_data)
-
         qr_table = Table(
-            [[qr_left, qr_right]],
-            colWidths=[ancho_total / 2, ancho_total / 2],
-            rowHeights=[60],
+            [[_qr(guia_numero), _qr(guia_numero)]],
+            colWidths=[CONTENIDO_ANCHO / 2, CONTENIDO_ANCHO / 2],
+            rowHeights=[24 * mm],
         )
         qr_table.setStyle(
-            TableStyle(
-                [
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-                    ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-                ]
-            )
+            TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+            ])
         )
         elementos.append(qr_table)
 
@@ -161,8 +156,8 @@ class FormatoRotulo:
         fecha_actual = datetime.now().strftime('%Y-%m-%d %H:%M')
         elementos.append(
             Paragraph(
-                f'{nombre_empresa.upper()} &nbsp;&nbsp;&nbsp; FECHA {fecha_actual}',
-                estilo_pie,
+                f'{nombre_empresa.upper()}  ·  FECHA {fecha_actual}',
+                pie,
             )
         )
 
