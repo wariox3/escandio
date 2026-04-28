@@ -54,6 +54,57 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             return Response({'actualizacion': True, 'usuario': user_serializer.data}, status=status.HTTP_201_CREATED)            
         return Response({'mensaje':'Errores en la actualizacion del usuario', 'codigo':10, 'validaciones': user_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)  
     
+    @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
+    def admin_lista(self, request):
+        from contenedor.models import Contenedor, UsuarioContenedor
+        usuarios = User.objects.all().order_by('-fecha_creacion')
+
+        # Contenedores donde es admin (FK)
+        admin_de = {}
+        for c in Contenedor.objects.exclude(schema_name='public').filter(usuario__isnull=False).values('usuario_id', 'nombre', 'schema_name'):
+            admin_de.setdefault(c['usuario_id'], []).append(
+                {'nombre': c['nombre'], 'schema_name': c['schema_name']}
+            )
+
+        # Contenedores donde fue invitado
+        invitado_a = {}
+        for uc in UsuarioContenedor.objects.select_related('contenedor').values(
+            'usuario_id', 'rol', 'contenedor__nombre', 'contenedor__schema_name'
+        ):
+            invitado_a.setdefault(uc['usuario_id'], []).append({
+                'nombre': uc['contenedor__nombre'],
+                'schema_name': uc['contenedor__schema_name'],
+                'rol': uc['rol'],
+            })
+
+        data = []
+        for u in usuarios:
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'nombre': u.nombre,
+                'apellido': u.apellido,
+                'correo': u.correo,
+                'is_active': u.is_active,
+                'is_staff': u.is_staff,
+                'is_superuser': u.is_superuser,
+                'verificado': u.verificado,
+                'fecha_creacion': u.fecha_creacion,
+                'admin_de': admin_de.get(u.id, []),
+                'invitado_a': invitado_a.get(u.id, []),
+            })
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path=r'admin-toggle-activo', permission_classes=[permissions.IsAdminUser])
+    def admin_toggle_activo(self, request, pk=None):
+        user = self.get_object(pk)
+        user.is_active = not user.is_active
+        user.save()
+        return Response(
+            {'id': user.id, 'is_active': user.is_active},
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=False, methods=["get"], url_path=r'seleccionar')
     def seleccionar_action(self, request):
         limit = request.query_params.get('limit', 10)
