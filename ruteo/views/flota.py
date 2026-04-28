@@ -10,13 +10,14 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.db.models import Max
 from django.db import transaction
+from contenedor.mixins import RolMixin
 
-class RutFlotaViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+class RutFlotaViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = RutFlota.objects.all()
-    serializer_class = RutFlotaSerializador    
-    filter_backends = [DjangoFilterBackend, OrderingFilter]    
-    filterset_class = FlotaFilter 
+    serializer_class = RutFlotaSerializador
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_class = FlotaFilter
+    acciones_admin = ['create', 'update', 'partial_update', 'destroy', 'cambiar_prioridad']
     serializadores = {
         'lista': RutFlotaSerializador
     }

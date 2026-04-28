@@ -3,11 +3,12 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from general.models.configuracion import GenConfiguracion
 from general.serializers.configuracion import GenConfiguracionSerializador
+from contenedor.mixins import RolMixin
 
-class ConfiguracionViewSet(viewsets.ModelViewSet):
+class ConfiguracionViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = GenConfiguracion.objects.all()
-    serializer_class = GenConfiguracionSerializador    
-    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = GenConfiguracionSerializador
+    acciones_admin = ['create', 'update', 'partial_update', 'destroy']
 
     
     @action(detail=False, methods=["post"], url_path=r'consulta',)
