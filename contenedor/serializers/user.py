@@ -54,6 +54,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             'socio_id': instance.socio_id,
             'is_active': instance.is_active,
             'is_staff': instance.is_staff,
+            'is_superuser': instance.is_superuser,
             'aplicacion': instance.aplicacion,
             'operacion_id' : instance.operacion_id,
             'operacion_cargo_id' : instance.operacion_cargo_id
