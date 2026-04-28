@@ -8,17 +8,18 @@ from ruteo.filters.vehiculo import VehiculoFilter
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
+from contenedor.mixins import RolMixin
 import base64
 from io import BytesIO
 import openpyxl
 import gc
 
-class RutVehiculoViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+class RutVehiculoViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = RutVehiculo.objects.all()
-    serializer_class = RutVehiculoSerializador    
-    filter_backends = [DjangoFilterBackend, OrderingFilter]    
-    filterset_class = VehiculoFilter 
+    serializer_class = RutVehiculoSerializador
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_class = VehiculoFilter
+    acciones_admin = ['create', 'update', 'partial_update', 'destroy']
     serializadores = {
         'lista': RutVehiculoSerializador
     }
