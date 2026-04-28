@@ -8,6 +8,7 @@ from ruteo.models.franja import RutFranja
 from ruteo.models.flota import RutFlota
 from general.models.configuracion import GenConfiguracion
 from general.models.archivo import GenArchivo
+from general.models.ciudad import GenCiudad
 from contenedor.models import CtnDireccion
 from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
@@ -27,6 +28,8 @@ from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.visita import VisitaFilter
 from utilidades.excel_exportar import ExcelExportar
+from ruteo.formatos.rotulo import FormatoRotulo
+from django.http import HttpResponse
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import gc
@@ -194,6 +197,12 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     cita_fin = row[15] if len(row) > 15 and row[15] else None
                     direccion_complemento = row[16] if len(row) > 16 and row[16] else None
                     observacion = row[17] if len(row) > 17 and row[17] else None
+                    ciudad_nombre = row[18] if len(row) > 18 and row[18] else None
+                    ciudad_id = None
+                    if ciudad_nombre:
+                        ciudad_match = GenCiudad.objects.filter(nombre__iexact=str(ciudad_nombre).strip()).values_list('id', flat=True).first()
+                        if ciudad_match:
+                            ciudad_id = ciudad_match
                     data = {
                         'numero': row[0],
                         'fecha':fecha,
@@ -216,7 +225,10 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                         'cita_fin': cita_fin,
                         'destinatario_direccion_complemento': direccion_complemento,
                         'observacion': observacion,
-                    }                 
+                    }
+                    if ciudad_id:
+                        data['ciudad'] = ciudad_id
+
                     if direccion_destinatario:                   
                         respuesta = DireccionServicio.decodificar(direccion_destinatario)
                         if respuesta['error'] == False:
@@ -782,7 +794,18 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 visita.volumen = volumen
                 visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
                 visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
-                visita.save()               
+                if 'destinatario_correo' in raw:
+                    visita.destinatario_correo = raw.get('destinatario_correo')
+                if 'tiempo_servicio' in raw:
+                    tiempo = raw.get('tiempo_servicio')
+                    visita.tiempo_servicio = tiempo if tiempo not in (None, '') else 0
+                if 'destinatario_direccion_complemento' in raw:
+                    visita.destinatario_direccion_complemento = raw.get('destinatario_direccion_complemento')
+                if 'observacion' in raw:
+                    visita.observacion = raw.get('observacion')
+                if 'ciudad' in raw and raw.get('ciudad'):
+                    visita.ciudad_id = raw.get('ciudad')
+                visita.save()
                 return Response({'mensaje': 'Se actualizo la visita'}, status=status.HTTP_200_OK)
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
@@ -1005,8 +1028,25 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             else:
                 return Response({'mensaje':'La visita ya fue entregada o no esta despachada', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)        
-            
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["post"], url_path=r'imprimir-rotulo',)
+    def imprimir_rotulo(self, request):
+        raw = request.data
+        id = raw.get('id')
+        if not id:
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            formato = FormatoRotulo()
+            pdf = formato.generar_pdf(id)
+            nombre_archivo = f"rotulo_{id}.pdf"
+            response = HttpResponse(pdf, content_type='application/pdf')
+            response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+            response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+            return response
+        except RutVisita.DoesNotExist:
+            return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=False, methods=["post"], url_path=r'entrega-complemento',)
     def entrega_complemento_action(self, request):   
         backblaze = Backblaze()
