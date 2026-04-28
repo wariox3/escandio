@@ -168,12 +168,14 @@ SIMPLE_JWT = {
 
 AUTH_USER_MODEL = 'contenedor.User'
 
-CORS_ALLOWED_ORIGINS = [    
-    "http://localhost:4200",    
-    "http://ruteoapi.online",    
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:4200",
+    "http://ruteoapi.online",
     "http://app.ruteo.online",
-    "https://ruteoapi.co",    
-    "https://app.ruteo.co",    
+    "https://ruteoapi.online",
+    "https://app.ruteo.online",
+    "https://ruteoapi.co",
+    "https://app.ruteo.co",
 ]
 
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
