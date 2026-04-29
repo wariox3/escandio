@@ -8,6 +8,7 @@ from ruteo.models.franja import RutFranja
 from ruteo.models.flota import RutFlota
 from general.models.configuracion import GenConfiguracion
 from general.models.archivo import GenArchivo
+from general.models.ciudad import GenCiudad
 from contenedor.models import CtnDireccion
 from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
@@ -27,18 +28,26 @@ from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.visita import VisitaFilter
 from utilidades.excel_exportar import ExcelExportar
+from ruteo.formatos.rotulo import FormatoRotulo
+from contenedor.mixins import RolMixin
+from django.http import HttpResponse
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import gc
 import base64
 import openpyxl
 
-class RutVisitaViewSet(viewsets.ModelViewSet):
+class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = RutVisita.objects.all()
     serializer_class = RutVisitaSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = VisitaFilter 
+    filterset_class = VisitaFilter
+    acciones_admin = [
+        'importar_excel',
+        'importar_complemento_action',
+        'rutear',
+        'eliminar_todos',
+    ]
     serializadores = {
         'lista': RutVistaListaSerializador,
         'lista_completa' : RutVistaListaSerializador,
@@ -175,7 +184,8 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             errores_datos = []    
             franjas = RutFranja.objects.all()            
             total_registros = sheet.max_row - 1
-            if total_registros <= 500:
+            limite_importacion = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_importacion', flat=True).first() or 500
+            if total_registros <= limite_importacion:
                 for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):                
                     if len(row) < 14:
                         return Response({'mensaje':'El archivo no tiene la estructura requerida', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
@@ -191,6 +201,14 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                         telefono_destinatario = telefono_destinatario[:50]
                     cita_inicio = row[14] if len(row) > 14 and row[14] else None
                     cita_fin = row[15] if len(row) > 15 and row[15] else None
+                    direccion_complemento = row[16] if len(row) > 16 and row[16] else None
+                    observacion = row[17] if len(row) > 17 and row[17] else None
+                    ciudad_nombre = row[18] if len(row) > 18 and row[18] else None
+                    ciudad_id = None
+                    if ciudad_nombre:
+                        ciudad_match = GenCiudad.objects.filter(nombre__iexact=str(ciudad_nombre).strip()).values_list('id', flat=True).first()
+                        if ciudad_match:
+                            ciudad_id = ciudad_match
                     data = {
                         'numero': row[0],
                         'fecha':fecha,
@@ -211,7 +229,12 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                         'resultados': None,
                         'cita_inicio': cita_inicio,
                         'cita_fin': cita_fin,
-                    }                 
+                        'destinatario_direccion_complemento': direccion_complemento,
+                        'observacion': observacion,
+                    }
+                    if ciudad_id:
+                        data['ciudad'] = ciudad_id
+
                     if direccion_destinatario:                   
                         respuesta = DireccionServicio.decodificar(direccion_destinatario)
                         if respuesta['error'] == False:
@@ -252,7 +275,7 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                     gc.collect()                    
                     return Response({'mensaje':'Errores de validación', 'codigo':1, 'errores_validador': errores_datos}, status=status.HTTP_400_BAD_REQUEST)                                    
             else:
-                return Response({'mensaje':'Solo se permiten importar hasta 500 registros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'mensaje': f'Solo se permiten importar hasta {limite_importacion} registros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -777,7 +800,18 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
                 visita.volumen = volumen
                 visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
                 visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
-                visita.save()               
+                if 'destinatario_correo' in raw:
+                    visita.destinatario_correo = raw.get('destinatario_correo')
+                if 'tiempo_servicio' in raw:
+                    tiempo = raw.get('tiempo_servicio')
+                    visita.tiempo_servicio = tiempo if tiempo not in (None, '') else 0
+                if 'destinatario_direccion_complemento' in raw:
+                    visita.destinatario_direccion_complemento = raw.get('destinatario_direccion_complemento')
+                if 'observacion' in raw:
+                    visita.observacion = raw.get('observacion')
+                if 'ciudad' in raw and raw.get('ciudad'):
+                    visita.ciudad_id = raw.get('ciudad')
+                visita.save()
                 return Response({'mensaje': 'Se actualizo la visita'}, status=status.HTTP_200_OK)
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
@@ -1000,8 +1034,38 @@ class RutVisitaViewSet(viewsets.ModelViewSet):
             else:
                 return Response({'mensaje':'La visita ya fue entregada o no esta despachada', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)        
-            
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["post"], url_path=r'imprimir-rotulo',)
+    def imprimir_rotulo(self, request):
+        raw = request.data
+        ids = raw.get('ids')
+        single_id = raw.get('id')
+        formato_pdf = (raw.get('formato') or 'termica').lower()
+        if formato_pdf not in ('termica', 'a4'):
+            formato_pdf = 'termica'
+        if ids and isinstance(ids, list):
+            visita_ids = [int(x) for x in ids if x is not None]
+        elif single_id:
+            visita_ids = [int(single_id)]
+        else:
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+        existentes = list(RutVisita.objects.filter(id__in=visita_ids).values_list('id', flat=True))
+        if not existentes:
+            return Response({'mensaje':'Las visitas no existen', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+
+        formato = FormatoRotulo()
+        pdf = formato.generar_pdf_lote(existentes, formato=formato_pdf)
+        if len(existentes) == 1:
+            nombre_archivo = f"rotulo_{existentes[0]}.pdf"
+        else:
+            nombre_archivo = f"rotulos_{len(existentes)}.pdf"
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+        response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+        return response
+
     @action(detail=False, methods=["post"], url_path=r'entrega-complemento',)
     def entrega_complemento_action(self, request):   
         backblaze = Backblaze()
