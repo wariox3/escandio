@@ -3,16 +3,21 @@ import threading
 import logging
 from decouple import config
 from django.db import connection
-from contenedor.models import Contenedor
+from django.utils import timezone
+from contenedor.models import Contenedor, CtnWhatsappConexion
 from general.models.configuracion import GenConfiguracion
 from ruteo.models.visita import RutVisita
 from ruteo.models.notificacion import RutNotificacion
-from utilidades.globalconnect import GlobalConnect
+from mensajeria.models import MsjConversacion, MsjMensaje
+from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
 
 logger = logging.getLogger(__name__)
 
 
 class NotificacionServicio():
+
+    PLANTILLA_DESPACHO = config('META_PLANTILLA_DESPACHO', default='entrega')
+    PLANTILLA_IDIOMA = config('META_PLANTILLA_DESPACHO_IDIOMA', default='es')
 
     @staticmethod
     def normalizar_telefono(telefono):
@@ -29,27 +34,32 @@ class NotificacionServicio():
 
     @staticmethod
     def notificar_despacho_aprobado(despacho_id, schema_name=None, nombre_empresa=None, contenedor_id=None):
-        try:
-            id_plantilla = int(config('GLOBALCONNECT_PLANTILLA_DESPACHO', default='0'))
-        except (ValueError, TypeError):
-            id_plantilla = 0
-
-        if not id_plantilla:
-            logger.warning('GLOBALCONNECT_PLANTILLA_DESPACHO no configurada, no se envian notificaciones WhatsApp')
+        if not contenedor_id:
+            logger.warning(f'Despacho {despacho_id}: sin contenedor_id, no se envían notificaciones WhatsApp')
             return
 
-        if contenedor_id:
-            try:
-                contenedor = Contenedor.objects.get(pk=contenedor_id)
-                if not contenedor.acceso_whatsapp:
-                    logger.info(f'Despacho {despacho_id}: WhatsApp no autorizado por admin para contenedor {contenedor_id}')
-                    return
-            except Contenedor.DoesNotExist:
-                logger.warning(f'Despacho {despacho_id}: contenedor {contenedor_id} no encontrado')
-                return
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            logger.warning(f'Despacho {despacho_id}: contenedor {contenedor_id} no existe')
+            return
+
+        if not contenedor.acceso_whatsapp_notificaciones:
+            logger.info(f'Despacho {despacho_id}: acceso_whatsapp_notificaciones deshabilitado para {contenedor.schema_name}')
+            return
+
+        conexion = CtnWhatsappConexion.objects.filter(
+            contenedor=contenedor,
+            estado=CtnWhatsappConexion.ESTADO_ACTIVO,
+        ).first()
+        if not conexion:
+            logger.warning(f'Despacho {despacho_id}: contenedor {contenedor.schema_name} sin CtnWhatsappConexion activa')
+            return
 
         if not schema_name:
             schema_name = connection.schema_name
+
+        nombre_empresa_final = nombre_empresa or contenedor.nombre or 'Ruteo.co'
 
         def enviar_mensajes():
             try:
@@ -58,7 +68,7 @@ class NotificacionServicio():
                 if not config_tenant or not config_tenant.get('rut_whatsapp_habilitado', False):
                     logger.info(f'Despacho {despacho_id}: WhatsApp deshabilitado por configuración del tenant')
                     return
-                gc = GlobalConnect()
+
                 visitas = RutVisita.objects.filter(
                     despacho_id=despacho_id
                 ).values('id', 'destinatario', 'destinatario_telefono', 'documento')
@@ -78,43 +88,83 @@ class NotificacionServicio():
                     if documento:
                         destinatarios[telefono]['documentos'].append(documento)
 
+                cliente = WhatsappCliente(conexion)
                 enviados = 0
                 errores = 0
+
                 for telefono, datos in destinatarios.items():
                     documentos_texto = ', '.join(datos['documentos']) if datos['documentos'] else 'N/A'
+                    variables = [datos['nombre'], nombre_empresa_final, documentos_texto]
 
-                    variables = [
-                        {'type': 'text', 'text': datos['nombre']},
-                        {'type': 'text', 'text': nombre_empresa or 'Ruteo.co'},
-                        {'type': 'text', 'text': documentos_texto},
-                    ]
-
-                    resultado = gc.enviar_plantilla(
-                        id_plantilla=id_plantilla,
-                        destino=telefono,
+                    resultado = cliente.enviar_plantilla(
+                        telefono=telefono,
+                        nombre_plantilla=NotificacionServicio.PLANTILLA_DESPACHO,
+                        idioma=NotificacionServicio.PLANTILLA_IDIOMA,
                         variables=variables,
                     )
 
-                    if resultado['error']:
-                        errores += 1
-                        logger.error(f'Despacho {despacho_id}: error enviando WhatsApp a {telefono}: {resultado["mensaje"]}')
-                        RutNotificacion.objects.create(
-                            despacho_id=despacho_id,
-                            telefono=telefono,
-                            estado_enviado=False,
+                    exito = not resultado.get('error')
+                    if exito:
+                        enviados += 1
+                        logger.info(
+                            f'Despacho {despacho_id}: WhatsApp enviado a {telefono}, '
+                            f'guias=[{documentos_texto}], wamid={resultado.get("message_id")}'
                         )
                     else:
-                        enviados += 1
-                        logger.info(f'Despacho {despacho_id}: WhatsApp enviado a {telefono}, guias=[{documentos_texto}], id={resultado["id"]}')
-                        RutNotificacion.objects.create(
-                            despacho_id=despacho_id,
-                            telefono=telefono,
-                            estado_enviado=True,
+                        errores += 1
+                        logger.error(
+                            f'Despacho {despacho_id}: error enviando WhatsApp a {telefono}: '
+                            f'{resultado.get("mensaje")}'
                         )
 
-                logger.info(f'Despacho {despacho_id}: notificaciones WhatsApp completadas. Enviados={enviados}, Errores={errores}')
+                    RutNotificacion.objects.create(
+                        despacho_id=despacho_id,
+                        telefono=telefono,
+                        estado_enviado=exito,
+                    )
+
+                    NotificacionServicio._registrar_en_inbox(
+                        telefono=telefono,
+                        nombre_cliente=datos['nombre'],
+                        documentos_texto=documentos_texto,
+                        resultado=resultado,
+                        variables=variables,
+                    )
+
+                logger.info(
+                    f'Despacho {despacho_id}: notificaciones WhatsApp completadas. '
+                    f'Enviados={enviados}, Errores={errores}'
+                )
             except Exception as e:
-                logger.error(f'Despacho {despacho_id}: error general en notificaciones WhatsApp: {e}')
+                logger.exception(f'Despacho {despacho_id}: error general en notificaciones WhatsApp: {e}')
 
         hilo = threading.Thread(target=enviar_mensajes, daemon=True)
         hilo.start()
+
+    @staticmethod
+    def _registrar_en_inbox(telefono, nombre_cliente, documentos_texto, resultado, variables):
+        """Guarda el envío como MsjMensaje saliente para que quede trazabilidad en el inbox."""
+        try:
+            conversacion, _ = MsjConversacion.objects.get_or_create(
+                cliente_telefono=telefono,
+                defaults={'cliente_nombre': nombre_cliente},
+            )
+            if nombre_cliente and not conversacion.cliente_nombre:
+                conversacion.cliente_nombre = nombre_cliente
+                conversacion.save(update_fields=['cliente_nombre', 'fecha_actualizacion'])
+
+            exito = not resultado.get('error')
+            MsjMensaje.objects.create(
+                conversacion=conversacion,
+                direccion=MsjMensaje.DIRECCION_SALIDA,
+                tipo=MsjMensaje.TIPO_TEMPLATE,
+                contenido=f'Plantilla enviada: {NotificacionServicio.PLANTILLA_DESPACHO} (guias: {documentos_texto})',
+                whatsapp_message_id=resultado.get('message_id'),
+                estado=MsjMensaje.ESTADO_ENVIADO if exito else MsjMensaje.ESTADO_ERROR,
+                error_mensaje=resultado.get('mensaje') if not exito else None,
+                metadata={'variables': variables, 'raw': resultado.get('raw')},
+            )
+            conversacion.ultimo_mensaje_fecha = timezone.now()
+            conversacion.save(update_fields=['ultimo_mensaje_fecha', 'fecha_actualizacion'])
+        except Exception as e:
+            logger.warning(f'No se pudo registrar envio en inbox para {telefono}: {e}')

@@ -57,15 +57,15 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         usuarioEmpresa = self.get_object()
-        if usuarioEmpresa.rol == 'invitado':
+        if usuarioEmpresa.rol in ('invitado', 'usuario'):
             self.perform_destroy(usuarioEmpresa)
             empresa = Contenedor.objects.get(pk=usuarioEmpresa.contenedor_id)
             empresa.usuarios -= 1
             empresa.save()
             return Response(status=status.HTTP_200_OK)
         else:
-            return Response({'mensaje':"El usuario propietario no se puede eliminar", 'codigo': 22}, status=status.HTTP_400_BAD_REQUEST)      
-        
+            return Response({'mensaje':"El usuario propietario no se puede eliminar", 'codigo': 22}, status=status.HTTP_400_BAD_REQUEST)
+
 
     @action(detail=False, methods=["post"], url_path=r'nuevo',)
     def nuevo_action(self, request):
@@ -73,20 +73,88 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         usuario_id = raw.get('usuario_id', None)
         usuario_invitado_id = raw.get('usuario_invitado_id', None)
         contenedor_id = raw.get('contenedor_id', None)
-        if usuario_id and usuario_invitado_id and contenedor_id:                    
-            usuario_contenedor_existente = UsuarioContenedor.objects.filter(usuario_id=usuario_invitado_id, contenedor_id=contenedor_id).first()
-            if usuario_contenedor_existente:
-                return Response({'mensaje':'El usuario ya pertenece al contenedor', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)                        
-            data = {
-                'usuario': usuario_invitado_id,
-                'contenedor': contenedor_id,
-                'rol': 'invitado'
-            }
-            serializador = UsuarioContenedorSerializador(data=data)
-            if serializador.is_valid():
-                usuario_contenedor = serializador.save()                
-                return Response({'usuario_contenedor': serializador.data}, status=status.HTTP_201_CREATED)                    
-            else:
-                return Response({'mensaje':'Errores en el registro del usuario contenedor', 'codigo':2, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)     
+        contenedores_ids = raw.get('contenedores_ids', None)
+
+        if not (usuario_id and usuario_invitado_id):
+            return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Normalizar a lista de contenedores
+        if contenedores_ids and isinstance(contenedores_ids, list):
+            ids = [int(x) for x in contenedores_ids if x]
+        elif contenedor_id:
+            ids = [int(contenedor_id)]
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)                        
+            return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validar que el invitador es admin de cada contenedor (super admin se salta)
+        contenedores = Contenedor.objects.filter(id__in=ids)
+        if not request.user.is_superuser:
+            no_autorizados = [c.id for c in contenedores if c.usuario_id != usuario_id]
+            if no_autorizados:
+                return Response(
+                    {'mensaje': f'No eres administrador de los contenedores {no_autorizados}', 'codigo': 13},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        creados = []
+        ya_existian = []
+        for c in contenedores:
+            if UsuarioContenedor.objects.filter(usuario_id=usuario_invitado_id, contenedor_id=c.id).exists():
+                ya_existian.append(c.id)
+                continue
+            uc = UsuarioContenedor.objects.create(
+                usuario_id=usuario_invitado_id,
+                contenedor_id=c.id,
+                rol='usuario',
+            )
+            c.usuarios = (c.usuarios or 0) + 1
+            c.save()
+            creados.append(uc.id)
+
+        return Response(
+            {
+                'creados': creados,
+                'ya_existian': ya_existian,
+                'mensaje': 'Asignación procesada',
+            },
+            status=status.HTTP_201_CREATED if creados else status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path=r'ceder-admin',)
+    def ceder_admin(self, request):
+        """Transfiere la propiedad del contenedor a otro miembro existente."""
+        raw = request.data
+        contenedor_id = raw.get('contenedor_id')
+        nuevo_admin_id = raw.get('nuevo_admin_id')
+        if not (contenedor_id and nuevo_admin_id):
+            return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje':'Contenedor no existe', 'codigo':13}, status=status.HTTP_404_NOT_FOUND)
+
+        if not request.user.is_superuser and contenedor.usuario_id != request.user.id:
+            return Response({'mensaje':'Solo el admin actual puede ceder', 'codigo':13}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            nuevo = User.objects.get(pk=nuevo_admin_id)
+        except User.DoesNotExist:
+            return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
+
+        admin_anterior_id = contenedor.usuario_id
+        contenedor.usuario = nuevo
+        contenedor.save()
+
+        # El nuevo admin deja de ser usuario invitado (si lo era)
+        UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+
+        # El admin anterior queda como usuario invitado
+        if admin_anterior_id and admin_anterior_id != nuevo.id:
+            UsuarioContenedor.objects.get_or_create(
+                usuario_id=admin_anterior_id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'usuario'},
+            )
+
+        return Response({'mensaje': 'Administración transferida'}, status=status.HTTP_200_OK)

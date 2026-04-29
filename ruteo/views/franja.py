@@ -16,18 +16,19 @@ from utilidades.zinc import Zinc
 from shapely.geometry import Point, Polygon
 import xml.etree.ElementTree as ET
 from django.core.files.base import ContentFile
+from contenedor.mixins import RolMixin
 
 def is_point_in_polygon(polygon_coords, point_coords):
     polygon = Polygon(polygon_coords)
     point = Point(point_coords)
     return polygon.contains(point)
 
-class RutFranjaViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+class RutFranjaViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = RutFranja.objects.all()
-    serializer_class = RutFranjaSerializador    
-    filter_backends = [DjangoFilterBackend, OrderingFilter]    
-    filterset_class = FranjaFilter 
+    serializer_class = RutFranjaSerializador
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_class = FranjaFilter
+    acciones_admin = ['create', 'update', 'partial_update', 'destroy']
     serializadores = {
         'lista': RutFranjaSerializador
     }

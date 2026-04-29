@@ -54,6 +54,155 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             return Response({'actualizacion': True, 'usuario': user_serializer.data}, status=status.HTTP_201_CREATED)            
         return Response({'mensaje':'Errores en la actualizacion del usuario', 'codigo':10, 'validaciones': user_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)  
     
+    @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
+    def admin_lista(self, request):
+        from contenedor.models import Contenedor, UsuarioContenedor
+        usuarios = User.objects.all().order_by('-fecha_creacion')
+
+        # Contenedores donde es admin (FK)
+        admin_de = {}
+        for c in Contenedor.objects.exclude(schema_name='public').filter(usuario__isnull=False).values('usuario_id', 'nombre', 'schema_name'):
+            admin_de.setdefault(c['usuario_id'], []).append(
+                {'nombre': c['nombre'], 'schema_name': c['schema_name']}
+            )
+
+        # Contenedores donde fue invitado
+        invitado_a = {}
+        for uc in UsuarioContenedor.objects.select_related('contenedor').values(
+            'usuario_id', 'rol', 'contenedor__nombre', 'contenedor__schema_name'
+        ):
+            invitado_a.setdefault(uc['usuario_id'], []).append({
+                'nombre': uc['contenedor__nombre'],
+                'schema_name': uc['contenedor__schema_name'],
+                'rol': uc['rol'],
+            })
+
+        data = []
+        for u in usuarios:
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'nombre': u.nombre,
+                'apellido': u.apellido,
+                'correo': u.correo,
+                'is_active': u.is_active,
+                'is_staff': u.is_staff,
+                'is_superuser': u.is_superuser,
+                'verificado': u.verificado,
+                'fecha_creacion': u.fecha_creacion,
+                'admin_de': admin_de.get(u.id, []),
+                'invitado_a': invitado_a.get(u.id, []),
+            })
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path=r'admin-toggle-activo', permission_classes=[permissions.IsAdminUser])
+    def admin_toggle_activo(self, request, pk=None):
+        user = self.get_object(pk)
+        user.is_active = not user.is_active
+        user.save()
+        return Response(
+            {'id': user.id, 'is_active': user.is_active},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path=r'admin-asignar-contenedor', permission_classes=[permissions.IsAdminUser])
+    def admin_asignar_contenedor(self, request):
+        """Asigna un usuario a un contenedor con rol específico.
+        rol='admin' → reemplaza Contenedor.usuario (el anterior pasa a 'usuario').
+        rol='usuario' → crea/actualiza UsuarioContenedor con rol='usuario'.
+        Identifica el contenedor por schema_name o contenedor_id."""
+        from contenedor.models import Contenedor, UsuarioContenedor
+        raw = request.data
+        usuario_id = raw.get('usuario_id')
+        schema_name = raw.get('schema_name')
+        contenedor_id = raw.get('contenedor_id')
+        rol = (raw.get('rol') or 'usuario').lower()
+        if rol not in ('admin', 'usuario'):
+            return Response({'mensaje':'rol debe ser admin o usuario', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        if not usuario_id or (not schema_name and not contenedor_id):
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            if schema_name:
+                contenedor = Contenedor.objects.get(schema_name=schema_name)
+            else:
+                contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje':'Contenedor no existe', 'codigo':13}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            nuevo = User.objects.get(pk=usuario_id)
+        except User.DoesNotExist:
+            return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
+
+        if rol == 'admin':
+            admin_anterior_id = contenedor.usuario_id
+            if admin_anterior_id == nuevo.id:
+                return Response({'mensaje':'Ese usuario ya es admin', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+            contenedor.usuario = nuevo
+            contenedor.save()
+            UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+            if admin_anterior_id and admin_anterior_id != nuevo.id:
+                UsuarioContenedor.objects.get_or_create(
+                    usuario_id=admin_anterior_id,
+                    contenedor_id=contenedor.id,
+                    defaults={'rol': 'usuario'},
+                )
+            return Response({'mensaje':'Asignado como admin', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
+        else:
+            if contenedor.usuario_id == nuevo.id:
+                return Response({'mensaje':'Ese usuario ya es admin del contenedor', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
+            uc, creado = UsuarioContenedor.objects.get_or_create(
+                usuario_id=nuevo.id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'usuario'},
+            )
+            if not creado and uc.rol != 'usuario':
+                uc.rol = 'usuario'
+                uc.save()
+            if creado:
+                contenedor.usuarios = (contenedor.usuarios or 0) + 1
+                contenedor.save()
+            return Response({'mensaje':'Asignado como usuario', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path=r'admin-cambiar-admin-contenedor', permission_classes=[permissions.IsAdminUser])
+    def admin_cambiar_admin_contenedor(self, request):
+        """Asigna a un usuario como admin (Contenedor.usuario) de un contenedor.
+        Identifica el contenedor por schema_name. Quien era admin pasa a 'usuario'."""
+        from contenedor.models import Contenedor, UsuarioContenedor
+        raw = request.data
+        usuario_id = raw.get('usuario_id')
+        schema_name = raw.get('schema_name')
+        contenedor_id = raw.get('contenedor_id')
+        if not usuario_id or (not schema_name and not contenedor_id):
+            return Response({'mensaje':'Faltan parametros (usuario_id y schema_name o contenedor_id)', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            if schema_name:
+                contenedor = Contenedor.objects.get(schema_name=schema_name)
+            else:
+                contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje':'Contenedor no existe', 'codigo':13}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            nuevo = User.objects.get(pk=usuario_id)
+        except User.DoesNotExist:
+            return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
+
+        admin_anterior_id = contenedor.usuario_id
+        contenedor.usuario = nuevo
+        contenedor.save()
+        # Si el nuevo era invitado, sale de invitados
+        UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+        # El admin anterior queda como invitado
+        if admin_anterior_id and admin_anterior_id != nuevo.id:
+            UsuarioContenedor.objects.get_or_create(
+                usuario_id=admin_anterior_id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'usuario'},
+            )
+        return Response(
+            {'mensaje': 'Admin cambiado', 'contenedor_id': contenedor.id},
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=False, methods=["get"], url_path=r'seleccionar')
     def seleccionar_action(self, request):
         limit = request.query_params.get('limit', 10)
