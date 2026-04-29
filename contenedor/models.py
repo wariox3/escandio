@@ -120,14 +120,30 @@ class CtnCiudad(models.Model):
     class Meta:
         db_table = "ctn_ciudad"      
         
+PERFIL_WEB_CHOICES = [
+    ('operativo', 'Operativo'),
+    ('supervisor', 'Supervisor'),
+    ('consulta', 'Consulta'),
+]
+
+PERFIL_MOVIL_CHOICES = [
+    ('conductor', 'Conductor'),
+    ('coordinador', 'Coordinador'),
+]
+
+
 class UsuarioContenedor(models.Model):
     rol = models.CharField(max_length=20, null=True)
     usuario = models.ForeignKey(User, on_delete=models.CASCADE)
     contenedor = models.ForeignKey(Contenedor, on_delete=models.CASCADE)
-    
+    tiene_acceso_web = models.BooleanField(default=True)
+    tiene_acceso_movil = models.BooleanField(default=False)
+    perfil_web = models.CharField(max_length=20, choices=PERFIL_WEB_CHOICES, default='operativo', null=True, blank=True)
+    perfil_movil = models.CharField(max_length=20, choices=PERFIL_MOVIL_CHOICES, null=True, blank=True)
+
     class Meta:
         unique_together = ('usuario', 'contenedor')
-        db_table = "ctn_usuario_contenedor"                      
+        db_table = "ctn_usuario_contenedor"
 
 class CtnDireccion(models.Model):
     fecha = models.DateTimeField()
