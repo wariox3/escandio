@@ -16,9 +16,14 @@ class GenConfiguracionSerializador(serializers.ModelSerializer):
             'rut_decodificar_direcciones',
             'rut_hora_inicio',
             'rut_whatsapp_habilitado',
-            'rut_estrategia_ruteo'
-        ]   
-        select_related_fields = ['empresa']   
+            'rut_estrategia_ruteo',
+            'rut_cita_tipo_defecto',
+            'rut_alerta_parada_activa',
+            'rut_alerta_parada_minutos',
+            'rut_alerta_parada_radio_metros',
+            'rut_alerta_geocerca_activa',
+        ]
+        select_related_fields = ['empresa']
 
 class GenConfiguracionRndcSerializador(serializers.ModelSerializer):
     empresa__numero_identificacion = serializers.CharField(source='empresa.numero_identificacion', read_only=True)
