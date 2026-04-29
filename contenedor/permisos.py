@@ -39,17 +39,34 @@ def es_admin_del_contenedor(user, contenedor):
 
 
 def es_miembro_del_contenedor(user, contenedor):
-    """True si el user es admin o tiene UsuarioContenedor en el contenedor."""
+    """True si el user es admin o tiene UsuarioContenedor con acceso web."""
     if es_admin_del_contenedor(user, contenedor):
         return True
     if not (user and user.is_authenticated and contenedor):
         return False
-    # Import local para evitar circular
     from contenedor.models import UsuarioContenedor
-    # Las relaciones UsuarioContenedor viven en el schema public, no en el tenant
     return UsuarioContenedor.objects.filter(
-        usuario_id=user.id, contenedor_id=contenedor.id
+        usuario_id=user.id, contenedor_id=contenedor.id, tiene_acceso_web=True
     ).exists()
+
+
+def perfil_web_del_miembro(user, contenedor):
+    """Devuelve el perfil_web del UsuarioContenedor o 'admin' si es admin/super_admin, None si no es miembro."""
+    if es_super_admin(user) or es_admin_del_contenedor(user, contenedor):
+        return 'admin'
+    if not (user and user.is_authenticated and contenedor):
+        return None
+    from contenedor.models import UsuarioContenedor
+    uc = UsuarioContenedor.objects.filter(
+        usuario_id=user.id, contenedor_id=contenedor.id, tiene_acceso_web=True
+    ).only('perfil_web').first()
+    return uc.perfil_web if uc else None
+
+
+def puede_editar(user, contenedor):
+    """Admin, super admin, operativo o supervisor pueden escribir. Consulta no."""
+    perfil = perfil_web_del_miembro(user, contenedor)
+    return perfil in ('admin', 'operativo', 'supervisor')
 
 
 def rol_en_contenedor(user, contenedor):
@@ -90,3 +107,12 @@ class EsMiembroDelContenedor(BasePermission):
             return True
         contenedor = _resolver_contenedor(request)
         return es_miembro_del_contenedor(request.user, contenedor)
+
+
+class EsMiembroEditor(BasePermission):
+    """Admin, super admin, operativo o supervisor — excluye perfil 'consulta'."""
+    message = 'Tu perfil es de solo lectura.'
+
+    def has_permission(self, request, view):
+        contenedor = _resolver_contenedor(request)
+        return puede_editar(request.user, contenedor)

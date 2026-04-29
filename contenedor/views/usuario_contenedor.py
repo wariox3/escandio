@@ -96,6 +96,12 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+        # Perfiles y accesos opcionales
+        perfil_web = raw.get('perfil_web') or 'operativo'
+        perfil_movil = raw.get('perfil_movil')
+        tiene_acceso_web = bool(raw.get('tiene_acceso_web', True))
+        tiene_acceso_movil = bool(raw.get('tiene_acceso_movil', False))
+
         creados = []
         ya_existian = []
         for c in contenedores:
@@ -106,6 +112,10 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                 usuario_id=usuario_invitado_id,
                 contenedor_id=c.id,
                 rol='usuario',
+                tiene_acceso_web=tiene_acceso_web,
+                tiene_acceso_movil=tiene_acceso_movil,
+                perfil_web=perfil_web if tiene_acceso_web else None,
+                perfil_movil=perfil_movil if tiene_acceso_movil else None,
             )
             c.usuarios = (c.usuarios or 0) + 1
             c.save()
