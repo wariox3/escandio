@@ -39,14 +39,16 @@ def es_admin_del_contenedor(user, contenedor):
 
 
 def es_miembro_del_contenedor(user, contenedor):
-    """True si el user es admin o tiene UsuarioContenedor con acceso web."""
+    """True si el user es admin o tiene UsuarioContenedor con acceso web o móvil."""
     if es_admin_del_contenedor(user, contenedor):
         return True
     if not (user and user.is_authenticated and contenedor):
         return False
+    from django.db.models import Q
     from contenedor.models import UsuarioContenedor
     return UsuarioContenedor.objects.filter(
-        usuario_id=user.id, contenedor_id=contenedor.id, tiene_acceso_web=True
+        Q(tiene_acceso_web=True) | Q(tiene_acceso_movil=True),
+        usuario_id=user.id, contenedor_id=contenedor.id,
     ).exists()
 
 
@@ -63,10 +65,27 @@ def perfil_web_del_miembro(user, contenedor):
     return uc.perfil_web if uc else None
 
 
+def perfil_movil_del_miembro(user, contenedor):
+    """Devuelve el perfil_movil del UsuarioContenedor o 'admin' si es admin/super_admin, None si no es miembro móvil."""
+    if es_super_admin(user) or es_admin_del_contenedor(user, contenedor):
+        return 'admin'
+    if not (user and user.is_authenticated and contenedor):
+        return None
+    from contenedor.models import UsuarioContenedor
+    uc = UsuarioContenedor.objects.filter(
+        usuario_id=user.id, contenedor_id=contenedor.id, tiene_acceso_movil=True
+    ).only('perfil_movil').first()
+    return uc.perfil_movil if uc else None
+
+
 def puede_editar(user, contenedor):
-    """Admin, super admin, operativo o supervisor pueden escribir. Consulta no."""
-    perfil = perfil_web_del_miembro(user, contenedor)
-    return perfil in ('admin', 'operativo', 'supervisor')
+    """Pueden escribir: admin, super admin, perfiles web operativo/supervisor o cualquier perfil móvil activo.
+    Solo se excluye perfil_web='consulta' sin acceso móvil."""
+    perfil_w = perfil_web_del_miembro(user, contenedor)
+    if perfil_w in ('admin', 'operativo', 'supervisor'):
+        return True
+    perfil_m = perfil_movil_del_miembro(user, contenedor)
+    return perfil_m in ('admin', 'conductor', 'coordinador')
 
 
 def rol_en_contenedor(user, contenedor):
