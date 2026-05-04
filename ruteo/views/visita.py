@@ -48,6 +48,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'rutear',
         'eliminar_todos',
     ]
+    acciones_publicas = [
+        'list',
+        'retrieve',
+        'entrega',
+    ]
     serializadores = {
         'lista': RutVistaListaSerializador,
         'lista_completa' : RutVistaListaSerializador,
