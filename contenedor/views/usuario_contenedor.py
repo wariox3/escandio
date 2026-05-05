@@ -133,6 +133,47 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED if creados else status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["get"], url_path=r'mi-membresia')
+    def mi_membresia(self, request):
+        """Devuelve la membresia del usuario autenticado en el contenedor indicado.
+
+        Query params: contenedor_id (requerido).
+        Sirve al frontend para refrescar permisos sin re-login (ej. cuando un
+        admin cambia los permisos del usuario y este sigue con sesion activa).
+        """
+        contenedor_id = request.query_params.get('contenedor_id')
+        if not contenedor_id:
+            return Response({'mensaje': 'Falta contenedor_id', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            contenedor = Contenedor.objects.get(pk=contenedor_id)
+        except Contenedor.DoesNotExist:
+            return Response({'mensaje': 'Contenedor no existe', 'codigo': 4}, status=status.HTTP_404_NOT_FOUND)
+
+        # Si es admin del contenedor, devuelve un payload con rol propietario
+        # y permisos null (admin bypassa el gate granular en backend).
+        if contenedor.usuario_id == request.user.id or request.user.is_superuser:
+            return Response({
+                'rol': 'propietario',
+                'tiene_acceso_web': True,
+                'tiene_acceso_movil': True,
+                'perfil_movil': None,
+                'permisos': None,
+            }, status=status.HTTP_200_OK)
+
+        membresia = UsuarioContenedor.objects.filter(
+            usuario_id=request.user.id, contenedor_id=contenedor.id,
+        ).only('rol', 'tiene_acceso_web', 'tiene_acceso_movil', 'perfil_movil', 'permisos').first()
+        if not membresia:
+            return Response({'mensaje': 'Sin membresia', 'codigo': 13}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response({
+            'rol': membresia.rol,
+            'tiene_acceso_web': membresia.tiene_acceso_web,
+            'tiene_acceso_movil': membresia.tiene_acceso_movil,
+            'perfil_movil': membresia.perfil_movil,
+            'permisos': membresia.permisos,
+        }, status=status.HTTP_200_OK)
+
     def _puede_admin_membresia(self, request, membresia):
         """Super-admin global o admin del contenedor de la membresia."""
         if request.user.is_staff or request.user.is_superuser:
