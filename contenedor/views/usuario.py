@@ -220,9 +220,22 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                             haciendo clic en el siguiente enlace.</p>
                             <a href='{url}' class='button'>Verificar cuenta</a>
                             """.format(url=url, usuario=usuario.nombre_corto or usuario.username)
-            correo = Zinc()
-            correo.correo(usuario.correo, 'Invitacion a Ruteo.co', html_content, 'ruteo')
-            return Response({'usuario': UserSerializer(usuario).data, 'invitacion_enviada': True}, status=status.HTTP_201_CREATED)
+            correo_enviado = True
+            mensaje_correo = None
+            try:
+                resultado = Zinc().correo(usuario.correo, 'Invitacion a Ruteo.co', html_content, 'ruteo')
+                if resultado.get('error'):
+                    correo_enviado = False
+                    mensaje_correo = resultado.get('mensaje')
+            except Exception as e:  # noqa: BLE001
+                correo_enviado = False
+                mensaje_correo = str(e)
+            return Response({
+                'usuario': UserSerializer(usuario).data,
+                'invitacion_enviada': correo_enviado,
+                'token_verificacion': token if not correo_enviado else None,
+                'mensaje_correo': mensaje_correo,
+            }, status=status.HTTP_201_CREATED)
 
         # Flujo clave directa: marcar verificado y forzar cambio en el proximo login web.
         usuario.verificado = True
