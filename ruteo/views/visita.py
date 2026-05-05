@@ -29,6 +29,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.visita import VisitaFilter
 from utilidades.excel_exportar import ExcelExportar
 from ruteo.formatos.rotulo import FormatoRotulo
+from contenedor.mixins import RolMixin
 from django.http import HttpResponse
 from decimal import Decimal, ROUND_HALF_UP
 import re
@@ -36,12 +37,22 @@ import gc
 import base64
 import openpyxl
 
-class RutVisitaViewSet(viewsets.ModelViewSet):
+class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = RutVisita.objects.all()
     serializer_class = RutVisitaSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = VisitaFilter 
+    filterset_class = VisitaFilter
+    acciones_admin = [
+        'importar_excel',
+        'importar_complemento_action',
+        'rutear',
+        'eliminar_todos',
+    ]
+    acciones_publicas = [
+        'list',
+        'retrieve',
+        'entrega',
+    ]
     serializadores = {
         'lista': RutVistaListaSerializador,
         'lista_completa' : RutVistaListaSerializador,
