@@ -24,6 +24,7 @@ def is_point_in_polygon(polygon_coords, point_coords):
     return polygon.contains(point)
 
 class RutFranjaViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'franja'
     queryset = RutFranja.objects.all()
     serializer_class = RutFranjaSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]

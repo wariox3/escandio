@@ -105,6 +105,100 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["post"], url_path=r'admin-crear', permission_classes=[permissions.IsAdminUser])
+    def admin_crear(self, request):
+        """Crea un usuario desde el panel super-admin.
+
+        Modos:
+          - enviar_invitacion=True: genera CtnVerificacion y envia correo. El usuario
+            elige su clave al verificar. No setea debe_cambiar_clave.
+          - enviar_invitacion=False (o ausente): requiere `password`. Aplica la clave,
+            marca verificado=True y debe_cambiar_clave=True para forzar cambio en el
+            proximo login web.
+        """
+        raw = request.data
+        username = (raw.get('username') or '').strip().lower()
+        nombre = raw.get('nombre')
+        apellido = raw.get('apellido')
+        telefono = raw.get('telefono')
+        password = raw.get('password')
+        enviar_invitacion = bool(raw.get('enviar_invitacion'))
+
+        if not username:
+            return Response({'mensaje': 'username es requerido', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username=username).exists():
+            return Response({'mensaje': 'Ya existe un usuario con ese email', 'codigo': 14}, status=status.HTTP_400_BAD_REQUEST)
+        if not enviar_invitacion and not password:
+            return Response({'mensaje': 'password es requerido cuando no se envia invitacion', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Si es invitacion, usamos un password aleatorio temporal (sera reemplazado al verificar).
+        clave_inicial = password or secrets.token_urlsafe(20)
+        data = {
+            'username': username,
+            'password': clave_inicial,
+            'nombre': nombre,
+            'apellido': apellido,
+            'telefono': telefono,
+        }
+        serializador_usuario = UserSerializer(data=data)
+        if not serializador_usuario.is_valid():
+            return Response({'mensaje': 'Errores en el registro del usuario', 'codigo': 2, 'validaciones': serializador_usuario.errors}, status=status.HTTP_400_BAD_REQUEST)
+        usuario = serializador_usuario.save()
+
+        if enviar_invitacion:
+            token = secrets.token_urlsafe(20)
+            data_v = {
+                'usuario_id': usuario.id,
+                'token': token,
+                'vence': datetime.now().date() + timedelta(days=7),
+            }
+            serializador_verificacion = CtnVerificacionSerializador(data=data_v)
+            if not serializador_verificacion.is_valid():
+                return Response({'mensaje': 'Errores en el registro de la verificacion', 'codigo': 3, 'validaciones': serializador_verificacion.errors}, status=status.HTTP_400_BAD_REQUEST)
+            serializador_verificacion.save()
+            url = f"https://app.ruteo.co/auth/verificacion/" + token
+            if config('ENV') == "test":
+                url = f"http://app.ruteo.online/auth/verificacion/" + token
+            if config('ENV') == "dev":
+                url = f"http://localhost:4200/auth/verificacion/" + token
+            html_content = """
+                            <h1>¡Hola {usuario}!</h1>
+                            <p>Te han invitado a usar Ruteo.co. Por favor verifica tu cuenta y elige tu clave
+                            haciendo clic en el siguiente enlace.</p>
+                            <a href='{url}' class='button'>Verificar cuenta</a>
+                            """.format(url=url, usuario=usuario.nombre_corto or usuario.username)
+            correo = Zinc()
+            correo.correo(usuario.correo, 'Invitacion a Ruteo.co', html_content, 'ruteo')
+            return Response({'usuario': UserSerializer(usuario).data, 'invitacion_enviada': True}, status=status.HTTP_201_CREATED)
+
+        # Flujo clave directa: marcar verificado y forzar cambio en el proximo login web.
+        usuario.verificado = True
+        usuario.debe_cambiar_clave = True
+        usuario.save()
+        return Response({'usuario': UserSerializer(usuario).data, 'invitacion_enviada': False}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path=r'admin-reset-password', permission_classes=[permissions.IsAdminUser])
+    def admin_reset_password(self, request, pk=None):
+        """Asigna una clave temporal y fuerza cambio en el proximo login web."""
+        clave = request.data.get('password')
+        if not clave:
+            return Response({'mensaje': 'password es requerido', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        user = self.get_object(pk)
+        user.set_password(clave)
+        user.debe_cambiar_clave = True
+        user.save()
+        return Response({'id': user.id, 'reset': True}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["patch"], url_path=r'admin-actualizar', permission_classes=[permissions.IsAdminUser])
+    def admin_actualizar(self, request, pk=None):
+        """Edita campos basicos del usuario desde el panel super-admin."""
+        user = self.get_object(pk)
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({'mensaje': 'Errores en la actualizacion', 'codigo': 10, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response({'usuario': UserSerializer(user).data}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path=r'admin-asignar-contenedor', permission_classes=[permissions.IsAdminUser])
     def admin_asignar_contenedor(self, request):
         """Asigna un usuario a un contenedor con rol específico.
@@ -331,6 +425,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                             verificacion.estado_usado = True
                             verificacion.save()
                             usuario.set_password(clave)
+                            usuario.debe_cambiar_clave = False
                             usuario.save()
                             return Response({'cambio': True}, status=status.HTTP_200_OK)
                         return Response({'mensaje':'El token de la verificacion esta vencido', 'codigo': 6, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
@@ -346,14 +441,15 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         try:
             usuario_id = raw.get('usuario_id')
             clave = raw.get('password')
-            if usuario_id and clave:                            
+            if usuario_id and clave:
                 usuario = User.objects.get(pk=usuario_id)
                 usuario.set_password(clave)
+                usuario.debe_cambiar_clave = False
                 usuario.save()
-                return Response({'cambio': True}, status=status.HTTP_200_OK)                
-            return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)                
+                return Response({'cambio': True}, status=status.HTTP_200_OK)
+            return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
-            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)             
+            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'cargar-imagen',)
     def cargar_imagen(self, request):

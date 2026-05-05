@@ -130,6 +130,58 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED if creados else status.HTTP_200_OK,
         )
 
+    def _puede_admin_membresia(self, request, membresia):
+        """Super-admin global o admin del contenedor de la membresia."""
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+        return membresia.contenedor.usuario_id == request.user.id
+
+    @action(detail=True, methods=["patch"], url_path=r'admin-actualizar')
+    def admin_actualizar(self, request, pk=None):
+        """Edita la membresia de un usuario en un contenedor.
+
+        Body opcional: tiene_acceso_web, tiene_acceso_movil, perfil_movil, permisos.
+        No expone perfil_web (legacy). Reservado a super-admin global o al admin
+        del contenedor.
+        """
+        try:
+            membresia = UsuarioContenedor.objects.select_related('contenedor').get(pk=pk)
+        except UsuarioContenedor.DoesNotExist:
+            return Response({'mensaje': 'Membresia no existe', 'codigo': 4}, status=status.HTTP_404_NOT_FOUND)
+
+        if not self._puede_admin_membresia(request, membresia):
+            return Response({'mensaje': 'No autorizado', 'codigo': 13}, status=status.HTTP_403_FORBIDDEN)
+
+        raw = request.data
+        cambios = {}
+        for campo in ('tiene_acceso_web', 'tiene_acceso_movil', 'perfil_movil', 'permisos'):
+            if campo in raw:
+                cambios[campo] = raw[campo]
+
+        for campo, valor in cambios.items():
+            setattr(membresia, campo, valor)
+        if cambios:
+            membresia.save(update_fields=list(cambios.keys()))
+
+        return Response(UsuarioContenedorSerializador(membresia).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path=r'aplicar-plantilla')
+    def aplicar_plantilla(self, request, pk=None):
+        """Carga un preset de permisos: 'consulta', 'operativo' o 'supervisor'."""
+        from contenedor.permisos import plantilla_permisos
+        plantilla = (request.data.get('plantilla') or '').lower()
+        if plantilla not in ('consulta', 'operativo', 'supervisor'):
+            return Response({'mensaje': 'Plantilla invalida', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            membresia = UsuarioContenedor.objects.select_related('contenedor').get(pk=pk)
+        except UsuarioContenedor.DoesNotExist:
+            return Response({'mensaje': 'Membresia no existe', 'codigo': 4}, status=status.HTTP_404_NOT_FOUND)
+        if not self._puede_admin_membresia(request, membresia):
+            return Response({'mensaje': 'No autorizado', 'codigo': 13}, status=status.HTTP_403_FORBIDDEN)
+        membresia.permisos = plantilla_permisos(plantilla)
+        membresia.save(update_fields=['permisos'])
+        return Response(UsuarioContenedorSerializador(membresia).data, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path=r'ceder-admin',)
     def ceder_admin(self, request):
         """Transfiere la propiedad del contenedor a otro miembro existente."""

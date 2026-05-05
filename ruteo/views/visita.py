@@ -38,6 +38,7 @@ import base64
 import openpyxl
 
 class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'visita'
     queryset = RutVisita.objects.all()
     serializer_class = RutVisitaSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
