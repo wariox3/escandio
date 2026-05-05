@@ -259,8 +259,9 @@ class AdminMembresiasTests(TestCase):
         self.assertEqual(r.status_code, 201, r.content)
         uc = UsuarioContenedor.objects.get(usuario_id=invitado.id, contenedor_id=self.contenedor.id)
         self.assertIsNotNone(uc.permisos)
-        self.assertTrue(uc.permisos['configuracion']['ver'])
+        # Plantilla 'operativo': operativos editables, administrativos sin acceso.
         self.assertTrue(uc.permisos['visita']['editar'])
+        self.assertFalse(uc.permisos['configuracion']['ver'])
 
     def test_ceder_admin_deja_membresias_consistentes(self):
         """Bug fix: tras ceder admin, ambos usuarios deben tener UsuarioContenedor
@@ -368,15 +369,29 @@ class PermisosGranularesTests(TestCase):
         self.assertFalse(puede_ver(ajeno, self.contenedor, 'visita'))
         self.assertFalse(puede_editar_modulo(ajeno, self.contenedor, 'visita'))
 
-    def test_plantilla_permisos_consulta_solo_ver(self):
+    def test_plantilla_consulta_solo_operativos_lectura(self):
         plantilla = plantilla_permisos('consulta')
+        # Operativos en lectura
         self.assertTrue(plantilla['visita']['ver'])
         self.assertFalse(plantilla['visita']['editar'])
+        # Administrativos sin acceso
+        self.assertFalse(plantilla['configuracion']['ver'])
+        self.assertFalse(plantilla['empresa']['ver'])
 
-    def test_plantilla_permisos_operativo_ver_y_editar(self):
+    def test_plantilla_operativo_solo_operativos_lectura_escritura(self):
         plantilla = plantilla_permisos('operativo')
+        # Operativos completos
         self.assertTrue(plantilla['visita']['ver'])
         self.assertTrue(plantilla['visita']['editar'])
+        # Administrativos sin acceso
+        self.assertFalse(plantilla['configuracion']['ver'])
+        self.assertFalse(plantilla['usuario']['ver'])
+
+    def test_plantilla_supervisor_todos_los_modulos(self):
+        plantilla = plantilla_permisos('supervisor')
+        self.assertTrue(plantilla['visita']['editar'])
+        self.assertTrue(plantilla['configuracion']['editar'])
+        self.assertTrue(plantilla['usuario']['editar'])
 
     def test_plantilla_permisos_invalida_devuelve_vacio(self):
         self.assertEqual(plantilla_permisos('inexistente'), {})
