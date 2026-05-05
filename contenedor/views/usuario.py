@@ -227,6 +227,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         except User.DoesNotExist:
             return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
 
+        from contenedor.permisos import plantilla_permisos
         if rol == 'admin':
             admin_anterior_id = contenedor.usuario_id
             if admin_anterior_id == nuevo.id:
@@ -239,11 +240,14 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 defaults={'rol': 'propietario'},
             )
             if admin_anterior_id and admin_anterior_id != nuevo.id:
-                UsuarioContenedor.objects.update_or_create(
+                uc_ant, _ = UsuarioContenedor.objects.update_or_create(
                     usuario_id=admin_anterior_id,
                     contenedor_id=contenedor.id,
                     defaults={'rol': 'usuario'},
                 )
+                if not uc_ant.permisos:
+                    uc_ant.permisos = plantilla_permisos('operativo')
+                    uc_ant.save(update_fields=['permisos'])
             return Response({'mensaje':'Asignado como admin', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
         else:
             if contenedor.usuario_id == nuevo.id:
@@ -251,7 +255,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             uc, creado = UsuarioContenedor.objects.get_or_create(
                 usuario_id=nuevo.id,
                 contenedor_id=contenedor.id,
-                defaults={'rol': 'usuario'},
+                defaults={'rol': 'usuario', 'permisos': plantilla_permisos('operativo')},
             )
             if not creado and uc.rol != 'usuario':
                 uc.rol = 'usuario'
@@ -259,6 +263,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             if creado:
                 contenedor.usuarios = (contenedor.usuarios or 0) + 1
                 contenedor.save()
+            if not uc.permisos:
+                uc.permisos = plantilla_permisos('operativo')
+                uc.save(update_fields=['permisos'])
             return Response({'mensaje':'Asignado como usuario', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'admin-cambiar-admin-contenedor', permission_classes=[permissions.IsAdminUser])
@@ -284,6 +291,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         except User.DoesNotExist:
             return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
 
+        from contenedor.permisos import plantilla_permisos
         admin_anterior_id = contenedor.usuario_id
         contenedor.usuario = nuevo
         contenedor.save()
@@ -293,13 +301,16 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             contenedor_id=contenedor.id,
             defaults={'rol': 'propietario'},
         )
-        # Admin anterior queda como usuario regular.
+        # Admin anterior queda como usuario regular con permisos de operativo si no los tenia.
         if admin_anterior_id and admin_anterior_id != nuevo.id:
-            UsuarioContenedor.objects.update_or_create(
+            uc_ant, _ = UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,
                 contenedor_id=contenedor.id,
                 defaults={'rol': 'usuario'},
             )
+            if not uc_ant.permisos:
+                uc_ant.permisos = plantilla_permisos('operativo')
+                uc_ant.save(update_fields=['permisos'])
         return Response(
             {'mensaje': 'Admin cambiado', 'contenedor_id': contenedor.id},
             status=status.HTTP_200_OK,
