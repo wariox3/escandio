@@ -233,9 +233,13 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 return Response({'mensaje':'Ese usuario ya es admin', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
             contenedor.usuario = nuevo
             contenedor.save()
-            UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+            UsuarioContenedor.objects.update_or_create(
+                usuario_id=nuevo.id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'propietario'},
+            )
             if admin_anterior_id and admin_anterior_id != nuevo.id:
-                UsuarioContenedor.objects.get_or_create(
+                UsuarioContenedor.objects.update_or_create(
                     usuario_id=admin_anterior_id,
                     contenedor_id=contenedor.id,
                     defaults={'rol': 'usuario'},
@@ -283,11 +287,15 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         admin_anterior_id = contenedor.usuario_id
         contenedor.usuario = nuevo
         contenedor.save()
-        # Si el nuevo era invitado, sale de invitados
-        UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
-        # El admin anterior queda como invitado
+        # Nuevo admin: queda con rol='propietario' (preserva accesos si ya era miembro).
+        UsuarioContenedor.objects.update_or_create(
+            usuario_id=nuevo.id,
+            contenedor_id=contenedor.id,
+            defaults={'rol': 'propietario'},
+        )
+        # Admin anterior queda como usuario regular.
         if admin_anterior_id and admin_anterior_id != nuevo.id:
-            UsuarioContenedor.objects.get_or_create(
+            UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,
                 contenedor_id=contenedor.id,
                 defaults={'rol': 'usuario'},

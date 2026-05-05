@@ -218,6 +218,32 @@ class AdminMembresiasTests(TestCase):
         )
         self.assertEqual(r.status_code, 400, r.content)
 
+    def test_ceder_admin_deja_membresias_consistentes(self):
+        """Bug fix: tras ceder admin, ambos usuarios deben tener UsuarioContenedor
+        para que aparezcan en la lista de contenedores."""
+        self.client.force_authenticate(user=self.dueno)
+        # El miembro existente recibe la administracion.
+        r = self.client.post(
+            '/contenedor/usuariocontenedor/ceder-admin/',
+            {'contenedor_id': self.contenedor.id, 'nuevo_admin_id': self.miembro.id},
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.contenedor.refresh_from_db()
+        self.assertEqual(self.contenedor.usuario_id, self.miembro.id)
+
+        # Nuevo admin: debe tener UsuarioContenedor con rol='propietario'.
+        nuevo_uc = UsuarioContenedor.objects.get(
+            usuario_id=self.miembro.id, contenedor_id=self.contenedor.id,
+        )
+        self.assertEqual(nuevo_uc.rol, 'propietario')
+        # Admin anterior: debe tener UsuarioContenedor con rol='usuario'.
+        anterior_uc = UsuarioContenedor.objects.get(
+            usuario_id=self.dueno.id, contenedor_id=self.contenedor.id,
+        )
+        self.assertEqual(anterior_uc.rol, 'usuario')
+
     def test_admin_actualizar_rechaza_no_admin(self):
         # un usuario sin permisos no puede tocar la membresia
         otro = User.objects.create(
