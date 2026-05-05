@@ -802,20 +802,30 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         else:
                             visita.franja_id = None
                             visita.estado_franja = False                                                     
-                visita.numero = numero
-                visita.documento = documento
+                def _num(valor, default=0):
+                    """Convierte vacios/None a default y trata de castear a numero."""
+                    if valor in (None, ''):
+                        return default
+                    try:
+                        return float(valor)
+                    except (TypeError, ValueError):
+                        return default
+
+                visita.numero = numero if numero not in (None, '') else None
+                visita.documento = documento or ''
                 visita.destinatario = destinatario
                 visita.destinatario_telefono = destinatario_telefono
-                visita.unidades = unidades
-                visita.peso = peso
-                visita.volumen = volumen
+                visita.unidades = _num(unidades)
+                visita.peso = _num(peso)
+                visita.volumen = _num(volumen)
                 visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
                 visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
                 if 'destinatario_correo' in raw:
                     visita.destinatario_correo = raw.get('destinatario_correo')
                 if 'tiempo_servicio' in raw:
-                    tiempo = raw.get('tiempo_servicio')
-                    visita.tiempo_servicio = tiempo if tiempo not in (None, '') else 0
+                    visita.tiempo_servicio = _num(raw.get('tiempo_servicio'))
+                if 'cobro' in raw:
+                    visita.cobro = _num(raw.get('cobro'))
                 if 'destinatario_direccion_complemento' in raw:
                     visita.destinatario_direccion_complemento = raw.get('destinatario_direccion_complemento')
                 if 'observacion' in raw:
@@ -827,7 +837,18 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
+            faltantes = []
+            if not id:
+                faltantes.append('id')
+            if not destinatario:
+                faltantes.append('destinatario')
+            if not destinatario_direccion:
+                faltantes.append('destinatario_direccion')
+            return Response({
+                'mensaje': f'Faltan parametros: {", ".join(faltantes)}',
+                'codigo': 1,
+                'faltantes': faltantes,
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'despacho-retirar',)
     def despacho_retirar(self, request):
