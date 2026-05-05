@@ -208,12 +208,16 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         contenedor.usuario = nuevo
         contenedor.save()
 
-        # El nuevo admin deja de ser usuario invitado (si lo era)
-        UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+        # El nuevo admin queda con rol='propietario' (preserva sus accesos si ya tenia membresia).
+        UsuarioContenedor.objects.update_or_create(
+            usuario_id=nuevo.id,
+            contenedor_id=contenedor.id,
+            defaults={'rol': 'propietario'},
+        )
 
-        # El admin anterior queda como usuario invitado
+        # El admin anterior queda como usuario regular.
         if admin_anterior_id and admin_anterior_id != nuevo.id:
-            UsuarioContenedor.objects.get_or_create(
+            UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,
                 contenedor_id=contenedor.id,
                 defaults={'rol': 'usuario'},
