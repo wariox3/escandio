@@ -30,7 +30,7 @@ from rest_framework.permissions import BasePermission
 from django.db import connection
 
 
-MODULOS = (
+MODULOS_OPERATIVOS = (
     'visita',
     'vehiculo',
     'despacho',
@@ -38,6 +38,9 @@ MODULOS = (
     'flota',
     'novedad',
     'contacto',
+)
+
+MODULOS_ADMINISTRATIVOS = (
     'empresa',
     'configuracion',
     'mensajeria',
@@ -45,19 +48,31 @@ MODULOS = (
     'usuario',
 )
 
+MODULOS = MODULOS_OPERATIVOS + MODULOS_ADMINISTRATIVOS
+
 
 def plantilla_permisos(nombre):
     """Devuelve el set de permisos preset para 'consulta', 'operativo' o 'supervisor'.
-    consulta -> ver=True, editar=False en todos los modulos.
-    operativo / supervisor -> ver=True, editar=True en todos.
+
+    Las plantillas son acumulativas:
+    - consulta:   modulos operativos en solo-lectura. Sin acceso a administrativos.
+    - operativo:  modulos operativos en lectura+escritura. Sin acceso a administrativos.
+    - supervisor: TODOS los modulos (operativos + administrativos) en lectura+escritura.
+
+    Modulos operativos:    visita, vehiculo, despacho, franja, flota, novedad, contacto.
+    Modulos administrativos: empresa, configuracion, mensajeria, facturacion, usuario.
     """
     if nombre == 'consulta':
-        editar = False
-    elif nombre in ('operativo', 'supervisor'):
-        editar = True
+        permisos = {m: {'ver': True, 'editar': False} for m in MODULOS_OPERATIVOS}
+        permisos.update({m: {'ver': False, 'editar': False} for m in MODULOS_ADMINISTRATIVOS})
+    elif nombre == 'operativo':
+        permisos = {m: {'ver': True, 'editar': True} for m in MODULOS_OPERATIVOS}
+        permisos.update({m: {'ver': False, 'editar': False} for m in MODULOS_ADMINISTRATIVOS})
+    elif nombre == 'supervisor':
+        permisos = {m: {'ver': True, 'editar': True} for m in MODULOS}
     else:
         return {}
-    return {modulo: {'ver': True, 'editar': editar} for modulo in MODULOS}
+    return permisos
 
 
 def _resolver_contenedor(request):
