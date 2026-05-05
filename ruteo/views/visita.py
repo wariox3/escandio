@@ -802,8 +802,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         else:
                             visita.franja_id = None
                             visita.estado_franja = False                                                     
-                def _num(valor, default=0):
-                    """Convierte vacios/None a default y trata de castear a numero."""
+                from decimal import Decimal, InvalidOperation
+
+                def _float(valor, default=0.0):
+                    """Convierte a float para FloatField (unidades, peso, volumen)."""
                     if valor in (None, ''):
                         return default
                     try:
@@ -811,21 +813,33 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     except (TypeError, ValueError):
                         return default
 
+                def _decimal(valor, default=Decimal('0')):
+                    """Convierte a Decimal para DecimalField (tiempo_servicio, cobro).
+                    Importante: el save() del modelo hace tiempo = tiempo_servicio +
+                    tiempo_trayecto y ambos son Decimal en DB; mezclar con float aqui
+                    rompe con TypeError 'unsupported operand type(s) for +'."""
+                    if valor in (None, ''):
+                        return default
+                    try:
+                        return Decimal(str(valor))
+                    except (TypeError, ValueError, InvalidOperation):
+                        return default
+
                 visita.numero = numero if numero not in (None, '') else None
                 visita.documento = documento or ''
                 visita.destinatario = destinatario
                 visita.destinatario_telefono = destinatario_telefono
-                visita.unidades = _num(unidades)
-                visita.peso = _num(peso)
-                visita.volumen = _num(volumen)
+                visita.unidades = _float(unidades)
+                visita.peso = _float(peso)
+                visita.volumen = _float(volumen)
                 visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
                 visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
                 if 'destinatario_correo' in raw:
                     visita.destinatario_correo = raw.get('destinatario_correo')
                 if 'tiempo_servicio' in raw:
-                    visita.tiempo_servicio = _num(raw.get('tiempo_servicio'))
+                    visita.tiempo_servicio = _decimal(raw.get('tiempo_servicio'))
                 if 'cobro' in raw:
-                    visita.cobro = _num(raw.get('cobro'))
+                    visita.cobro = _decimal(raw.get('cobro'))
                 if 'destinatario_direccion_complemento' in raw:
                     visita.destinatario_direccion_complemento = raw.get('destinatario_direccion_complemento')
                 if 'observacion' in raw:
