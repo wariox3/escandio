@@ -218,6 +218,33 @@ class AdminMembresiasTests(TestCase):
         )
         self.assertEqual(r.status_code, 400, r.content)
 
+    def test_invitar_usuario_crea_permisos_desde_perfil_web(self):
+        """Bug fix: el invitado debe quedar con permisos populados (no None) para
+        poder leer endpoints granulares como GET configuracion."""
+        self.client.force_authenticate(user=self.dueno)
+        invitado = User.objects.create(
+            username='invitado@x.com', correo='invitado@x.com',
+            nombre='I', apellido='I', is_active=True,
+        )
+        invitado.set_password('x')
+        invitado.save()
+        r = self.client.post(
+            '/contenedor/usuariocontenedor/nuevo/',
+            {
+                'usuario_id': self.dueno.id,
+                'usuario_invitado_id': invitado.id,
+                'contenedor_id': self.contenedor.id,
+                'tiene_acceso_web': True,
+                'perfil_web': 'operativo',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        uc = UsuarioContenedor.objects.get(usuario_id=invitado.id, contenedor_id=self.contenedor.id)
+        self.assertIsNotNone(uc.permisos)
+        self.assertTrue(uc.permisos['configuracion']['ver'])
+        self.assertTrue(uc.permisos['visita']['editar'])
+
     def test_ceder_admin_deja_membresias_consistentes(self):
         """Bug fix: tras ceder admin, ambos usuarios deben tener UsuarioContenedor
         para que aparezcan en la lista de contenedores."""

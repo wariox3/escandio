@@ -97,10 +97,12 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                 )
 
         # Perfiles y accesos opcionales
+        from contenedor.permisos import plantilla_permisos
         perfil_web = raw.get('perfil_web') or 'operativo'
         perfil_movil = raw.get('perfil_movil')
         tiene_acceso_web = bool(raw.get('tiene_acceso_web', True))
         tiene_acceso_movil = bool(raw.get('tiene_acceso_movil', False))
+        permisos_iniciales = plantilla_permisos(perfil_web) if tiene_acceso_web else None
 
         creados = []
         ya_existian = []
@@ -116,6 +118,7 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                 tiene_acceso_movil=tiene_acceso_movil,
                 perfil_web=perfil_web if tiene_acceso_web else None,
                 perfil_movil=perfil_movil if tiene_acceso_movil else None,
+                permisos=permisos_iniciales,
             )
             c.usuarios = (c.usuarios or 0) + 1
             c.save()
@@ -204,6 +207,7 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
 
+        from contenedor.permisos import plantilla_permisos
         admin_anterior_id = contenedor.usuario_id
         contenedor.usuario = nuevo
         contenedor.save()
@@ -215,12 +219,16 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
             defaults={'rol': 'propietario'},
         )
 
-        # El admin anterior queda como usuario regular.
+        # El admin anterior queda como usuario regular con permisos de operativo por defecto
+        # si no los tenia (caso comun: era propietario inicial sin permisos cargados).
         if admin_anterior_id and admin_anterior_id != nuevo.id:
-            UsuarioContenedor.objects.update_or_create(
+            uc, _ = UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,
                 contenedor_id=contenedor.id,
                 defaults={'rol': 'usuario'},
             )
+            if not uc.permisos:
+                uc.permisos = plantilla_permisos('operativo')
+                uc.save(update_fields=['permisos'])
 
         return Response({'mensaje': 'Administración transferida'}, status=status.HTTP_200_OK)
