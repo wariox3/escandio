@@ -114,6 +114,12 @@ class WebhookServicio:
             contenido = f'[tipo no soportado: {tipo_mensaje}]'
 
         ahora = timezone.now()
+        wamid = mensaje.get('id')
+        # Idempotencia: Meta reintenta webhooks (especialmente en errores transitorios).
+        # Si ya procesamos este wamid, salir sin crear duplicado.
+        if wamid and MsjMensaje.objects.filter(whatsapp_message_id=wamid).exists():
+            return {'ok': True, 'duplicado': True, 'wamid': wamid}
+
         with transaction.atomic():
             conversacion, _ = MsjConversacion.objects.get_or_create(
                 cliente_telefono=telefono,
@@ -136,7 +142,7 @@ class WebhookServicio:
                 direccion=MsjMensaje.DIRECCION_ENTRADA,
                 tipo=tipo_modelo,
                 contenido=contenido,
-                whatsapp_message_id=mensaje.get('id'),
+                whatsapp_message_id=wamid,
                 estado=MsjMensaje.ESTADO_ENTREGADO,
                 media_url=media_url,
                 media_caption=media_caption,
