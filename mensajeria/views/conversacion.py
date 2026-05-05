@@ -146,26 +146,44 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
         else:
             return Response({'tipo': ['Valor no soportado']}, status=status.HTTP_400_BAD_REQUEST)
 
-        with transaction.atomic():
-            msj = MsjMensaje.objects.create(
-                conversacion=conversacion,
-                direccion=MsjMensaje.DIRECCION_SALIDA,
-                tipo=tipo_modelo,
-                contenido=contenido_guardar,
-                media_url=media_url,
-                media_caption=caption,
-                whatsapp_message_id=resultado.get('message_id'),
-                estado=MsjMensaje.ESTADO_ENVIADO if not resultado['error'] else MsjMensaje.ESTADO_ERROR,
-                error_mensaje=resultado.get('mensaje') if resultado['error'] else None,
-                enviado_por=request.user if request.user.is_authenticated else None,
-                metadata=resultado.get('raw'),
+        # Truncar error_mensaje al limite del campo de DB.
+        error_truncado = None
+        if resultado.get('error') and resultado.get('mensaje'):
+            error_truncado = str(resultado['mensaje'])[:500]
+
+        try:
+            with transaction.atomic():
+                msj = MsjMensaje.objects.create(
+                    conversacion=conversacion,
+                    direccion=MsjMensaje.DIRECCION_SALIDA,
+                    tipo=tipo_modelo,
+                    contenido=contenido_guardar,
+                    media_url=media_url,
+                    media_caption=caption,
+                    whatsapp_message_id=resultado.get('message_id'),
+                    estado=MsjMensaje.ESTADO_ENVIADO if not resultado['error'] else MsjMensaje.ESTADO_ERROR,
+                    error_mensaje=error_truncado,
+                    enviado_por=request.user if request.user.is_authenticated else None,
+                    metadata=resultado.get('raw'),
+                )
+                conversacion.ultimo_mensaje_fecha = timezone.now()
+                conversacion.save(update_fields=['ultimo_mensaje_fecha', 'fecha_actualizacion'])
+        except Exception as e:
+            # El mensaje ya salio a WhatsApp pero no se pudo guardar en DB.
+            # Loguear con wamid para reconciliacion manual.
+            logger.exception(
+                f'Mensaje enviado a WhatsApp wamid={resultado.get("message_id")} '
+                f'pero fallo guardar en DB: {e}'
             )
-            conversacion.ultimo_mensaje_fecha = timezone.now()
-            conversacion.save(update_fields=['ultimo_mensaje_fecha', 'fecha_actualizacion'])
+            return Response({
+                'ok': False,
+                'mensaje': 'El mensaje se envio pero no se pudo registrar. Contacta al admin.',
+                'whatsapp_message_id': resultado.get('message_id'),
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if resultado['error']:
             return Response(
-                {'ok': False, 'mensaje': resultado.get('mensaje'), 'mensaje_id': msj.id},
+                {'ok': False, 'mensaje': error_truncado, 'mensaje_id': msj.id},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({'ok': True, 'mensaje_id': msj.id, 'whatsapp_message_id': resultado.get('message_id')})

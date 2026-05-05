@@ -23,8 +23,30 @@ class WhatsappCliente:
 
     def _obtener_token(self):
         if self._access_token is None:
-            self._access_token = CifradoServicio.descifrar(self.conexion.access_token_cifrado)
+            try:
+                self._access_token = CifradoServicio.descifrar(self.conexion.access_token_cifrado)
+            except (ValueError, RuntimeError) as e:
+                logger.error(f'No se pudo descifrar access_token de conexion {self.conexion.id}: {e}')
+                raise
         return self._access_token
+
+    @staticmethod
+    def _formatear_error_meta(datos, status_code):
+        """Extrae el mensaje de error de la respuesta de Meta incluyendo error_data.details."""
+        error = (datos or {}).get('error') or {}
+        partes = []
+        codigo = error.get('code')
+        if codigo:
+            partes.append(str(codigo))
+        titulo = error.get('message') or error.get('title')
+        if titulo:
+            partes.append(titulo)
+        detalle = (error.get('error_data') or {}).get('details')
+        if detalle:
+            partes.append(detalle)
+        if not partes:
+            partes.append(f'HTTP {status_code}')
+        return ' · '.join(partes)[:500]
 
     def _headers(self):
         return {
@@ -43,25 +65,40 @@ class WhatsappCliente:
                 headers=self._headers(),
                 timeout=self.TIMEOUT_SEGUNDOS,
             )
-            datos = respuesta.json() if respuesta.content else {}
-            if respuesta.status_code == 200:
-                message_id = None
-                mensajes = datos.get('messages') or []
-                if mensajes:
-                    message_id = mensajes[0].get('id')
-                return {'error': False, 'message_id': message_id, 'raw': datos}
-            return {
-                'error': True,
-                'mensaje': datos.get('error', {}).get('message') or f'HTTP {respuesta.status_code}',
-                'codigo': datos.get('error', {}).get('code'),
-                'raw': datos,
-            }
         except requests.Timeout:
             logger.error(f'Whatsapp timeout enviando a phone_number_id={self.conexion.phone_number_id}')
             return {'error': True, 'mensaje': 'Timeout al contactar Meta Graph API'}
         except requests.RequestException as e:
             logger.error(f'Whatsapp request error: {e}')
-            return {'error': True, 'mensaje': str(e)}
+            return {'error': True, 'mensaje': str(e)[:500]}
+        except (ValueError, RuntimeError) as e:
+            # Falla de descifrado del token (cifrado.py).
+            return {'error': True, 'mensaje': f'Configuracion invalida: {e}'[:500]}
+
+        try:
+            datos = respuesta.json() if respuesta.content else {}
+        except ValueError:
+            datos = {}
+
+        if respuesta.status_code == 200:
+            message_id = None
+            mensajes = datos.get('messages') or []
+            if mensajes:
+                message_id = mensajes[0].get('id')
+            if not message_id:
+                # Meta devolvio 200 pero sin id — caso raro pero posible.
+                logger.warning(f'Whatsapp 200 sin message_id: {datos}')
+            return {'error': False, 'message_id': message_id, 'raw': datos}
+
+        mensaje_error = self._formatear_error_meta(datos, respuesta.status_code)
+        codigo = (datos.get('error') or {}).get('code')
+        logger.error(f'Whatsapp error {respuesta.status_code}: {mensaje_error}')
+        return {
+            'error': True,
+            'mensaje': mensaje_error,
+            'codigo': codigo,
+            'raw': datos,
+        }
 
     def enviar_texto(self, telefono, texto):
         payload = {
