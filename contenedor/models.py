@@ -54,6 +54,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     fecha_creacion = models.DateTimeField(null=True, auto_now_add=True)
     aplicacion = models.CharField(max_length=10, null=True)
     dominio = models.CharField(max_length = 50, null=True)
+    debe_cambiar_clave = models.BooleanField(default=False)
     objects = UserManager()
 
     class Meta:
@@ -140,6 +141,7 @@ class UsuarioContenedor(models.Model):
     tiene_acceso_movil = models.BooleanField(default=True)
     perfil_web = models.CharField(max_length=20, choices=PERFIL_WEB_CHOICES, default='operativo', null=True, blank=True)
     perfil_movil = models.CharField(max_length=20, choices=PERFIL_MOVIL_CHOICES, null=True, blank=True)
+    permisos = models.JSONField(null=True, blank=True)
 
     class Meta:
         unique_together = ('usuario', 'contenedor')

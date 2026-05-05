@@ -6,6 +6,7 @@ from general.serializers.configuracion import GenConfiguracionSerializador
 from contenedor.mixins import RolMixin
 
 class ConfiguracionViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'configuracion'
     queryset = GenConfiguracion.objects.all()
     serializer_class = GenConfiguracionSerializador
     acciones_admin = ['create', 'update', 'partial_update', 'destroy']

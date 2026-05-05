@@ -62,7 +62,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             'is_superuser': instance.is_superuser,
             'aplicacion': instance.aplicacion,
             'operacion_id' : instance.operacion_id,
-            'operacion_cargo_id' : instance.operacion_cargo_id
+            'operacion_cargo_id' : instance.operacion_cargo_id,
+            'debe_cambiar_clave': instance.debe_cambiar_clave,
         }
 
 class UserUpdateSerializer(serializers.HyperlinkedModelSerializer):

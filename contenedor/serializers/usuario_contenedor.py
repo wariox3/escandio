@@ -14,6 +14,7 @@ class UsuarioContenedorSerializador(serializers.ModelSerializer):
             'contenedor', 'rol',
             'tiene_acceso_web', 'tiene_acceso_movil',
             'perfil_web', 'perfil_movil',
+            'permisos',
         ]
         select_related_fields = ['usuario']
 
@@ -39,7 +40,8 @@ class UsuarioContenedorListaSerializador(serializers.ModelSerializer):
                   'tiene_acceso_web',
                   'tiene_acceso_movil',
                   'perfil_web',
-                  'perfil_movil']
+                  'perfil_movil',
+                  'permisos']
         select_related_fields = ['contenedor', 'usuario']
 
 

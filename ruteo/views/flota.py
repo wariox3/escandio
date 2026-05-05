@@ -13,6 +13,7 @@ from django.db import transaction
 from contenedor.mixins import RolMixin
 
 class RutFlotaViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'flota'
     queryset = RutFlota.objects.all()
     serializer_class = RutFlotaSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
