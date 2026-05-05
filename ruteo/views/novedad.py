@@ -18,9 +18,12 @@ import base64
 from datetime import datetime
 
 class RutNovedadViewSet(viewsets.ModelViewSet):
+    # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+    # /ruteo/novedad/nuevo/ (multipart) y /ruteo/novedad/solucionar/ son consumidos
+    # por la app movil v1.6.4. Si se aplica RolMixin, deben quedar en acciones_publicas.
     queryset = RutNovedad.objects.all()
     serializer_class = RutNovedadSerializador
-    permission_classes = [permissions.IsAuthenticated]  
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = NovedadFilter 
 

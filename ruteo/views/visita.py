@@ -48,6 +48,9 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'rutear',
         'eliminar_todos',
     ]
+    # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+    # 'list', 'retrieve' y 'entrega' DEBEN permanecer aqui. La app movil v1.6.4
+    # publicada los consume y no se puede actualizar. Quitarlos rompe la app.
     acciones_publicas = [
         'list',
         'retrieve',

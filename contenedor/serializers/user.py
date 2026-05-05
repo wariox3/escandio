@@ -8,10 +8,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     pass
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
+    # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+    # aplicacion debe ser opcional para no bloquear el registro desde la app movil
+    # ni desde las webs. Si se marca required, la app v1.6.4 publicada no podra registrar.
+    aplicacion = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=10)
 
     class Meta:
         model = User
         fields = ['id', 'username', 'password', 'aplicacion']
+        extra_kwargs = {'password': {'write_only': True}}
     
     def create(self, validated_data):
         user = User(**validated_data)
