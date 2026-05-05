@@ -3,6 +3,8 @@ edicion de membresias y permisos granulares.
 
 Correr: python manage.py test contenedor.tests_admin_usuarios
 """
+from unittest.mock import patch
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -63,19 +65,34 @@ class AdminUsuariosTests(TestCase):
         self.assertTrue(u.verificado)
         self.assertTrue(u.check_password('abc12345'))
 
-    def test_admin_crear_con_invitacion_no_setea_cambio_forzado(self):
+    @patch('contenedor.views.usuario.Zinc')
+    def test_admin_crear_con_invitacion_envia_correo(self, MockZinc):
+        MockZinc.return_value.correo.return_value = {'error': False}
         r = self.client.post('/contenedor/usuario/admin-crear/', {
             'username': 'invitado@x.com',
             'nombre': 'Invitado',
             'apellido': 'Por mail',
             'enviar_invitacion': True,
         }, format='json')
-        # email send fallaria sin Zinc configurado en test, no validamos el envio
-        # pero si la creacion del usuario.
-        self.assertIn(r.status_code, (200, 201, 500), r.content)
-        if r.status_code == 201:
-            u = User.objects.get(username='invitado@x.com')
-            self.assertFalse(u.debe_cambiar_clave)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertTrue(r.data['invitacion_enviada'])
+        u = User.objects.get(username='invitado@x.com')
+        self.assertFalse(u.debe_cambiar_clave)
+        MockZinc.return_value.correo.assert_called_once()
+
+    @patch('contenedor.views.usuario.Zinc')
+    def test_admin_crear_con_invitacion_resiliente_si_correo_falla(self, MockZinc):
+        # Si Zinc tira excepcion, el endpoint sigue devolviendo 201 con flag false
+        # y el token de verificacion para uso manual.
+        MockZinc.return_value.correo.side_effect = Exception('zinc caido')
+        r = self.client.post('/contenedor/usuario/admin-crear/', {
+            'username': 'sincorreo@x.com',
+            'enviar_invitacion': True,
+        }, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertFalse(r.data['invitacion_enviada'])
+        self.assertIsNotNone(r.data.get('token_verificacion'))
+        self.assertTrue(User.objects.filter(username='sincorreo@x.com').exists())
 
     def test_admin_crear_rechaza_username_duplicado(self):
         r = self.client.post('/contenedor/usuario/admin-crear/', {
