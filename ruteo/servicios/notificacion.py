@@ -18,6 +18,15 @@ class NotificacionServicio():
 
     PLANTILLA_DESPACHO = config('META_PLANTILLA_DESPACHO', default='entrega')
     PLANTILLA_IDIOMA = config('META_PLANTILLA_DESPACHO_IDIOMA', default='es')
+    # Plantillas que NO admiten variables (las mandamos sin parameters).
+    PLANTILLAS_SIN_VARIABLES = {'hello_world'}
+    # Texto real de las plantillas conocidas con placeholders {0},{1},... — se usa
+    # para registrar en el inbox el mensaje ya expandido con las variables, asi
+    # se ve "como si estuviera en operacion" en vez de "Plantilla enviada: X".
+    PLANTILLAS_TEXTO = {
+        'hello_world': 'Hello World!',
+        'entrega': 'Hola {0}, {1} ha despachado tu pedido. Guías: {2}',
+    }
 
     @staticmethod
     def normalizar_telefono(telefono):
@@ -64,10 +73,24 @@ class NotificacionServicio():
         def enviar_mensajes():
             try:
                 connection.set_schema(schema_name)
-                config_tenant = GenConfiguracion.objects.filter(pk=1).values('rut_whatsapp_habilitado').first()
+                config_tenant = GenConfiguracion.objects.filter(pk=1).values(
+                    'rut_whatsapp_habilitado',
+                    'rut_whatsapp_plantilla_despacho',
+                    'rut_whatsapp_plantilla_idioma',
+                ).first()
                 if not config_tenant or not config_tenant.get('rut_whatsapp_habilitado', False):
                     logger.info(f'Despacho {despacho_id}: WhatsApp deshabilitado por configuración del tenant')
                     return
+
+                # Plantilla por tenant si esta seteada, sino el default global.
+                plantilla_nombre = (
+                    (config_tenant.get('rut_whatsapp_plantilla_despacho') or '').strip()
+                    or NotificacionServicio.PLANTILLA_DESPACHO
+                )
+                plantilla_idioma = (
+                    (config_tenant.get('rut_whatsapp_plantilla_idioma') or '').strip()
+                    or NotificacionServicio.PLANTILLA_IDIOMA
+                )
 
                 visitas = RutVisita.objects.filter(
                     despacho_id=despacho_id
@@ -94,12 +117,16 @@ class NotificacionServicio():
 
                 for telefono, datos in destinatarios.items():
                     documentos_texto = ', '.join(datos['documentos']) if datos['documentos'] else 'N/A'
-                    variables = [datos['nombre'], nombre_empresa_final, documentos_texto]
+                    # Plantillas como hello_world no admiten parameters; el resto si.
+                    if plantilla_nombre in NotificacionServicio.PLANTILLAS_SIN_VARIABLES:
+                        variables = []
+                    else:
+                        variables = [datos['nombre'], nombre_empresa_final, documentos_texto]
 
                     resultado = cliente.enviar_plantilla(
                         telefono=telefono,
-                        nombre_plantilla=NotificacionServicio.PLANTILLA_DESPACHO,
-                        idioma=NotificacionServicio.PLANTILLA_IDIOMA,
+                        nombre_plantilla=plantilla_nombre,
+                        idioma=plantilla_idioma,
                         variables=variables,
                     )
 
@@ -129,6 +156,7 @@ class NotificacionServicio():
                         documentos_texto=documentos_texto,
                         resultado=resultado,
                         variables=variables,
+                        plantilla_nombre=plantilla_nombre,
                     )
 
                 logger.info(
@@ -142,7 +170,7 @@ class NotificacionServicio():
         hilo.start()
 
     @staticmethod
-    def _registrar_en_inbox(telefono, nombre_cliente, documentos_texto, resultado, variables):
+    def _registrar_en_inbox(telefono, nombre_cliente, documentos_texto, resultado, variables, plantilla_nombre=None):
         """Guarda el envío como MsjMensaje saliente para que quede trazabilidad en el inbox."""
         try:
             conversacion, _ = MsjConversacion.objects.get_or_create(
@@ -154,15 +182,30 @@ class NotificacionServicio():
                 conversacion.save(update_fields=['cliente_nombre', 'fecha_actualizacion'])
 
             exito = not resultado.get('error')
+            plantilla = plantilla_nombre or NotificacionServicio.PLANTILLA_DESPACHO
+            # Renderizar el texto real de la plantilla con las variables sustituidas
+            # para que el inbox muestre lo que el cliente realmente vio.
+            texto_plantilla = NotificacionServicio.PLANTILLAS_TEXTO.get(plantilla)
+            if texto_plantilla and variables:
+                try:
+                    contenido = texto_plantilla.format(*variables)
+                except (IndexError, KeyError):
+                    contenido = texto_plantilla
+            elif texto_plantilla:
+                contenido = texto_plantilla
+            elif variables:
+                contenido = f'Plantilla "{plantilla}" — ' + ' · '.join(str(v) for v in variables)
+            else:
+                contenido = f'Plantilla "{plantilla}"'
             MsjMensaje.objects.create(
                 conversacion=conversacion,
                 direccion=MsjMensaje.DIRECCION_SALIDA,
                 tipo=MsjMensaje.TIPO_TEMPLATE,
-                contenido=f'Plantilla enviada: {NotificacionServicio.PLANTILLA_DESPACHO} (guias: {documentos_texto})',
+                contenido=contenido,
                 whatsapp_message_id=resultado.get('message_id'),
                 estado=MsjMensaje.ESTADO_ENVIADO if exito else MsjMensaje.ESTADO_ERROR,
                 error_mensaje=resultado.get('mensaje') if not exito else None,
-                metadata={'variables': variables, 'raw': resultado.get('raw')},
+                metadata={'variables': variables, 'plantilla': plantilla, 'raw': resultado.get('raw')},
             )
             conversacion.ultimo_mensaje_fecha = timezone.now()
             conversacion.save(update_fields=['ultimo_mensaje_fecha', 'fecha_actualizacion'])
