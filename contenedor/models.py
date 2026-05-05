@@ -137,7 +137,7 @@ class UsuarioContenedor(models.Model):
     usuario = models.ForeignKey(User, on_delete=models.CASCADE)
     contenedor = models.ForeignKey(Contenedor, on_delete=models.CASCADE)
     tiene_acceso_web = models.BooleanField(default=True)
-    tiene_acceso_movil = models.BooleanField(default=False)
+    tiene_acceso_movil = models.BooleanField(default=True)
     perfil_web = models.CharField(max_length=20, choices=PERFIL_WEB_CHOICES, default='operativo', null=True, blank=True)
     perfil_movil = models.CharField(max_length=20, choices=PERFIL_MOVIL_CHOICES, null=True, blank=True)
 

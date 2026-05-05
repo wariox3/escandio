@@ -220,14 +220,18 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
 
     @action(detail=False, methods=["post"], url_path=r'nuevo',)
     def nuevo_action(self, request):
+        # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+        # Payload de la app: {username, password, confirmarPassword, aceptarTerminosCondiciones, aplicacion}.
+        # Solo username/password son required; el resto debe poder venir o no sin romper.
         raw = request.data
         username = raw.get('username', None)
         password = raw.get('password', None)
         nombre_corto = raw.get('nombre_corto', None)
         nombre = raw.get('nombre', None)
         apellido = raw.get('apellido', None)
-        telefono = raw.get('telefono', None)        
-        if username and password:                    
+        telefono = raw.get('telefono', None)
+        aplicacion = raw.get('aplicacion', None)
+        if username and password:
             data = {
                 'username': username,
                 'password': password,
@@ -236,6 +240,8 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'apellido': apellido,
                 'telefono': telefono,
             }
+            if aplicacion:
+                data['aplicacion'] = aplicacion[:10]
             serializador_usuario = UserSerializer(data=data)
             if serializador_usuario.is_valid():
                 usuario = serializador_usuario.save()
@@ -271,7 +277,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
 
     @action(detail=False, methods=["post"], url_path=r'cambio-clave-solicitar',)
     def cambio_clave_solicitar(self, request):
-        raw = request.data            
+        # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+        # La app envia {username, aplicacion}; response esperado: 201 {verificacion}.
+        raw = request.data
         username = raw.get('username')        
         if username:
             try:
