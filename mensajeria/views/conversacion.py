@@ -84,6 +84,26 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
             texto = (datos.get('contenido') or '').strip()
             if not texto:
                 return Response({'contenido': ['Requerido']}, status=status.HTTP_400_BAD_REQUEST)
+            # Validar ventana de 24h: WhatsApp solo permite texto libre dentro
+            # de las 24h del ultimo mensaje del usuario. Fuera de eso, solo plantilla.
+            ahora = timezone.now()
+            ventana = conversacion.fecha_ventana_24h
+            ventana_vencida = (
+                not ventana
+                or (ahora - ventana).total_seconds() > 24 * 3600
+            )
+            if ventana_vencida:
+                horas = round((ahora - ventana).total_seconds() / 3600, 1) if ventana else None
+                return Response({
+                    'detail': (
+                        'La ventana de 24 horas con este contacto vencio'
+                        + (f' (hace {horas}h)' if horas else '')
+                        + '. WhatsApp solo permite enviar plantillas pre-aprobadas. '
+                          'Usa tipo="template" o espera a que el cliente escriba.'
+                    ),
+                    'codigo': 'ventana_24h_vencida',
+                    'fecha_ventana_24h': ventana.isoformat() if ventana else None,
+                }, status=status.HTTP_400_BAD_REQUEST)
             resultado = cliente.enviar_texto(conversacion.cliente_telefono, texto)
             contenido_guardar, media_url, caption = texto, None, None
             tipo_modelo = MsjMensaje.TIPO_TEXTO
