@@ -9,8 +9,13 @@ class UsuarioContenedorSerializador(serializers.ModelSerializer):
     usuario__username = serializers.CharField(source='usuario.username', read_only=True)
     class Meta:
         model = UsuarioContenedor
-        fields = ['id', 'usuario', 'usuario__nombre', 'usuario__username' ,'contenedor', 'rol']
-        select_related_fields = ['usuario']        
+        fields = [
+            'id', 'usuario', 'usuario__nombre', 'usuario__username',
+            'contenedor', 'rol',
+            'tiene_acceso_web', 'tiene_acceso_movil',
+            'perfil_web', 'perfil_movil',
+        ]
+        select_related_fields = ['usuario']
 
 
 class UsuarioContenedorListaSerializador(serializers.ModelSerializer):
@@ -18,16 +23,24 @@ class UsuarioContenedorListaSerializador(serializers.ModelSerializer):
     contenedor__usuarios = serializers.CharField(source='contenedor.usuarios', read_only=True)
     contenedor__imagen = serializers.CharField(source='contenedor.imagen', read_only=True)
     contenedor__schema_name = serializers.CharField(source='contenedor.schema_name', read_only=True)
+    usuario__username = serializers.CharField(source='usuario.username', read_only=True)
+    usuario__nombre = serializers.CharField(source='usuario.nombre', read_only=True)
     class Meta:
         model = UsuarioContenedor
         fields = ['id', 'rol', 'contenedor',
-                  'contenedor_id', 
-                  'contenedor__nombre', 
+                  'contenedor_id',
+                  'contenedor__nombre',
                   'contenedor__usuarios',
                   'contenedor__imagen',
-                  'contenedor__schema_name',                                
-                  'usuario_id']
-        select_related_fields = ['contenedor', 'usuario']        
+                  'contenedor__schema_name',
+                  'usuario_id',
+                  'usuario__username',
+                  'usuario__nombre',
+                  'tiene_acceso_web',
+                  'tiene_acceso_movil',
+                  'perfil_web',
+                  'perfil_movil']
+        select_related_fields = ['contenedor', 'usuario']
 
 
 class UsuarioContenedorConfiguracionSerializador(serializers.ModelSerializer):
