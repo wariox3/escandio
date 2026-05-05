@@ -157,7 +157,22 @@ class WebhookServicio:
         estado_modelo = mapping.get(nuevo_estado)
         if not wamid or not estado_modelo:
             return {'ok': False, 'motivo': 'estado sin id o mapeo'}
-        actualizados = MsjMensaje.objects.filter(whatsapp_message_id=wamid).update(estado=estado_modelo)
+
+        update_fields = {'estado': estado_modelo}
+        # Cuando Meta reporta 'failed', extraemos el motivo del payload para
+        # mostrarlo en la UI en lugar de un icono rojo silencioso.
+        if nuevo_estado == 'failed':
+            errores = estado.get('errors') or []
+            if errores:
+                primer_error = errores[0]
+                titulo = primer_error.get('title') or primer_error.get('message')
+                detalle = (primer_error.get('error_data') or {}).get('details')
+                codigo = primer_error.get('code')
+                partes = [str(x) for x in (codigo, titulo, detalle) if x]
+                if partes:
+                    update_fields['error_mensaje'] = ' · '.join(partes)[:500]
+
+        actualizados = MsjMensaje.objects.filter(whatsapp_message_id=wamid).update(**update_fields)
         return {'ok': True, 'wamid': wamid, 'actualizados': actualizados, 'estado': estado_modelo}
 
     @staticmethod
