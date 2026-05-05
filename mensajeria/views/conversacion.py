@@ -122,10 +122,25 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
             if not nombre:
                 return Response({'plantilla_nombre': ['Requerido']}, status=status.HTTP_400_BAD_REQUEST)
             resultado = cliente.enviar_plantilla(conversacion.cliente_telefono, nombre, idioma, variables)
-            textos_conocidos = {
+            # Plantillas conocidas: con placeholders {0}, {1}, ... reemplazables por las
+            # variables enviadas. Asi el chat muestra el mensaje real que vio el cliente,
+            # no un placeholder generico tipo "Plantilla enviada: entrega".
+            plantillas_texto = {
                 'hello_world': 'Hello World!',
+                'entrega': 'Hola {0}, {1} ha despachado tu pedido. Guías: {2}',
             }
-            contenido_guardar = textos_conocidos.get(nombre) or f'Plantilla enviada: {nombre}'
+            template_texto = plantillas_texto.get(nombre)
+            if template_texto and variables:
+                try:
+                    contenido_guardar = template_texto.format(*variables)
+                except (IndexError, KeyError):
+                    contenido_guardar = template_texto
+            elif template_texto:
+                contenido_guardar = template_texto
+            elif variables:
+                contenido_guardar = f'Plantilla "{nombre}" — ' + ' · '.join(str(v) for v in variables)
+            else:
+                contenido_guardar = f'Plantilla "{nombre}"'
             media_url, caption = None, None
             tipo_modelo = MsjMensaje.TIPO_TEMPLATE
         else:
