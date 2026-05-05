@@ -56,19 +56,61 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
     
     @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
     def admin_lista(self, request):
-        from contenedor.models import Contenedor, UsuarioContenedor
-        usuarios = User.objects.all().order_by('-fecha_creacion')
+        """Lista paginada de usuarios para el panel super-admin.
 
-        # Contenedores donde es admin (FK)
+        Query params:
+          - page (default 1)
+          - page_size (default 25, max 200)
+          - q: busqueda en username, nombre, apellido (case-insensitive)
+          - estado: todos | activos | inactivos | super_admin
+        """
+        from django.db.models import Q
+        from contenedor.models import Contenedor, UsuarioContenedor
+
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = min(200, max(1, int(request.query_params.get('page_size', 25))))
+        except (TypeError, ValueError):
+            page_size = 25
+
+        q = (request.query_params.get('q') or '').strip()
+        estado = (request.query_params.get('estado') or 'todos').lower()
+
+        usuarios = User.objects.all().order_by('-fecha_creacion')
+        if estado == 'activos':
+            usuarios = usuarios.filter(is_active=True)
+        elif estado == 'inactivos':
+            usuarios = usuarios.filter(is_active=False)
+        elif estado == 'super_admin':
+            usuarios = usuarios.filter(is_superuser=True)
+        if q:
+            usuarios = usuarios.filter(
+                Q(username__icontains=q)
+                | Q(nombre__icontains=q)
+                | Q(apellido__icontains=q)
+            )
+
+        count = usuarios.count()
+        offset = (page - 1) * page_size
+        page_usuarios = list(usuarios[offset:offset + page_size])
+        ids_pagina = [u.id for u in page_usuarios]
+
+        # Solo cargamos las membresias de los usuarios de la pagina actual.
         admin_de = {}
-        for c in Contenedor.objects.exclude(schema_name='public').filter(usuario__isnull=False).values('usuario_id', 'nombre', 'schema_name'):
+        for c in Contenedor.objects.exclude(schema_name='public').filter(
+            usuario_id__in=ids_pagina,
+        ).values('usuario_id', 'nombre', 'schema_name'):
             admin_de.setdefault(c['usuario_id'], []).append(
                 {'nombre': c['nombre'], 'schema_name': c['schema_name']}
             )
 
-        # Contenedores donde fue invitado
         invitado_a = {}
-        for uc in UsuarioContenedor.objects.select_related('contenedor').values(
+        for uc in UsuarioContenedor.objects.filter(
+            usuario_id__in=ids_pagina,
+        ).select_related('contenedor').values(
             'usuario_id', 'rol', 'contenedor__nombre', 'contenedor__schema_name'
         ):
             invitado_a.setdefault(uc['usuario_id'], []).append({
@@ -77,9 +119,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'rol': uc['rol'],
             })
 
-        data = []
-        for u in usuarios:
-            data.append({
+        results = []
+        for u in page_usuarios:
+            results.append({
                 'id': u.id,
                 'username': u.username,
                 'nombre': u.nombre,
@@ -93,7 +135,18 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'admin_de': admin_de.get(u.id, []),
                 'invitado_a': invitado_a.get(u.id, []),
             })
-        return Response(data, status=status.HTTP_200_OK)
+
+        return Response({
+            'count': count,
+            'page': page,
+            'page_size': page_size,
+            'results': results,
+            'estadisticas': {
+                'total': User.objects.count(),
+                'activos': User.objects.filter(is_active=True).count(),
+                'super_admins': User.objects.filter(is_superuser=True).count(),
+            },
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path=r'admin-toggle-activo', permission_classes=[permissions.IsAdminUser])
     def admin_toggle_activo(self, request, pk=None):
