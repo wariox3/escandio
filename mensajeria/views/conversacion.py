@@ -11,14 +11,17 @@ from mensajeria.models import MsjConversacion, MsjMensaje
 from mensajeria.serializers.conversacion import MsjConversacionSerializador
 from mensajeria.serializers.mensaje import MsjMensajeSerializador
 from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+from contenedor.mixins import RolMixin
 
 logger = logging.getLogger(__name__)
 
 
-class MsjConversacionViewSet(viewsets.ModelViewSet):
+class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'mensajeria'
+    # mensajes es solo lectura; resto (marcar-leido, cerrar, reabrir, enviar) requieren editar.
+    acciones_lectura = ['mensajes']
     queryset = MsjConversacion.objects.all()
     serializer_class = MsjConversacionSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['estado', 'asignada_a']
     ordering_fields = ['ultimo_mensaje_fecha', 'id', 'no_leidos']

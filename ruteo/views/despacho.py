@@ -23,14 +23,17 @@ from utilidades.google import Google
 from utilidades.holmio import Holmio
 from ruteo.servicios.notificacion import NotificacionServicio
 from general.models.configuracion import GenConfiguracion
+from contenedor.mixins import RolMixin
 
 
-class RutDespachoViewSet(viewsets.ModelViewSet):
+class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'despacho'
+    # Acciones de solo lectura: no requieren editor.
+    acciones_lectura = ['plano_semantica', 'tablero_trafico', 'ruta_action', 'imprimir_orden_entrega']
     queryset = RutDespacho.objects.all()
     serializer_class = RutDespachoSerializador
-    permission_classes = [permissions.IsAuthenticated]    
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = DespachoFilter   
+    filterset_class = DespachoFilter
     serializadores = {
         'trafico' : RutDespachoTraficoSerializador
     }
