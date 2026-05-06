@@ -214,6 +214,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     observacion = row[17] if len(row) > 17 and row[17] else None
                     ciudad_nombre = row[18] if len(row) > 18 and row[18] else None
                     cobro = row[19] if len(row) > 19 and row[19] else 0
+                    tarifa = row[20] if len(row) > 20 and row[20] else 0
                     ciudad_id = None
                     if ciudad_nombre:
                         ciudad_match = GenCiudad.objects.filter(nombre__iexact=str(ciudad_nombre).strip()).values_list('id', flat=True).first()
@@ -242,6 +243,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         'destinatario_direccion_complemento': direccion_complemento,
                         'observacion': observacion,
                         'cobro': cobro,
+                        'tarifa': tarifa,
                     }
                     if ciudad_id:
                         data['ciudad'] = ciudad_id
@@ -840,6 +842,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     visita.tiempo_servicio = _decimal(raw.get('tiempo_servicio'))
                 if 'cobro' in raw:
                     visita.cobro = _decimal(raw.get('cobro'))
+                if 'tarifa' in raw:
+                    visita.tarifa = _decimal(raw.get('tarifa'))
                 if 'destinatario_direccion_complemento' in raw:
                     visita.destinatario_direccion_complemento = raw.get('destinatario_direccion_complemento')
                 if 'observacion' in raw:
