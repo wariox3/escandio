@@ -25,9 +25,9 @@ class RutVisitaSerializador(serializers.ModelSerializer):
     class Meta:
         model = RutVisita
         fields = ['id', 'numero', 'fecha', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
-                  'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
+                  'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tarifa', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
                   'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'franja_id', 'franja_codigo', 'resultados',
-                  'datos_entrega', 'remitente', 'cobro', 'observacion', 'destinatario_direccion_complemento', 'cita_inicio', 'cita_fin',
+                  'datos_entrega', 'remitente', 'tarifa', 'observacion', 'destinatario_direccion_complemento', 'cita_inicio', 'cita_fin',
                   'estado_decodificado', 'estado_novedad', 'estado_devolucion', 'estado_decodificado_alerta',
                   'estado_entregado', 'estado_entregado_complemento', 'estado_despacho']
         select_related_fields = ['despacho', 'ciudad']
@@ -50,6 +50,7 @@ class RutVistaListaSerializador(serializers.ModelSerializer):
             'peso',
             'volumen',
             'cobro',
+            'tarifa',
             'tiempo',
             'tiempo_servicio',
             'tiempo_trayecto',
@@ -76,7 +77,7 @@ class RutVisitaDetalleSerializador(serializers.ModelSerializer):
     class Meta:
         model = RutVisita
         fields = ['id', 'numero', 'fecha', 'documento', 'remitente', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
-                  'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
+                  'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tarifa', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
                   'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'franja_id', 'franja_codigo', 'resultados',
                   'datos_entrega', 'observacion', 'destinatario_direccion_complemento', 'cita_inicio', 'cita_fin',
                   'estado_decodificado', 'estado_novedad', 'estado_devolucion', 'estado_decodificado_alerta',
@@ -91,7 +92,7 @@ class RutVisitaExcelSerializador(serializers.ModelSerializer):
         model = RutVisita
         fields = [
                     'id', 'numero', 'fecha', 'documento', 'remitente', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
-                  'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
+                  'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tarifa', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
                   'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'despacho__vehiculo__placa', 'franja_id', 'franja_codigo',
                   'cita_inicio', 'cita_fin',
                   'estado_decodificado',
