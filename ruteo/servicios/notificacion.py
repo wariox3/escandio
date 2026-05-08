@@ -63,6 +63,13 @@ class NotificacionServicio():
             '¡Hola, {0}! 👋 Somos {1}. ¿En qué horario te queda mejor recibir tu pedido {2}? '
             'Por favor responde este mensaje con tu horario preferido para coordinar la entrega. 📅'
         ),
+        'saludo': (
+            '¡Hola! 👋 Te escribimos desde {0}. ¿En qué te podemos ayudar?'
+        ),
+        'saludo_pedido': (
+            '¡Hola! 👋 Te escribimos desde {0} en relación a tu pedido. '
+            '¿Tenés alguna consulta o necesitás coordinar algo?'
+        ),
     }
 
     @staticmethod
