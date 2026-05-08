@@ -1,4 +1,5 @@
 import logging
+import re
 from django.db import connection, transaction
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status
@@ -12,14 +13,15 @@ from mensajeria.serializers.conversacion import MsjConversacionSerializador
 from mensajeria.serializers.mensaje import MsjMensajeSerializador
 from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
 from contenedor.mixins import RolMixin
+from ruteo.servicios.notificacion import NotificacionServicio
 
 logger = logging.getLogger(__name__)
 
 
 class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
     modulo = 'mensajeria'
-    # mensajes es solo lectura; resto (marcar-leido, cerrar, reabrir, enviar) requieren editar.
-    acciones_lectura = ['mensajes']
+    # mensajes y plantillas son solo lectura; resto (marcar-leido, cerrar, reabrir, enviar, iniciar) requieren editar.
+    acciones_lectura = ['mensajes', 'plantillas']
     queryset = MsjConversacion.objects.all()
     serializer_class = MsjConversacionSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -122,25 +124,7 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
             if not nombre:
                 return Response({'plantilla_nombre': ['Requerido']}, status=status.HTTP_400_BAD_REQUEST)
             resultado = cliente.enviar_plantilla(conversacion.cliente_telefono, nombre, idioma, variables)
-            # Plantillas conocidas: con placeholders {0}, {1}, ... reemplazables por las
-            # variables enviadas. Asi el chat muestra el mensaje real que vio el cliente,
-            # no un placeholder generico tipo "Plantilla enviada: entrega".
-            plantillas_texto = {
-                'hello_world': 'Hello World!',
-                'entrega': 'Hola {0}, {1} ha despachado tu pedido. Guías: {2}',
-            }
-            template_texto = plantillas_texto.get(nombre)
-            if template_texto and variables:
-                try:
-                    contenido_guardar = template_texto.format(*variables)
-                except (IndexError, KeyError):
-                    contenido_guardar = template_texto
-            elif template_texto:
-                contenido_guardar = template_texto
-            elif variables:
-                contenido_guardar = f'Plantilla "{nombre}" — ' + ' · '.join(str(v) for v in variables)
-            else:
-                contenido_guardar = f'Plantilla "{nombre}"'
+            contenido_guardar = self._expandir_template(nombre, variables)
             media_url, caption = None, None
             tipo_modelo = MsjMensaje.TIPO_TEMPLATE
         else:
@@ -187,3 +171,117 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({'ok': True, 'mensaje_id': msj.id, 'whatsapp_message_id': resultado.get('message_id')})
+
+    def _expandir_template(self, nombre, variables):
+        """Reemplaza placeholders {0}, {1} ... con las variables pasadas. Si no esta
+        en el diccionario conocido, devuelve un texto generico para que el inbox
+        muestre algo legible en lugar de quedarse vacio."""
+        plantillas = NotificacionServicio.PLANTILLAS_TEXTO
+        template = plantillas.get(nombre)
+        if template and variables:
+            try:
+                return template.format(*variables)
+            except (IndexError, KeyError):
+                return template
+        if template:
+            return template
+        if variables:
+            return f'Plantilla "{nombre}" — ' + ' · '.join(str(v) for v in variables)
+        return f'Plantilla "{nombre}"'
+
+    @action(detail=False, methods=['get'])
+    def plantillas(self, request):
+        """Lista plantillas WhatsApp conocidas con sus variables (inferidas de los placeholders {N})."""
+        items = []
+        for nombre, texto in NotificacionServicio.PLANTILLAS_TEXTO.items():
+            indices = sorted({int(m) for m in re.findall(r'\{(\d+)\}', texto)})
+            items.append({
+                'nombre': nombre,
+                'idioma': 'es',
+                'texto': texto,
+                'variables': [
+                    {'indice': i, 'nombre_sugerido': f'variable_{i + 1}'}
+                    for i in indices
+                ],
+            })
+        return Response(items)
+
+    @action(detail=False, methods=['post'])
+    def iniciar(self, request):
+        """Crea o reabre conversacion contra un telefono y envia plantilla como primer mensaje.
+
+        Payload: {telefono, nombre?, plantilla_nombre, plantilla_idioma?, plantilla_variables?[]}
+        Si la conversacion se acaba de crear y Meta rechaza el envio, se borra (atomico).
+        Si reusabamos una existente, NO se borra.
+        """
+        datos = request.data
+        telefono_raw = (datos.get('telefono') or '').strip()
+        telefono = NotificacionServicio.normalizar_telefono(telefono_raw)
+        if not telefono:
+            return Response({'detail': 'Telefono invalido'}, status=status.HTTP_400_BAD_REQUEST)
+
+        nombre_plantilla = (datos.get('plantilla_nombre') or '').strip()
+        if not nombre_plantilla:
+            return Response({'plantilla_nombre': ['Requerido']}, status=status.HTTP_400_BAD_REQUEST)
+        idioma = datos.get('plantilla_idioma') or 'es'
+        variables = datos.get('plantilla_variables') or []
+
+        conexion = self._obtener_conexion()
+        if not conexion:
+            return Response({'detail': 'Sin conexion WhatsApp activa'}, status=status.HTTP_400_BAD_REQUEST)
+
+        nombre_cliente = (datos.get('nombre') or '').strip() or None
+        conversacion, creada = MsjConversacion.objects.get_or_create(
+            cliente_telefono=telefono,
+            defaults={'cliente_nombre': nombre_cliente},
+        )
+        if not creada and conversacion.estado == MsjConversacion.ESTADO_CERRADA:
+            conversacion.estado = MsjConversacion.ESTADO_ABIERTA
+            conversacion.save(update_fields=['estado', 'fecha_actualizacion'])
+
+        cliente = WhatsappCliente(conexion)
+        resultado = cliente.enviar_plantilla(telefono, nombre_plantilla, idioma, variables)
+
+        if resultado['error']:
+            # Si la creamos en esta misma request y fallo el envio, no dejar conversacion
+            # huerfana en el inbox. Si reutilizabamos una existente, la respetamos.
+            if creada:
+                conversacion.delete()
+            return Response({
+                'ok': False,
+                'mensaje': resultado.get('mensaje') or 'Error al enviar plantilla',
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+        contenido = self._expandir_template(nombre_plantilla, variables)
+        try:
+            with transaction.atomic():
+                msj = MsjMensaje.objects.create(
+                    conversacion=conversacion,
+                    direccion=MsjMensaje.DIRECCION_SALIDA,
+                    tipo=MsjMensaje.TIPO_TEMPLATE,
+                    contenido=contenido,
+                    whatsapp_message_id=resultado.get('message_id'),
+                    estado=MsjMensaje.ESTADO_ENVIADO,
+                    enviado_por=request.user if request.user.is_authenticated else None,
+                    metadata=resultado.get('raw'),
+                )
+                conversacion.ultimo_mensaje_fecha = timezone.now()
+                conversacion.save(update_fields=['ultimo_mensaje_fecha', 'fecha_actualizacion'])
+        except Exception as e:
+            logger.exception(
+                f'Plantilla enviada a WhatsApp wamid={resultado.get("message_id")} '
+                f'pero fallo guardar en DB: {e}'
+            )
+            return Response({
+                'ok': False,
+                'mensaje': 'El mensaje se envio pero no se pudo registrar. Contacta al admin.',
+                'whatsapp_message_id': resultado.get('message_id'),
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'ok': True,
+            'conversacion_id': conversacion.id,
+            'mensaje_id': msj.id,
+            'whatsapp_message_id': resultado.get('message_id'),
+            'creada': creada,
+        })
