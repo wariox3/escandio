@@ -141,6 +141,42 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)     
 
+    @action(detail=False, methods=["post"], url_path=r'iniciar-ruta',)
+    def iniciar_ruta(self, request):
+        """Marca el inicio físico de la ruta (conductor sale) y notifica
+        a los destinatarios pendientes con la plantilla 'en_camino'.
+
+        Es idempotente: si ya se inició antes, igual permite reenviar (caso
+        operador que necesita re-notificar).
+        """
+        raw = request.data
+        id = raw.get('id')
+        if not id:
+            return Response({'mensaje': 'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            despacho = RutDespacho.objects.get(pk=id)
+        except RutDespacho.DoesNotExist:
+            return Response({'mensaje': 'El despacho no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not despacho.estado_aprobado:
+            return Response({'mensaje': 'El despacho debe estar aprobado para iniciar ruta', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        if despacho.estado_terminado or despacho.estado_anulado:
+            return Response({'mensaje': 'El despacho ya está terminado o anulado', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Notificar a las visitas pendientes en thread daemon (no bloquea).
+        resultado_notif = NotificacionServicio.notificar_despacho_iniciado(
+            despacho_id=despacho.id,
+            schema_name=request.tenant.schema_name,
+            nombre_empresa=request.tenant.nombre,
+            contenedor_id=request.tenant.id,
+        )
+        return Response({
+            'mensaje': 'Ruta iniciada',
+            'notificaciones': resultado_notif or {
+                'enviado': False, 'razon': 'desconocido', 'mensaje': None, 'destinatarios': 0,
+            },
+        }, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path=r'terminar',)
     def terminar(self, request):
         raw = request.data
