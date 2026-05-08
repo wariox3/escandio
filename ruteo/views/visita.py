@@ -12,6 +12,7 @@ from general.models.ciudad import GenCiudad
 from contenedor.models import CtnDireccion
 from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
+from ruteo.servicios.notificacion import NotificacionServicio
 from contenedor.servicios.direccion import DireccionServicio
 from datetime import datetime
 from django.utils import timezone
@@ -1028,6 +1029,18 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                                     'base64': base64_encoded,
                                 })                                                                                                                                                                                                     
                         VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
+                # Tras commit, notificar al cliente con la plantilla 'entregado'.
+                # Falla silenciosa: si Whatsapp esta caido o el tenant no lo tiene
+                # habilitado, NO bloqueamos la confirmacion de la entrega.
+                try:
+                    NotificacionServicio.notificar_visita_entregada(
+                        visita_id=visita.id,
+                        schema_name=request.tenant.schema_name,
+                        nombre_empresa=request.tenant.nombre,
+                        contenedor_id=request.tenant.id,
+                    )
+                except Exception:
+                    pass
                 return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
             else:
                 return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
@@ -1055,6 +1068,96 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 return Response({'mensaje':f'La visita con numero {numero} no existe', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                                                              
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
+
+    @action(detail=False, methods=["post"], url_path=r'notificar-proximo',)
+    def notificar_proximo(self, request):
+        """Notifica al destinatario que el conductor llega en X minutos.
+
+        Payload: { id: int, minutos: int }. Retorna {'enviado', 'razon', 'mensaje'}.
+        Pensado para que la app móvil del conductor o un operador lo dispare
+        cuando el vehículo está cerca del destinatario (geocerca, ETA, etc.).
+        """
+        raw = request.data
+        id = raw.get('id')
+        minutos = raw.get('minutos')
+        if not id or minutos is None:
+            return Response({'mensaje':'Faltan parametros (id, minutos)', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            visita = RutVisita.objects.get(pk=id)
+        except RutVisita.DoesNotExist:
+            return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+        if visita.estado_entregado:
+            return Response({'mensaje':'La visita ya está entregada', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        resultado = NotificacionServicio.notificar_visita_proxima(
+            visita_id=visita.id,
+            minutos=minutos,
+            schema_name=request.tenant.schema_name,
+            nombre_empresa=request.tenant.nombre,
+            contenedor_id=request.tenant.id,
+        )
+        return Response({'mensaje': 'Notificación en cola', 'notificacion': resultado}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path=r'reprogramar',)
+    def reprogramar(self, request):
+        """Reprograma una visita y notifica al destinatario con la plantilla 'reagendar'.
+
+        Payload: { id: int, fecha: 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM',
+                   cita_inicio?, cita_fin? }. Actualiza la fecha/cita en BD y
+        manda WhatsApp con la nueva fecha en formato humano.
+        """
+        raw = request.data
+        id = raw.get('id')
+        fecha_param = raw.get('fecha')
+        cita_inicio_param = raw.get('cita_inicio')
+        cita_fin_param = raw.get('cita_fin')
+        if not id or not fecha_param:
+            return Response({'mensaje':'Faltan parametros (id, fecha)', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            visita = RutVisita.objects.get(pk=id)
+        except RutVisita.DoesNotExist:
+            return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+        if visita.estado_entregado:
+            return Response({'mensaje':'La visita ya está entregada — no se puede reprogramar', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parsear fecha aceptando varios formatos comunes.
+        fecha_nueva = None
+        for fmt in ('%Y-%m-%d %H:%M', '%Y-%m-%dT%H:%M', '%Y-%m-%d'):
+            try:
+                fecha_nueva = datetime.strptime(fecha_param, fmt)
+                break
+            except (ValueError, TypeError):
+                continue
+        if fecha_nueva is None:
+            return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD o YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Persistir cambios.
+        visita.fecha = fecha_nueva.date()
+        if cita_inicio_param:
+            try:
+                visita.cita_inicio = timezone.make_aware(datetime.strptime(cita_inicio_param, '%Y-%m-%d %H:%M'))
+            except (ValueError, TypeError):
+                pass
+        if cita_fin_param:
+            try:
+                visita.cita_fin = timezone.make_aware(datetime.strptime(cita_fin_param, '%Y-%m-%d %H:%M'))
+            except (ValueError, TypeError):
+                pass
+        visita.save()
+
+        # Texto humano para la notificacion. Si trajo cita, mostrar rango; si no, solo la fecha.
+        if visita.cita_inicio and visita.cita_fin:
+            fecha_humana = f"{visita.cita_inicio.strftime('%d/%m %H:%M')} – {visita.cita_fin.strftime('%H:%M')}"
+        else:
+            fecha_humana = fecha_nueva.strftime('%d/%m/%Y')
+
+        resultado = NotificacionServicio.notificar_visita_reagendada(
+            visita_id=visita.id,
+            fecha_nueva=fecha_humana,
+            schema_name=request.tenant.schema_name,
+            nombre_empresa=request.tenant.nombre,
+            contenedor_id=request.tenant.id,
+        )
+        return Response({'mensaje': 'Visita reprogramada', 'notificacion': resultado}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'liberar',)
     def liberar(self, request):             
