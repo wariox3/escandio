@@ -15,6 +15,7 @@ import openpyxl
 import gc
 
 class RutVehiculoViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'vehiculo'
     queryset = RutVehiculo.objects.all()
     serializer_class = RutVehiculoSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]

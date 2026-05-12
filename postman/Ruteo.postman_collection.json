@@ -1,0 +1,630 @@
+{
+  "info": {
+    "name": "Ruteo API",
+    "description": "Colección organizada por flujos.\n\n## Carpetas\n\n- **00 — Setup (una vez por tenant)**: login + verificación/encendido de WhatsApp.\n- **01 — Flujo principal: Despacho → WhatsApp automático**: el flujo \"tu paquete está en camino\". Aprobar el despacho dispara el envío de la plantilla `entrega` a todos los destinatarios con teléfono válido. NO hay que hacer un paso aparte.\n- **02 — Mensajería (chat con clientes)**: hablar libremente dentro de la ventana 24h o por plantilla fuera de ella.\n- **03 — Diagnóstico**: para entender por qué no salió un mensaje.\n- **90 — Super-Admin (global)**: gestión de usuarios y permisos.\n- **91 — Catálogo (CRUD)**: visita, despacho, configuración.\n\nEl pre-request script de la colección hace login automático si `{{token}}` está vacío.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-login si no hay token aun",
+          "const token = pm.collectionVariables.get('token');",
+          "if (token && token.length > 10) { return; }",
+          "const baseUrl = pm.collectionVariables.get('base_url');",
+          "const username = pm.collectionVariables.get('username');",
+          "const password = pm.collectionVariables.get('password');",
+          "if (!baseUrl || !username || !password) { return; }",
+          "pm.sendRequest({",
+          "  url: baseUrl + '/seguridad/login/',",
+          "  method: 'POST',",
+          "  header: { 'Content-Type': 'application/json' },",
+          "  body: { mode: 'raw', raw: JSON.stringify({ username, password, proyecto: 'RUTEO' }) }",
+          "}, function (err, res) {",
+          "  if (err) { console.error('login err', err); return; }",
+          "  const data = res.json();",
+          "  if (data && data.token) {",
+          "    pm.collectionVariables.set('token', data.token);",
+          "    if (data['refresh-token']) pm.collectionVariables.set('refresh_token', data['refresh-token']);",
+          "    if (data.user && data.user.id) pm.collectionVariables.set('usuario_id', data.user.id);",
+          "    console.log('Auto-login OK');",
+          "  } else {",
+          "    console.error('Login sin token', data);",
+          "  }",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://ruteoapi.online" },
+    { "key": "tenant_url", "value": "http://energypruebas.ruteoapi.online" },
+    { "key": "username", "value": "prueba@gmail.com" },
+    { "key": "password", "value": "12345678" },
+    { "key": "token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "usuario_id", "value": "" },
+    { "key": "contenedor_id", "value": "" },
+    { "key": "usuario_contenedor_id", "value": "" },
+    { "key": "conversacion_id", "value": "" },
+    { "key": "despacho_id", "value": "" },
+    { "key": "visita_id", "value": "" },
+    { "key": "telefono_destinatario", "value": "573227242549" }
+  ],
+  "item": [
+    {
+      "name": "00 — Setup (una vez por tenant)",
+      "description": { "content": "Pre-condiciones para que el flujo de WhatsApp funcione. Corré los requests en orden la primera vez. Si todos están OK, podés saltar a la carpeta 01.", "type": "text/markdown" },
+      "item": [
+        {
+          "name": "1. Login (manual — el resto se autologuea)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data.token) pm.collectionVariables.set('token', data.token);",
+                  "if (data['refresh-token']) pm.collectionVariables.set('refresh_token', data['refresh-token']);",
+                  "if (data.user && data.user.id) pm.collectionVariables.set('usuario_id', data.user.id);",
+                  "pm.test('200 + token', () => { pm.expect(pm.response.code).to.eql(200); pm.expect(data.token).to.be.a('string'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/seguridad/login/", "host": ["{{base_url}}"], "path": ["seguridad", "login", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"proyecto\": \"RUTEO\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2. Verificar conexión WhatsApp del tenant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 404) {",
+                  "  console.warn('Falta crear la conexion. Corre el siguiente request.');",
+                  "  return;",
+                  "}",
+                  "const d = pm.response.json();",
+                  "console.log('estado=', d.estado, 'numero=', d.display_phone_number);",
+                  "pm.test('estado=activo', () => pm.expect(d.estado).to.eql('activo'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conexion/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conexion", ""] }
+          }
+        },
+        {
+          "name": "3. (Solo primera vez) Crear conexión Meta",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/mensajeria/conexion/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conexion", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"REEMPLAZAR_PHONE_NUMBER_ID\",\n  \"waba_id\": \"REEMPLAZAR_WABA_ID\",\n  \"access_token\": \"EAAxxxxxxx_TU_SYSTEM_USER_TOKEN\",\n  \"verify_token\": \"ruteo_pruebas_2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "4. Verificar config tenant (rut_whatsapp_habilitado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json();",
+                  "console.log('whatsapp_habilitado=', d.rut_whatsapp_habilitado, ' plantilla=', d.rut_whatsapp_plantilla_despacho);",
+                  "pm.test('whatsapp habilitado', () => pm.expect(d.rut_whatsapp_habilitado).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/general/configuracion/1/", "host": ["{{tenant_url}}"], "path": ["general", "configuracion", "1", ""] }
+          }
+        },
+        {
+          "name": "5. (Si falta) Encender WhatsApp + plantilla 'entrega'",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/general/configuracion/1/", "host": ["{{tenant_url}}"], "path": ["general", "configuracion", "1", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 1,\n  \"rut_whatsapp_habilitado\": true,\n  \"rut_whatsapp_plantilla_despacho\": \"entrega\",\n  \"rut_whatsapp_plantilla_idioma\": \"es\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Flujo principal: Despacho → WhatsApp automático",
+      "description": {
+        "content": "## El flujo 'Tu paquete está en camino'\n\nCuando aprobás un despacho, el backend (`NotificacionServicio.notificar_despacho_aprobado`) **automáticamente**:\n\n1. Lee todas las visitas del despacho.\n2. Para cada visita con `destinatario_telefono` válido, envía la plantilla `entrega` (o la que tengas configurada en `rut_whatsapp_plantilla_despacho`).\n3. Texto que ve el cliente: `Hola {nombre}, {empresa} ha despachado tu pedido. Guías: {documento}`.\n4. Registra el envío en `MsjConversacion` / `MsjMensaje` (queda en el inbox para hacer seguimiento).\n\n**No hay que llamar a otro endpoint.** El response del aprobar incluye el campo `notificaciones` con `{enviado, razon, mensaje, destinatarios}`.\n\n### Orden de ejecución\n\n1. Crear visita con teléfono válido.\n2. (Si no existe) Listar despachos NO aprobados y copiar `id` a `{{despacho_id}}`.\n3. Aprobar despacho.\n4. Verificar mensaje en la conversación del destinatario.",
+        "type": "text/markdown"
+      },
+      "item": [
+        {
+          "name": "1. Crear visita con teléfono",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const d = pm.response.json();",
+                  "  if (d.id) pm.collectionVariables.set('visita_id', d.id);",
+                  "  console.log('visita creada id=', d.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/ruteo/visita/nuevo/", "host": ["{{tenant_url}}"], "path": ["ruteo", "visita", "nuevo", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"destinatario\": \"Cliente Prueba\",\n  \"destinatario_telefono\": \"{{telefono_destinatario}}\",\n  \"documento\": \"GUIA-FLUJO-001\",\n  \"destinatario_direccion\": \"Calle 100 # 10-20\",\n  \"ciudad\": 1,\n  \"unidades\": 1,\n  \"peso\": 1.5,\n  \"volumen\": 0.05,\n  \"tiempo_servicio\": 5\n}"
+            }
+          }
+        },
+        {
+          "name": "2. Listar despachos NO aprobados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json();",
+                  "const items = d.results || d;",
+                  "(items || []).slice(0, 5).forEach(x => console.log(`id=${x.id} estado_aprobado=${x.estado_aprobado}`));",
+                  "if (Array.isArray(items) && items.length && items[0].id) {",
+                  "  pm.collectionVariables.set('despacho_id', items[0].id);",
+                  "  console.log('despacho_id auto-seteado a', items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{tenant_url}}/ruteo/despacho/?estado_aprobado=False&page=1&page_size=10&ordering=-id",
+              "host": ["{{tenant_url}}"],
+              "path": ["ruteo", "despacho", ""],
+              "query": [
+                { "key": "estado_aprobado", "value": "False" },
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" },
+                { "key": "ordering", "value": "-id" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. ⚡ Aprobar despacho (DISPARA WhatsApp)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const d = pm.response.json();",
+                  "console.log('-----');",
+                  "console.log('mensaje:', d.mensaje);",
+                  "console.log('notificaciones:', JSON.stringify(d.notificaciones, null, 2));",
+                  "console.log('-----');",
+                  "pm.test('respuesta incluye notificaciones', () => pm.expect(d).to.have.property('notificaciones'));",
+                  "if (d.notificaciones) {",
+                  "  pm.test('notificaciones.enviado=true', () => pm.expect(d.notificaciones.enviado).to.eql(true));",
+                  "  if (!d.notificaciones.enviado) {",
+                  "    console.warn('No se envio. Razon:', d.notificaciones.razon, '-', d.notificaciones.mensaje);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/ruteo/despacho/aprobar/", "host": ["{{tenant_url}}"], "path": ["ruteo", "despacho", "aprobar", ""] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": {{despacho_id}}\n}" }
+          }
+        },
+        {
+          "name": "4. Buscar conversación del destinatario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json();",
+                  "const items = d.results || d;",
+                  "const tel = pm.collectionVariables.get('telefono_destinatario');",
+                  "const conv = (items || []).find(c => c.cliente_telefono && c.cliente_telefono.replace(/\\D/g,'').includes(tel.replace(/\\D/g,'')));",
+                  "if (conv) {",
+                  "  pm.collectionVariables.set('conversacion_id', conv.id);",
+                  "  console.log('conversacion encontrada id=', conv.id, ' nombre=', conv.cliente_nombre);",
+                  "} else {",
+                  "  console.warn('No encontre conversacion para telefono', tel, ' — el envio puede tardar 1-2s, reintenta.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{tenant_url}}/mensajeria/conversacion/?page=1&page_size=20&ordering=-ultimo_mensaje_fecha",
+              "host": ["{{tenant_url}}"],
+              "path": ["mensajeria", "conversacion", ""],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" },
+                { "key": "ordering", "value": "-ultimo_mensaje_fecha" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Ver mensaje en la conversación",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ms = pm.response.json();",
+                  "const ultimo = Array.isArray(ms) && ms.length ? ms[ms.length - 1] : null;",
+                  "if (ultimo) {",
+                  "  console.log('-----');",
+                  "  console.log('Ultimo mensaje:');",
+                  "  console.log('  tipo=', ultimo.tipo, ' direccion=', ultimo.direccion, ' estado=', ultimo.estado);",
+                  "  console.log('  contenido=', ultimo.contenido);",
+                  "  console.log('  wamid=', ultimo.whatsapp_message_id);",
+                  "  if (ultimo.error_mensaje) console.warn('  error=', ultimo.error_mensaje);",
+                  "  console.log('-----');",
+                  "  pm.test('mensaje saliente exitoso', () => {",
+                  "    pm.expect(ultimo.direccion).to.eql('out');",
+                  "    pm.expect(['enviado','entregado','leido']).to.include(ultimo.estado);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/mensajes/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "mensajes", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Mensajería (chat con clientes)",
+      "description": {
+        "content": "## Hablar con un cliente desde el inbox\n\n- **Texto libre (`tipo: texto`)**: solo permitido dentro de la **ventana de 24h** desde el último mensaje del cliente. Si la ventana venció, el endpoint responde `400` con `codigo='ventana_24h_vencida'`.\n- **Plantilla (`tipo: template`)**: siempre permitido. Necesita una plantilla aprobada en Meta.\n- **Imagen (`tipo: imagen`)**: requiere `media_url` pública (HTTPS).\n\nLa ventana se abre/renueva cada vez que el cliente escribe (entra por webhook).",
+        "type": "text/markdown"
+      },
+      "item": [
+        {
+          "name": "Listar conversaciones (inbox)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{tenant_url}}/mensajeria/conversacion/?page=1&page_size=20&ordering=-ultimo_mensaje_fecha",
+              "host": ["{{tenant_url}}"],
+              "path": ["mensajeria", "conversacion", ""],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" },
+                { "key": "ordering", "value": "-ultimo_mensaje_fecha" },
+                { "key": "estado", "value": "abierta", "disabled": true },
+                { "key": "asignada_a", "value": "{{usuario_id}}", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ver hilo de mensajes",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/mensajes/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "mensajes", ""] }
+          }
+        },
+        {
+          "name": "💬 Enviar TEXTO libre (ventana 24h abierta)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/enviar/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "enviar", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"texto\",\n  \"contenido\": \"Hola, tu paquete está en camino. Te avisamos cuando esté cerca.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "📋 Enviar PLANTILLA 'entrega' (fuera de 24h)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/enviar/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "enviar", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"template\",\n  \"plantilla_nombre\": \"entrega\",\n  \"plantilla_idioma\": \"es\",\n  \"plantilla_variables\": [\"Cliente Prueba\", \"EMPRESA DE MENSAJERIA\", \"GUIA-001\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "🖼️ Enviar IMAGEN",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/enviar/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "enviar", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"imagen\",\n  \"media_url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg\",\n  \"caption\": \"Foto de prueba\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Marcar conversación como leída",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/marcar-leido/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "marcar-leido", ""] }
+          }
+        },
+        {
+          "name": "Cerrar conversación",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/cerrar/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "cerrar", ""] }
+          }
+        },
+        {
+          "name": "Reabrir conversación",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conversacion/{{conversacion_id}}/reabrir/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conversacion", "{{conversacion_id}}", "reabrir", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Diagnóstico WhatsApp",
+      "description": {
+        "content": "Si `aprobar` devolvió `notificaciones.enviado=false`, mirá `notificaciones.razon`. Estos requests ayudan a identificar qué falta:\n\n| Razón | Qué hacer |\n|---|---|\n| `sin_conexion_activa` | Crear conexión (Setup paso 3). |\n| `tenant_whatsapp_off` | Encender flag (Setup paso 5). |\n| `acceso_whatsapp_notificaciones_off` | Super-admin debe encender `Contenedor.acceso_whatsapp_notificaciones`. |\n| Mensaje sale pero llega `estado=error` | Probar credenciales Meta + revisar plantilla aprobada. |\n",
+        "type": "text/markdown"
+      },
+      "item": [
+        {
+          "name": "Probar credenciales (Meta Graph API)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conexion/probar/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conexion", "probar", ""] }
+          }
+        },
+        {
+          "name": "Ver conexión + estado + último error",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/mensajeria/conexion/", "host": ["{{tenant_url}}"], "path": ["mensajeria", "conexion", ""] }
+          }
+        },
+        {
+          "name": "Ver configuración tenant (flags WhatsApp)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/general/configuracion/1/", "host": ["{{tenant_url}}"], "path": ["general", "configuracion", "1", ""] }
+          }
+        },
+        {
+          "name": "Webhook verify (lo llama Meta al configurar)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{tenant_url}}/mensajeria/webhook/whatsapp/?hub.mode=subscribe&hub.verify_token=ruteo_pruebas_2026&hub.challenge=12345",
+              "host": ["{{tenant_url}}"],
+              "path": ["mensajeria", "webhook", "whatsapp", ""],
+              "query": [
+                { "key": "hub.mode", "value": "subscribe" },
+                { "key": "hub.verify_token", "value": "ruteo_pruebas_2026" },
+                { "key": "hub.challenge", "value": "12345" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "90 — Super-Admin (global)",
+      "item": [
+        {
+          "name": "Listar admins",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/contenedor/usuario/admin-lista/?page=1&page_size=20",
+              "host": ["{{base_url}}"],
+              "path": ["contenedor", "usuario", "admin-lista", ""],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear usuario (clave directa)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/contenedor/usuario/admin-crear/", "host": ["{{base_url}}"], "path": ["contenedor", "usuario", "admin-crear", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"nuevo.user@ruteo.test\",\n  \"nombre\": \"Nuevo\",\n  \"apellido\": \"Usuario\",\n  \"password\": \"Temporal123!\",\n  \"enviar_invitacion\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear usuario (enviar invitación)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/contenedor/usuario/admin-crear/", "host": ["{{base_url}}"], "path": ["contenedor", "usuario", "admin-crear", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"invitado@ruteo.test\",\n  \"nombre\": \"Invitado\",\n  \"apellido\": \"X\",\n  \"enviar_invitacion\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset password (forzar cambio)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/contenedor/usuario/{{usuario_id}}/admin-reset-password/", "host": ["{{base_url}}"], "path": ["contenedor", "usuario", "{{usuario_id}}", "admin-reset-password", ""] },
+            "body": { "mode": "raw", "raw": "{\n  \"password\": \"Temporal2026!\"\n}" }
+          }
+        },
+        {
+          "name": "Toggle activo",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/contenedor/usuario/{{usuario_id}}/admin-toggle-activo/", "host": ["{{base_url}}"], "path": ["contenedor", "usuario", "{{usuario_id}}", "admin-toggle-activo", ""] }
+          }
+        },
+        {
+          "name": "Membresía: actualizar permisos",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/contenedor/usuariocontenedor/{{usuario_contenedor_id}}/admin-actualizar/", "host": ["{{base_url}}"], "path": ["contenedor", "usuariocontenedor", "{{usuario_contenedor_id}}", "admin-actualizar", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tiene_acceso_web\": true,\n  \"tiene_acceso_movil\": true,\n  \"perfil_movil\": \"conductor\",\n  \"permisos\": {\n    \"visita\":     {\"ver\": true, \"editar\": true},\n    \"despacho\":   {\"ver\": true, \"editar\": true},\n    \"mensajeria\": {\"ver\": true, \"editar\": true},\n    \"vehiculo\":   {\"ver\": true, \"editar\": false},\n    \"flota\":      {\"ver\": true, \"editar\": false},\n    \"franja\":     {\"ver\": true, \"editar\": false},\n    \"novedad\":    {\"ver\": true, \"editar\": true},\n    \"contacto\":   {\"ver\": true, \"editar\": false},\n    \"empresa\":    {\"ver\": true, \"editar\": false},\n    \"configuracion\": {\"ver\": false, \"editar\": false},\n    \"facturacion\":{\"ver\": false, \"editar\": false},\n    \"usuario\":    {\"ver\": false, \"editar\": false}\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Membresía: aplicar plantilla",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/contenedor/usuariocontenedor/{{usuario_contenedor_id}}/aplicar-plantilla/", "host": ["{{base_url}}"], "path": ["contenedor", "usuariocontenedor", "{{usuario_contenedor_id}}", "aplicar-plantilla", ""] },
+            "body": { "mode": "raw", "raw": "{\n  \"plantilla\": \"operativo\"\n}" }
+          }
+        },
+        {
+          "name": "Mi membresía (permisos del contenedor activo)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{tenant_url}}/contenedor/usuariocontenedor/mi-membresia/", "host": ["{{tenant_url}}"], "path": ["contenedor", "usuariocontenedor", "mi-membresia", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "91 — Catálogo (Visita / Despacho / Configuración)",
+      "item": [
+        {
+          "name": "Visita: listar",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{tenant_url}}/ruteo/visita/?page=1&page_size=50&ordering=-id",
+              "host": ["{{tenant_url}}"],
+              "path": ["ruteo", "visita", ""],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "50" },
+                { "key": "ordering", "value": "-id" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Visita: actualizar dirección",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/ruteo/visita/actualizar-direccion/", "host": ["{{tenant_url}}"], "path": ["ruteo", "visita", "actualizar-direccion", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{visita_id}},\n  \"destinatario\": \"Cliente Prueba\",\n  \"destinatario_direccion\": \"Calle 100 # 10-20\",\n  \"destinatario_telefono\": \"{{telefono_destinatario}}\",\n  \"ciudad\": 1,\n  \"unidades\": 1,\n  \"peso\": 1.5,\n  \"volumen\": 0.05,\n  \"tiempo_servicio\": 5,\n  \"cobro\": 0,\n  \"tarifa\": 12000\n}"
+            }
+          }
+        },
+        {
+          "name": "Visita: importar Excel (base64)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/ruteo/visita/importar-excel/", "host": ["{{tenant_url}}"], "path": ["ruteo", "visita", "importar-excel", ""] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"archivo_base64\": \"PEGAR_EL_XLSX_EN_BASE64_AQUI\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Visita: eliminar",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{tenant_url}}/ruteo/visita/{{visita_id}}/", "host": ["{{tenant_url}}"], "path": ["ruteo", "visita", "{{visita_id}}", ""] }
+          }
+        },
+        {
+          "name": "Despacho: anular aprobación",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/ruteo/despacho/anular/", "host": ["{{tenant_url}}"], "path": ["ruteo", "despacho", "anular", ""] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": {{despacho_id}}\n}" }
+          }
+        },
+        {
+          "name": "Despacho: terminar",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{tenant_url}}/ruteo/despacho/terminar/", "host": ["{{tenant_url}}"], "path": ["ruteo", "despacho", "terminar", ""] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": {{despacho_id}}\n}" }
+          }
+        }
+      ]
+    }
+  ]
+}

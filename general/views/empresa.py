@@ -7,11 +7,12 @@ from rest_framework.decorators import action
 from decouple import config
 from utilidades.space_do import SpaceDo
 from utilidades.utilidades import Utilidades
+from contenedor.mixins import RolMixin
 
-class EmpresaViewSet(viewsets.ModelViewSet):
+class EmpresaViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'empresa'
     queryset = GenEmpresa.objects.all()
-    serializer_class = GenEmpresaSerializador    
-    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = GenEmpresaSerializador
 
     def create(self, request):
         if GenEmpresa.objects.filter(pk=1).exists():

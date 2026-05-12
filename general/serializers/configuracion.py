@@ -16,6 +16,8 @@ class GenConfiguracionSerializador(serializers.ModelSerializer):
             'rut_decodificar_direcciones',
             'rut_hora_inicio',
             'rut_whatsapp_habilitado',
+            'rut_whatsapp_plantilla_despacho',
+            'rut_whatsapp_plantilla_idioma',
             'rut_estrategia_ruteo',
             'rut_cita_tipo_defecto',
             'rut_alerta_parada_activa',

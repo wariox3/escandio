@@ -55,6 +55,8 @@ class AdminLogin(TokenObtainPairView):
 
 
 class Login(TokenObtainPairView):
+    # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+    # 'RUTEOAPP' debe seguir en proyectos_validos. Response: {token, 'refresh-token', user}.
     serializer_class = CustomTokenObtainPairSerializer
 
     def post(self, request, *args, **kwargs):

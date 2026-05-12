@@ -23,14 +23,17 @@ from utilidades.google import Google
 from utilidades.holmio import Holmio
 from ruteo.servicios.notificacion import NotificacionServicio
 from general.models.configuracion import GenConfiguracion
+from contenedor.mixins import RolMixin
 
 
-class RutDespachoViewSet(viewsets.ModelViewSet):
+class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'despacho'
+    # Acciones de solo lectura: no requieren editor.
+    acciones_lectura = ['plano_semantica', 'tablero_trafico', 'ruta_action', 'imprimir_orden_entrega']
     queryset = RutDespacho.objects.all()
     serializer_class = RutDespachoSerializador
-    permission_classes = [permissions.IsAuthenticated]    
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = DespachoFilter   
+    filterset_class = DespachoFilter
     serializadores = {
         'trafico' : RutDespachoTraficoSerializador
     }
@@ -118,12 +121,61 @@ class RutDespachoViewSet(viewsets.ModelViewSet):
                         despacho.save()
                     else:
                         return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                NotificacionServicio.notificar_despacho_aprobado(despacho.id, schema_name=request.tenant.schema_name, nombre_empresa=request.tenant.nombre, contenedor_id=request.tenant.id)
-                return Response({'mensaje': 'Se aprobo el despacho'}, status=status.HTTP_200_OK)
+                resultado_notif = NotificacionServicio.notificar_despacho_aprobado(
+                    despacho.id,
+                    schema_name=request.tenant.schema_name,
+                    nombre_empresa=request.tenant.nombre,
+                    contenedor_id=request.tenant.id,
+                )
+                return Response({
+                    'mensaje': 'Se aprobo el despacho',
+                    'notificaciones': resultado_notif or {
+                        'enviado': False,
+                        'razon': 'desconocido',
+                        'mensaje': None,
+                        'destinatarios': 0,
+                    },
+                }, status=status.HTTP_200_OK)
             except RutDespacho.DoesNotExist:
                 return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)     
+
+    @action(detail=False, methods=["post"], url_path=r'iniciar-ruta',)
+    def iniciar_ruta(self, request):
+        """Marca el inicio físico de la ruta (conductor sale) y notifica
+        a los destinatarios pendientes con la plantilla 'en_camino'.
+
+        Es idempotente: si ya se inició antes, igual permite reenviar (caso
+        operador que necesita re-notificar).
+        """
+        raw = request.data
+        id = raw.get('id')
+        if not id:
+            return Response({'mensaje': 'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            despacho = RutDespacho.objects.get(pk=id)
+        except RutDespacho.DoesNotExist:
+            return Response({'mensaje': 'El despacho no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not despacho.estado_aprobado:
+            return Response({'mensaje': 'El despacho debe estar aprobado para iniciar ruta', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        if despacho.estado_terminado or despacho.estado_anulado:
+            return Response({'mensaje': 'El despacho ya está terminado o anulado', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Notificar a las visitas pendientes en thread daemon (no bloquea).
+        resultado_notif = NotificacionServicio.notificar_despacho_iniciado(
+            despacho_id=despacho.id,
+            schema_name=request.tenant.schema_name,
+            nombre_empresa=request.tenant.nombre,
+            contenedor_id=request.tenant.id,
+        )
+        return Response({
+            'mensaje': 'Ruta iniciada',
+            'notificaciones': resultado_notif or {
+                'enviado': False, 'razon': 'desconocido', 'mensaje': None, 'destinatarios': 0,
+            },
+        }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'terminar',)
     def terminar(self, request):

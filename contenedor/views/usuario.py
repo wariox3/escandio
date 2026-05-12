@@ -56,19 +56,61 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
     
     @action(detail=False, methods=["get"], url_path=r'admin-lista', permission_classes=[permissions.IsAdminUser])
     def admin_lista(self, request):
-        from contenedor.models import Contenedor, UsuarioContenedor
-        usuarios = User.objects.all().order_by('-fecha_creacion')
+        """Lista paginada de usuarios para el panel super-admin.
 
-        # Contenedores donde es admin (FK)
+        Query params:
+          - page (default 1)
+          - page_size (default 25, max 200)
+          - q: busqueda en username, nombre, apellido (case-insensitive)
+          - estado: todos | activos | inactivos | super_admin
+        """
+        from django.db.models import Q
+        from contenedor.models import Contenedor, UsuarioContenedor
+
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = min(200, max(1, int(request.query_params.get('page_size', 25))))
+        except (TypeError, ValueError):
+            page_size = 25
+
+        q = (request.query_params.get('q') or '').strip()
+        estado = (request.query_params.get('estado') or 'todos').lower()
+
+        usuarios = User.objects.all().order_by('-fecha_creacion')
+        if estado == 'activos':
+            usuarios = usuarios.filter(is_active=True)
+        elif estado == 'inactivos':
+            usuarios = usuarios.filter(is_active=False)
+        elif estado == 'super_admin':
+            usuarios = usuarios.filter(is_superuser=True)
+        if q:
+            usuarios = usuarios.filter(
+                Q(username__icontains=q)
+                | Q(nombre__icontains=q)
+                | Q(apellido__icontains=q)
+            )
+
+        count = usuarios.count()
+        offset = (page - 1) * page_size
+        page_usuarios = list(usuarios[offset:offset + page_size])
+        ids_pagina = [u.id for u in page_usuarios]
+
+        # Solo cargamos las membresias de los usuarios de la pagina actual.
         admin_de = {}
-        for c in Contenedor.objects.exclude(schema_name='public').filter(usuario__isnull=False).values('usuario_id', 'nombre', 'schema_name'):
+        for c in Contenedor.objects.exclude(schema_name='public').filter(
+            usuario_id__in=ids_pagina,
+        ).values('usuario_id', 'nombre', 'schema_name'):
             admin_de.setdefault(c['usuario_id'], []).append(
                 {'nombre': c['nombre'], 'schema_name': c['schema_name']}
             )
 
-        # Contenedores donde fue invitado
         invitado_a = {}
-        for uc in UsuarioContenedor.objects.select_related('contenedor').values(
+        for uc in UsuarioContenedor.objects.filter(
+            usuario_id__in=ids_pagina,
+        ).select_related('contenedor').values(
             'usuario_id', 'rol', 'contenedor__nombre', 'contenedor__schema_name'
         ):
             invitado_a.setdefault(uc['usuario_id'], []).append({
@@ -77,9 +119,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'rol': uc['rol'],
             })
 
-        data = []
-        for u in usuarios:
-            data.append({
+        results = []
+        for u in page_usuarios:
+            results.append({
                 'id': u.id,
                 'username': u.username,
                 'nombre': u.nombre,
@@ -93,7 +135,18 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'admin_de': admin_de.get(u.id, []),
                 'invitado_a': invitado_a.get(u.id, []),
             })
-        return Response(data, status=status.HTTP_200_OK)
+
+        return Response({
+            'count': count,
+            'page': page,
+            'page_size': page_size,
+            'results': results,
+            'estadisticas': {
+                'total': User.objects.count(),
+                'activos': User.objects.filter(is_active=True).count(),
+                'super_admins': User.objects.filter(is_superuser=True).count(),
+            },
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path=r'admin-toggle-activo', permission_classes=[permissions.IsAdminUser])
     def admin_toggle_activo(self, request, pk=None):
@@ -104,6 +157,113 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             {'id': user.id, 'is_active': user.is_active},
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=False, methods=["post"], url_path=r'admin-crear', permission_classes=[permissions.IsAdminUser])
+    def admin_crear(self, request):
+        """Crea un usuario desde el panel super-admin.
+
+        Modos:
+          - enviar_invitacion=True: genera CtnVerificacion y envia correo. El usuario
+            elige su clave al verificar. No setea debe_cambiar_clave.
+          - enviar_invitacion=False (o ausente): requiere `password`. Aplica la clave,
+            marca verificado=True y debe_cambiar_clave=True para forzar cambio en el
+            proximo login web.
+        """
+        raw = request.data
+        username = (raw.get('username') or '').strip().lower()
+        nombre = raw.get('nombre')
+        apellido = raw.get('apellido')
+        telefono = raw.get('telefono')
+        password = raw.get('password')
+        enviar_invitacion = bool(raw.get('enviar_invitacion'))
+
+        if not username:
+            return Response({'mensaje': 'username es requerido', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username=username).exists():
+            return Response({'mensaje': 'Ya existe un usuario con ese email', 'codigo': 14}, status=status.HTTP_400_BAD_REQUEST)
+        if not enviar_invitacion and not password:
+            return Response({'mensaje': 'password es requerido cuando no se envia invitacion', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Si es invitacion, usamos un password aleatorio temporal (sera reemplazado al verificar).
+        clave_inicial = password or secrets.token_urlsafe(20)
+        data = {
+            'username': username,
+            'password': clave_inicial,
+            'nombre': nombre,
+            'apellido': apellido,
+            'telefono': telefono,
+        }
+        serializador_usuario = UserSerializer(data=data)
+        if not serializador_usuario.is_valid():
+            return Response({'mensaje': 'Errores en el registro del usuario', 'codigo': 2, 'validaciones': serializador_usuario.errors}, status=status.HTTP_400_BAD_REQUEST)
+        usuario = serializador_usuario.save()
+
+        if enviar_invitacion:
+            token = secrets.token_urlsafe(20)
+            data_v = {
+                'usuario_id': usuario.id,
+                'token': token,
+                'vence': datetime.now().date() + timedelta(days=7),
+            }
+            serializador_verificacion = CtnVerificacionSerializador(data=data_v)
+            if not serializador_verificacion.is_valid():
+                return Response({'mensaje': 'Errores en el registro de la verificacion', 'codigo': 3, 'validaciones': serializador_verificacion.errors}, status=status.HTTP_400_BAD_REQUEST)
+            serializador_verificacion.save()
+            url = f"https://app.ruteo.co/auth/verificacion/" + token
+            if config('ENV') == "test":
+                url = f"http://app.ruteo.online/auth/verificacion/" + token
+            if config('ENV') == "dev":
+                url = f"http://localhost:4200/auth/verificacion/" + token
+            html_content = """
+                            <h1>¡Hola {usuario}!</h1>
+                            <p>Te han invitado a usar Ruteo.co. Por favor verifica tu cuenta y elige tu clave
+                            haciendo clic en el siguiente enlace.</p>
+                            <a href='{url}' class='button'>Verificar cuenta</a>
+                            """.format(url=url, usuario=usuario.nombre_corto or usuario.username)
+            correo_enviado = True
+            mensaje_correo = None
+            try:
+                resultado = Zinc().correo(usuario.correo, 'Invitacion a Ruteo.co', html_content, 'ruteo')
+                if resultado.get('error'):
+                    correo_enviado = False
+                    mensaje_correo = resultado.get('mensaje')
+            except Exception as e:  # noqa: BLE001
+                correo_enviado = False
+                mensaje_correo = str(e)
+            return Response({
+                'usuario': UserSerializer(usuario).data,
+                'invitacion_enviada': correo_enviado,
+                'token_verificacion': token if not correo_enviado else None,
+                'mensaje_correo': mensaje_correo,
+            }, status=status.HTTP_201_CREATED)
+
+        # Flujo clave directa: marcar verificado y forzar cambio en el proximo login web.
+        usuario.verificado = True
+        usuario.debe_cambiar_clave = True
+        usuario.save()
+        return Response({'usuario': UserSerializer(usuario).data, 'invitacion_enviada': False}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path=r'admin-reset-password', permission_classes=[permissions.IsAdminUser])
+    def admin_reset_password(self, request, pk=None):
+        """Asigna una clave temporal y fuerza cambio en el proximo login web."""
+        clave = request.data.get('password')
+        if not clave:
+            return Response({'mensaje': 'password es requerido', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        user = self.get_object(pk)
+        user.set_password(clave)
+        user.debe_cambiar_clave = True
+        user.save()
+        return Response({'id': user.id, 'reset': True}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["patch"], url_path=r'admin-actualizar', permission_classes=[permissions.IsAdminUser])
+    def admin_actualizar(self, request, pk=None):
+        """Edita campos basicos del usuario desde el panel super-admin."""
+        user = self.get_object(pk)
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({'mensaje': 'Errores en la actualizacion', 'codigo': 10, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response({'usuario': UserSerializer(user).data}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'admin-asignar-contenedor', permission_classes=[permissions.IsAdminUser])
     def admin_asignar_contenedor(self, request):
@@ -133,19 +293,27 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         except User.DoesNotExist:
             return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
 
+        from contenedor.permisos import plantilla_permisos
         if rol == 'admin':
             admin_anterior_id = contenedor.usuario_id
             if admin_anterior_id == nuevo.id:
                 return Response({'mensaje':'Ese usuario ya es admin', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
             contenedor.usuario = nuevo
             contenedor.save()
-            UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
+            UsuarioContenedor.objects.update_or_create(
+                usuario_id=nuevo.id,
+                contenedor_id=contenedor.id,
+                defaults={'rol': 'propietario'},
+            )
             if admin_anterior_id and admin_anterior_id != nuevo.id:
-                UsuarioContenedor.objects.get_or_create(
+                uc_ant, _ = UsuarioContenedor.objects.update_or_create(
                     usuario_id=admin_anterior_id,
                     contenedor_id=contenedor.id,
                     defaults={'rol': 'usuario'},
                 )
+                if not uc_ant.permisos:
+                    uc_ant.permisos = plantilla_permisos('operativo')
+                    uc_ant.save(update_fields=['permisos'])
             return Response({'mensaje':'Asignado como admin', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
         else:
             if contenedor.usuario_id == nuevo.id:
@@ -153,7 +321,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             uc, creado = UsuarioContenedor.objects.get_or_create(
                 usuario_id=nuevo.id,
                 contenedor_id=contenedor.id,
-                defaults={'rol': 'usuario'},
+                defaults={'rol': 'usuario', 'permisos': plantilla_permisos('operativo')},
             )
             if not creado and uc.rol != 'usuario':
                 uc.rol = 'usuario'
@@ -161,6 +329,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             if creado:
                 contenedor.usuarios = (contenedor.usuarios or 0) + 1
                 contenedor.save()
+            if not uc.permisos:
+                uc.permisos = plantilla_permisos('operativo')
+                uc.save(update_fields=['permisos'])
             return Response({'mensaje':'Asignado como usuario', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'admin-cambiar-admin-contenedor', permission_classes=[permissions.IsAdminUser])
@@ -186,18 +357,26 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         except User.DoesNotExist:
             return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
 
+        from contenedor.permisos import plantilla_permisos
         admin_anterior_id = contenedor.usuario_id
         contenedor.usuario = nuevo
         contenedor.save()
-        # Si el nuevo era invitado, sale de invitados
-        UsuarioContenedor.objects.filter(usuario_id=nuevo.id, contenedor_id=contenedor.id).delete()
-        # El admin anterior queda como invitado
+        # Nuevo admin: queda con rol='propietario' (preserva accesos si ya era miembro).
+        UsuarioContenedor.objects.update_or_create(
+            usuario_id=nuevo.id,
+            contenedor_id=contenedor.id,
+            defaults={'rol': 'propietario'},
+        )
+        # Admin anterior queda como usuario regular con permisos de operativo si no los tenia.
         if admin_anterior_id and admin_anterior_id != nuevo.id:
-            UsuarioContenedor.objects.get_or_create(
+            uc_ant, _ = UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,
                 contenedor_id=contenedor.id,
                 defaults={'rol': 'usuario'},
             )
+            if not uc_ant.permisos:
+                uc_ant.permisos = plantilla_permisos('operativo')
+                uc_ant.save(update_fields=['permisos'])
         return Response(
             {'mensaje': 'Admin cambiado', 'contenedor_id': contenedor.id},
             status=status.HTTP_200_OK,
@@ -220,14 +399,18 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
 
     @action(detail=False, methods=["post"], url_path=r'nuevo',)
     def nuevo_action(self, request):
+        # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+        # Payload de la app: {username, password, confirmarPassword, aceptarTerminosCondiciones, aplicacion}.
+        # Solo username/password son required; el resto debe poder venir o no sin romper.
         raw = request.data
         username = raw.get('username', None)
         password = raw.get('password', None)
         nombre_corto = raw.get('nombre_corto', None)
         nombre = raw.get('nombre', None)
         apellido = raw.get('apellido', None)
-        telefono = raw.get('telefono', None)        
-        if username and password:                    
+        telefono = raw.get('telefono', None)
+        aplicacion = raw.get('aplicacion', None)
+        if username and password:
             data = {
                 'username': username,
                 'password': password,
@@ -236,6 +419,8 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'apellido': apellido,
                 'telefono': telefono,
             }
+            if aplicacion:
+                data['aplicacion'] = aplicacion[:10]
             serializador_usuario = UserSerializer(data=data)
             if serializador_usuario.is_valid():
                 usuario = serializador_usuario.save()
@@ -271,7 +456,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
 
     @action(detail=False, methods=["post"], url_path=r'cambio-clave-solicitar',)
     def cambio_clave_solicitar(self, request):
-        raw = request.data            
+        # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+        # La app envia {username, aplicacion}; response esperado: 201 {verificacion}.
+        raw = request.data
         username = raw.get('username')        
         if username:
             try:
@@ -323,6 +510,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                             verificacion.estado_usado = True
                             verificacion.save()
                             usuario.set_password(clave)
+                            usuario.debe_cambiar_clave = False
                             usuario.save()
                             return Response({'cambio': True}, status=status.HTTP_200_OK)
                         return Response({'mensaje':'El token de la verificacion esta vencido', 'codigo': 6, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
@@ -338,14 +526,15 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         try:
             usuario_id = raw.get('usuario_id')
             clave = raw.get('password')
-            if usuario_id and clave:                            
+            if usuario_id and clave:
                 usuario = User.objects.get(pk=usuario_id)
                 usuario.set_password(clave)
+                usuario.debe_cambiar_clave = False
                 usuario.save()
-                return Response({'cambio': True}, status=status.HTTP_200_OK)                
-            return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)                
+                return Response({'cambio': True}, status=status.HTTP_200_OK)
+            return Response({'mensaje':'Faltan parametros', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
-            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)             
+            return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'cargar-imagen',)
     def cargar_imagen(self, request):

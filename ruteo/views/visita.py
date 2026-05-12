@@ -12,6 +12,7 @@ from general.models.ciudad import GenCiudad
 from contenedor.models import CtnDireccion
 from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
+from ruteo.servicios.notificacion import NotificacionServicio
 from contenedor.servicios.direccion import DireccionServicio
 from datetime import datetime
 from django.utils import timezone
@@ -38,6 +39,7 @@ import base64
 import openpyxl
 
 class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'visita'
     queryset = RutVisita.objects.all()
     serializer_class = RutVisitaSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -48,6 +50,9 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'rutear',
         'eliminar_todos',
     ]
+    # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+    # 'list', 'retrieve' y 'entrega' DEBEN permanecer aqui. La app movil v1.6.4
+    # publicada los consume y no se puede actualizar. Quitarlos rompe la app.
     acciones_publicas = [
         'list',
         'retrieve',
@@ -209,6 +214,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     direccion_complemento = row[16] if len(row) > 16 and row[16] else None
                     observacion = row[17] if len(row) > 17 and row[17] else None
                     ciudad_nombre = row[18] if len(row) > 18 and row[18] else None
+                    cobro = row[19] if len(row) > 19 and row[19] else 0
+                    tarifa = row[20] if len(row) > 20 and row[20] else 0
                     ciudad_id = None
                     if ciudad_nombre:
                         ciudad_match = GenCiudad.objects.filter(nombre__iexact=str(ciudad_nombre).strip()).values_list('id', flat=True).first()
@@ -236,6 +243,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         'cita_fin': cita_fin,
                         'destinatario_direccion_complemento': direccion_complemento,
                         'observacion': observacion,
+                        'cobro': cobro,
+                        'tarifa': tarifa,
                     }
                     if ciudad_id:
                         data['ciudad'] = ciudad_id
@@ -423,18 +432,22 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if filtros:
             for filtro in filtros:
                 operador = filtro.get('operador')
-                propiedad = filtro['propiedad']
-                valor = filtro['valor1']
+                propiedad = filtro.get('propiedad')
+                if not propiedad:
+                    continue
+                # Aceptar 'valor1' (legacy) o 'valor' (clientes nuevos como
+                # el botón "Rutear seleccionadas" del frontend de rutenio).
+                valor = filtro.get('valor1', filtro.get('valor'))
                 if operador == 'in' and isinstance(valor, str):
                     if ',' in valor:
                         valor = [int(v.strip()) for v in valor.split(',')]
                     else:
                         valor = [int(valor.strip())]
-                    filtro['valor1'] = valor
                 if operador == 'range':
-                    visitas = visitas.filter(**{f'{propiedad}__{operador}': (filtro['valor1'], filtro['valor2'])})
+                    valor2 = filtro.get('valor2')
+                    visitas = visitas.filter(**{f'{propiedad}__{operador}': (valor, valor2)})
                 elif operador:
-                    visitas = visitas.filter(**{f'{propiedad}__{operador}': filtro['valor1']})
+                    visitas = visitas.filter(**{f'{propiedad}__{operador}': valor})
         visitas_a_ordenar = visitas.filter(estado_decodificado=True)
         if visitas_a_ordenar.exists():
             resultado_orden = VisitaServicio.ordenar(visitas_a_ordenar)
@@ -796,20 +809,46 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         else:
                             visita.franja_id = None
                             visita.estado_franja = False                                                     
-                visita.numero = numero
-                visita.documento = documento
+                from decimal import Decimal, InvalidOperation
+
+                def _float(valor, default=0.0):
+                    """Convierte a float para FloatField (unidades, peso, volumen)."""
+                    if valor in (None, ''):
+                        return default
+                    try:
+                        return float(valor)
+                    except (TypeError, ValueError):
+                        return default
+
+                def _decimal(valor, default=Decimal('0')):
+                    """Convierte a Decimal para DecimalField (tiempo_servicio, cobro).
+                    Importante: el save() del modelo hace tiempo = tiempo_servicio +
+                    tiempo_trayecto y ambos son Decimal en DB; mezclar con float aqui
+                    rompe con TypeError 'unsupported operand type(s) for +'."""
+                    if valor in (None, ''):
+                        return default
+                    try:
+                        return Decimal(str(valor))
+                    except (TypeError, ValueError, InvalidOperation):
+                        return default
+
+                visita.numero = numero if numero not in (None, '') else None
+                visita.documento = documento or ''
                 visita.destinatario = destinatario
                 visita.destinatario_telefono = destinatario_telefono
-                visita.unidades = unidades
-                visita.peso = peso
-                visita.volumen = volumen
+                visita.unidades = _float(unidades)
+                visita.peso = _float(peso)
+                visita.volumen = _float(volumen)
                 visita.cita_inicio = raw.get('cita_inicio', visita.cita_inicio)
                 visita.cita_fin = raw.get('cita_fin', visita.cita_fin)
                 if 'destinatario_correo' in raw:
                     visita.destinatario_correo = raw.get('destinatario_correo')
                 if 'tiempo_servicio' in raw:
-                    tiempo = raw.get('tiempo_servicio')
-                    visita.tiempo_servicio = tiempo if tiempo not in (None, '') else 0
+                    visita.tiempo_servicio = _decimal(raw.get('tiempo_servicio'))
+                if 'cobro' in raw:
+                    visita.cobro = _decimal(raw.get('cobro'))
+                if 'tarifa' in raw:
+                    visita.tarifa = _decimal(raw.get('tarifa'))
                 if 'destinatario_direccion_complemento' in raw:
                     visita.destinatario_direccion_complemento = raw.get('destinatario_direccion_complemento')
                 if 'observacion' in raw:
@@ -821,7 +860,18 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
+            faltantes = []
+            if not id:
+                faltantes.append('id')
+            if not destinatario:
+                faltantes.append('destinatario')
+            if not destinatario_direccion:
+                faltantes.append('destinatario_direccion')
+            return Response({
+                'mensaje': f'Faltan parametros: {", ".join(faltantes)}',
+                'codigo': 1,
+                'faltantes': faltantes,
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'despacho-retirar',)
     def despacho_retirar(self, request):
@@ -983,6 +1033,18 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                                     'base64': base64_encoded,
                                 })                                                                                                                                                                                                     
                         VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
+                # Tras commit, notificar al cliente con la plantilla 'entregado'.
+                # Falla silenciosa: si Whatsapp esta caido o el tenant no lo tiene
+                # habilitado, NO bloqueamos la confirmacion de la entrega.
+                try:
+                    NotificacionServicio.notificar_visita_entregada(
+                        visita_id=visita.id,
+                        schema_name=request.tenant.schema_name,
+                        nombre_empresa=request.tenant.nombre,
+                        contenedor_id=request.tenant.id,
+                    )
+                except Exception:
+                    pass
                 return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
             else:
                 return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
@@ -1010,6 +1072,96 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 return Response({'mensaje':f'La visita con numero {numero} no existe', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                                                              
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
+
+    @action(detail=False, methods=["post"], url_path=r'notificar-proximo',)
+    def notificar_proximo(self, request):
+        """Notifica al destinatario que el conductor llega en X minutos.
+
+        Payload: { id: int, minutos: int }. Retorna {'enviado', 'razon', 'mensaje'}.
+        Pensado para que la app móvil del conductor o un operador lo dispare
+        cuando el vehículo está cerca del destinatario (geocerca, ETA, etc.).
+        """
+        raw = request.data
+        id = raw.get('id')
+        minutos = raw.get('minutos')
+        if not id or minutos is None:
+            return Response({'mensaje':'Faltan parametros (id, minutos)', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            visita = RutVisita.objects.get(pk=id)
+        except RutVisita.DoesNotExist:
+            return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+        if visita.estado_entregado:
+            return Response({'mensaje':'La visita ya está entregada', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        resultado = NotificacionServicio.notificar_visita_proxima(
+            visita_id=visita.id,
+            minutos=minutos,
+            schema_name=request.tenant.schema_name,
+            nombre_empresa=request.tenant.nombre,
+            contenedor_id=request.tenant.id,
+        )
+        return Response({'mensaje': 'Notificación en cola', 'notificacion': resultado}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path=r'reprogramar',)
+    def reprogramar(self, request):
+        """Reprograma una visita y notifica al destinatario con la plantilla 'reagendar'.
+
+        Payload: { id: int, fecha: 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM',
+                   cita_inicio?, cita_fin? }. Actualiza la fecha/cita en BD y
+        manda WhatsApp con la nueva fecha en formato humano.
+        """
+        raw = request.data
+        id = raw.get('id')
+        fecha_param = raw.get('fecha')
+        cita_inicio_param = raw.get('cita_inicio')
+        cita_fin_param = raw.get('cita_fin')
+        if not id or not fecha_param:
+            return Response({'mensaje':'Faltan parametros (id, fecha)', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            visita = RutVisita.objects.get(pk=id)
+        except RutVisita.DoesNotExist:
+            return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+        if visita.estado_entregado:
+            return Response({'mensaje':'La visita ya está entregada — no se puede reprogramar', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parsear fecha aceptando varios formatos comunes.
+        fecha_nueva = None
+        for fmt in ('%Y-%m-%d %H:%M', '%Y-%m-%dT%H:%M', '%Y-%m-%d'):
+            try:
+                fecha_nueva = datetime.strptime(fecha_param, fmt)
+                break
+            except (ValueError, TypeError):
+                continue
+        if fecha_nueva is None:
+            return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD o YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Persistir cambios.
+        visita.fecha = fecha_nueva.date()
+        if cita_inicio_param:
+            try:
+                visita.cita_inicio = timezone.make_aware(datetime.strptime(cita_inicio_param, '%Y-%m-%d %H:%M'))
+            except (ValueError, TypeError):
+                pass
+        if cita_fin_param:
+            try:
+                visita.cita_fin = timezone.make_aware(datetime.strptime(cita_fin_param, '%Y-%m-%d %H:%M'))
+            except (ValueError, TypeError):
+                pass
+        visita.save()
+
+        # Texto humano para la notificacion. Si trajo cita, mostrar rango; si no, solo la fecha.
+        if visita.cita_inicio and visita.cita_fin:
+            fecha_humana = f"{visita.cita_inicio.strftime('%d/%m %H:%M')} – {visita.cita_fin.strftime('%H:%M')}"
+        else:
+            fecha_humana = fecha_nueva.strftime('%d/%m/%Y')
+
+        resultado = NotificacionServicio.notificar_visita_reagendada(
+            visita_id=visita.id,
+            fecha_nueva=fecha_humana,
+            schema_name=request.tenant.schema_name,
+            nombre_empresa=request.tenant.nombre,
+            contenedor_id=request.tenant.id,
+        )
+        return Response({'mensaje': 'Visita reprogramada', 'notificacion': resultado}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'liberar',)
     def liberar(self, request):             
