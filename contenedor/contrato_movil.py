@@ -58,9 +58,12 @@ Endpoints obligatorios:
 
 REGLAS:
   1. Para entrar a list/retrieve/entrega de RutVisitaViewSet basta con IsAuthenticated.
+     OJO: en `acciones_publicas` van los NOMBRES DE METODO, no los url_path.
+     Para RutVisitaViewSet: 'list', 'retrieve', 'entrega_action'.
   2. Si se aplica RolMixin a RutNovedadViewSet, RutNovedadTipoViewSet o EntregaViewSet,
-     se DEBE incluir 'list', 'retrieve', 'create', 'nuevo_action', 'solucionar', 'entrega'
-     en acciones_publicas hasta que la app v1.6.4 sea deprecada.
+     se DEBE incluir las acciones equivalentes en acciones_publicas usando los nombres
+     de metodo: 'list', 'retrieve', 'create', 'nuevo_action', 'solucionar' (este si
+     coincide porque el metodo se llama solucionar) hasta que v1.6.4 sea deprecada.
   3. UsuarioContenedor.tiene_acceso_movil default=True para no bloquear conductores
      sembrados desde la web ni invitados pre-migracion 0009.
   4. Cambiar el response shape de cualquiera de estos endpoints rompe la app.
