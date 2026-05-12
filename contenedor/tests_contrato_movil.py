@@ -95,7 +95,31 @@ class ContratoMovilV164Tests(TestCase):
         publicas = getattr(RutVisitaViewSet, 'acciones_publicas', [])
         self.assertIn('list', publicas)
         self.assertIn('retrieve', publicas)
-        self.assertIn('entrega', publicas)
+        # Es el nombre del metodo (entrega_action), no el url_path (entrega).
+        # RolMixin matchea contra self.action que DRF setea al nombre del metodo.
+        self.assertIn('entrega_action', publicas)
+
+    def test_RutVisitaViewSet_entrega_es_alcanzable_con_solo_jwt(self):
+        # Blindaje runtime: pega contra el endpoint real con un JWT minimo
+        # (sin UsuarioContenedor, sin perfil movil). El contrato exige que
+        # baste IsAuthenticated; cualquier status != 403 es aceptable.
+        # Si esto rompe (status 403), la app v1.6.4 publicada se rompe.
+        login = self.client.post('/seguridad/login/', {
+            'username': self.user.username,
+            'password': self.password,
+            'proyecto': 'RUTEOAPP',
+        }, format='json')
+        self.assertEqual(login.status_code, 200, login.content)
+        token = login.data['token']
+        r = self.client.post(
+            '/ruteo/visita/entrega/',
+            {},
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertNotEqual(
+            r.status_code, 403,
+            f'entrega devolvio 403 ({r.content!r}); rompe contrato v1.6.4',
+        )
 
     def test_default_tiene_acceso_movil_es_True(self):
         # blindaje: el default no debe revertirse a False, eso bloquearia
