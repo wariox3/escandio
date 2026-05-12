@@ -50,6 +50,10 @@ class RutVisita(models.Model):
     cita_fin = models.DateTimeField(null=True, blank=True)
     cita_tipo = models.CharField(max_length=20, choices=CITA_TIPO_CHOICES, null=True, blank=True)
     despacho = models.ForeignKey(RutDespacho, null=True, on_delete=models.PROTECT, related_name='visitas_despacho_rel')
+    # Pista del despacho previo cuando la visita es detachada (liberar/anular/
+    # retirar/rutear-cleanup). Permite que `entrega_action` re-vincule la visita
+    # si la app movil ya la tenia cacheada y la entrega antes de re-sync.
+    despacho_anterior = models.ForeignKey(RutDespacho, null=True, blank=True, on_delete=models.SET_NULL, related_name='visitas_despacho_anterior_rel')
     ciudad = models.ForeignKey(GenCiudad, null=True, on_delete=models.PROTECT, default=1, related_name='visitas_ciudad_rel')
     api_key = models.ForeignKey(GenApiKey, null=True, blank=True, on_delete=models.SET_NULL, related_name='visitas_api_key_rel')
 

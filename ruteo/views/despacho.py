@@ -70,7 +70,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         if instance.estado_aprobado:
             return Response({'mensaje': 'No se puede eliminar un despacho aprobado.'}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
-            RutVisita.objects.filter(despacho_id=instance.id).update(despacho=None, estado_despacho=False)
+            RutVisita.objects.filter(despacho_id=instance.id).update(despacho_anterior_id=instance.id, despacho=None, estado_despacho=False)
             if instance.vehiculo_id:
                 RutVehiculo.objects.filter(id=instance.vehiculo_id).update(estado_asignado=False)
             self.perform_destroy(instance)
@@ -218,7 +218,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         visitas_entregadas = RutVisita.objects.filter(despacho_id=id, estado_entregado=True).first()
                         if visitas_entregadas:
                             return Response({'mensaje':'El despacho tiene visitas entregadas', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                        RutVisita.objects.filter(despacho_id=id).update(estado_despacho=False, despacho=None)
+                        RutVisita.objects.filter(despacho_id=id).update(despacho_anterior_id=id, estado_despacho=False, despacho=None)
                         despacho.estado_anulado = True
                         despacho.estado_terminado = True
                         despacho.save()
