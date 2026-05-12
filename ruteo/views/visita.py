@@ -432,18 +432,22 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if filtros:
             for filtro in filtros:
                 operador = filtro.get('operador')
-                propiedad = filtro['propiedad']
-                valor = filtro['valor1']
+                propiedad = filtro.get('propiedad')
+                if not propiedad:
+                    continue
+                # Aceptar 'valor1' (legacy) o 'valor' (clientes nuevos como
+                # el botón "Rutear seleccionadas" del frontend de rutenio).
+                valor = filtro.get('valor1', filtro.get('valor'))
                 if operador == 'in' and isinstance(valor, str):
                     if ',' in valor:
                         valor = [int(v.strip()) for v in valor.split(',')]
                     else:
                         valor = [int(valor.strip())]
-                    filtro['valor1'] = valor
                 if operador == 'range':
-                    visitas = visitas.filter(**{f'{propiedad}__{operador}': (filtro['valor1'], filtro['valor2'])})
+                    valor2 = filtro.get('valor2')
+                    visitas = visitas.filter(**{f'{propiedad}__{operador}': (valor, valor2)})
                 elif operador:
-                    visitas = visitas.filter(**{f'{propiedad}__{operador}': filtro['valor1']})
+                    visitas = visitas.filter(**{f'{propiedad}__{operador}': valor})
         visitas_a_ordenar = visitas.filter(estado_decodificado=True)
         if visitas_a_ordenar.exists():
             resultado_orden = VisitaServicio.ordenar(visitas_a_ordenar)
