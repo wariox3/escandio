@@ -51,12 +51,15 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'eliminar_todos',
     ]
     # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
-    # 'list', 'retrieve' y 'entrega' DEBEN permanecer aqui. La app movil v1.6.4
-    # publicada los consume y no se puede actualizar. Quitarlos rompe la app.
+    # 'list', 'retrieve' y 'entrega_action' DEBEN permanecer aqui. La app movil
+    # v1.6.4 publicada los consume y no se puede actualizar. Quitarlos rompe la
+    # app. OJO: el nombre que matchea contra self.action en RolMixin es el
+    # nombre del metodo, NO el url_path. POST /ruteo/visita/entrega/ se enruta
+    # al metodo `entrega_action`, asi que la accion se llama 'entrega_action'.
     acciones_publicas = [
         'list',
         'retrieve',
-        'entrega',
+        'entrega_action',
     ]
     serializadores = {
         'lista': RutVistaListaSerializador,
