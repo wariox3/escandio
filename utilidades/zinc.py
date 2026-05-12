@@ -67,11 +67,17 @@ class Zinc():
             return {'error':True, 'mensaje':'Ocurrio un error en el servicio zinc'}
 
     def consumirPost(self, data, url):
-        url = "http://zinc.semantica.com.co" + url        
+        url = "http://zinc.semantica.com.co" + url
         json_data = json.dumps(data)
         headers = {'Content-Type': 'application/json'}
-        response = requests.post(url, data=json_data, headers=headers)
-        resp = response.json()
+        try:
+            response = requests.post(url, data=json_data, headers=headers, timeout=10)
+        except requests.RequestException as e:
+            return {'status': 503, 'datos': {'error': str(e)}}
+        try:
+            resp = response.json()
+        except ValueError:
+            resp = {'error': 'Respuesta no JSON'}
         return {'status': response.status_code, 'datos': resp}
 
 

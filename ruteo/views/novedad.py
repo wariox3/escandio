@@ -6,6 +6,8 @@ from ruteo.models.visita import RutVisita
 from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
 from ruteo.serializers.novedad import RutNovedadSerializador
+from ruteo.servicios.notificacion import NotificacionServicio
+from ruteo.models.novedad_tipo import RutNovedadTipo
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.novedad import NovedadFilter
@@ -18,9 +20,12 @@ import base64
 from datetime import datetime
 
 class RutNovedadViewSet(viewsets.ModelViewSet):
+    # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
+    # /ruteo/novedad/nuevo/ (multipart) y /ruteo/novedad/solucionar/ son consumidos
+    # por la app movil v1.6.4. Si se aplica RolMixin, deben quedar en acciones_publicas.
     queryset = RutNovedad.objects.all()
     serializer_class = RutNovedadSerializador
-    permission_classes = [permissions.IsAuthenticated]  
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = NovedadFilter 
 
@@ -140,9 +145,30 @@ class RutNovedadViewSet(viewsets.ModelViewSet):
                                     'base64': base64_encoded,
                                 })                                                                                                                                                                                                        
                         self.nuevo_complemento(novedad, imagenes_b64)
+
+                    # Notificar al cliente la novedad. Falla silenciosa si WhatsApp
+                    # no esta configurado o el tenant no lo tiene habilitado — la
+                    # creacion de la novedad NO debe fallar por esto.
+                    try:
+                        motivo = (descripcion or '').strip()
+                        if not motivo:
+                            tipo_nombre = RutNovedadTipo.objects.filter(
+                                pk=novedad_tipo_id
+                            ).values_list('nombre', flat=True).first()
+                            motivo = (tipo_nombre or 'incidencia en la entrega')
+                        NotificacionServicio.notificar_visita_novedad(
+                            visita_id=visita.id,
+                            motivo=motivo,
+                            schema_name=request.tenant.schema_name,
+                            nombre_empresa=request.tenant.nombre,
+                            contenedor_id=request.tenant.id,
+                        )
+                    except Exception:
+                        pass
+
                     return Response({'id': novedad.id}, status=status.HTTP_200_OK)
                 else:
-                    return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)                              
+                    return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
                 
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)  

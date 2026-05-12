@@ -8,18 +8,19 @@ from contenedor.models import Contenedor, CtnWhatsappConexion
 from mensajeria.serializers.conexion import CtnWhatsappConexionSerializador
 from mensajeria.servicios.cifrado import CifradoServicio
 from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+from contenedor.mixins import RolMixin
 
 logger = logging.getLogger(__name__)
 
 
-class CtnWhatsappConexionViewSet(viewsets.ModelViewSet):
+class CtnWhatsappConexionViewSet(RolMixin, viewsets.ModelViewSet):
     """
     GET /mensajeria/conexion/       -> detalle (retorna el único del tenant actual o 404)
     POST/PUT /mensajeria/conexion/  -> upsert de credenciales del tenant actual
     Siempre opera contra el Contenedor del schema actual (connection.schema_name).
     """
+    modulo = 'mensajeria'
     serializer_class = CtnWhatsappConexionSerializador
-    permission_classes = [permissions.IsAuthenticated]
 
     def _contenedor_actual(self):
         schema = connection.schema_name
