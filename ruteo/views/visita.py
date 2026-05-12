@@ -970,21 +970,24 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)                               
             if visita.despacho_id is None:
-                # Auto-recovery: la app movil cacheo la visita cuando si tenia
-                # despacho, luego un admin la detacho (liberar/anular/retirar/
-                # destroy/rutear-cleanup). Si guardamos el despacho_anterior,
-                # re-vinculamos para que la entrega del conductor no se pierda.
-                # Sin esto el conductor queda con "Error 400" en su app y
-                # berkelio v1.6.4 marca el error como no-retryable.
-                if visita.despacho_anterior_id is None:
-                    return Response({'mensaje':'La visita no tiene despacho', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
-                visita.despacho_id = visita.despacho_anterior_id
-                visita.estado_despacho = True
-                visita.despacho_anterior = None
-                # Persistir aqui mismo: si la visita ya estaba entregada (edge
-                # case) el flujo bajo retorna sin save y la re-vinculacion se
-                # perderia.
-                visita.save()
+                # Visita detachada de su despacho (admin libero/anulo/retiro/
+                # destroyo o rutear cleanup) mientras berkelio v1.6.4 (congelada)
+                # la tenia cacheada. Manejamos dos casos:
+                #   1. Si hay rastro (despacho_anterior_id) la re-vinculamos al
+                #      despacho original.
+                #   2. Si no hay rastro (visitas legacy detachadas antes del
+                #      deploy de este fix), dejamos que la entrega proceda
+                #      igual: mejor registrar la entrega huérfana que dejar
+                #      al conductor en error 400 sin salida. El counter del
+                #      despacho se vuelve no-op (filter pk=None).
+                if visita.despacho_anterior_id is not None:
+                    visita.despacho_id = visita.despacho_anterior_id
+                    visita.estado_despacho = True
+                    visita.despacho_anterior = None
+                    # Persistir aqui mismo: si la visita ya estaba entregada
+                    # (edge case) el flujo bajo retorna sin save y la
+                    # re-vinculacion se perderia.
+                    visita.save()
                             
             if visita.estado_entregado == False:
                 with transaction.atomic():                                                                                              
