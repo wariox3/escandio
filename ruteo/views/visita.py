@@ -404,7 +404,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             if despacho_huerfano.vehiculo_id:
                 RutVehiculo.objects.filter(id=despacho_huerfano.vehiculo_id).update(estado_asignado=False)
                 vehiculos_liberados += 1
-            RutVisita.objects.filter(despacho_id=despacho_huerfano.id).update(despacho=None, estado_despacho=False)
+            RutVisita.objects.filter(despacho_id=despacho_huerfano.id).update(despacho_anterior_id=despacho_huerfano.id, despacho=None, estado_despacho=False)
         despachos_huerfanos.delete()
 
         vehiculos_en_ruta_ids = RutDespacho.objects.filter(
@@ -895,6 +895,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
                         despacho.visitas -= 1
                         despacho.save()
+                        visita.despacho_anterior_id = visita.despacho_id
                         visita.despacho = None
                         visita.estado_despacho = False
                         visita.save()
@@ -968,8 +969,22 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 visita = RutVisita.objects.get(pk=id)                            
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)                               
-            if visita.despacho_id == None:
-                return Response({'mensaje':'La visita no tiene despacho', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST) 
+            if visita.despacho_id is None:
+                # Auto-recovery: la app movil cacheo la visita cuando si tenia
+                # despacho, luego un admin la detacho (liberar/anular/retirar/
+                # destroy/rutear-cleanup). Si guardamos el despacho_anterior,
+                # re-vinculamos para que la entrega del conductor no se pierda.
+                # Sin esto el conductor queda con "Error 400" en su app y
+                # berkelio v1.6.4 marca el error como no-retryable.
+                if visita.despacho_anterior_id is None:
+                    return Response({'mensaje':'La visita no tiene despacho', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+                visita.despacho_id = visita.despacho_anterior_id
+                visita.estado_despacho = True
+                visita.despacho_anterior = None
+                # Persistir aqui mismo: si la visita ya estaba entregada (edge
+                # case) el flujo bajo retorna sin save y la re-vinculacion se
+                # perderia.
+                visita.save()
                             
             if visita.estado_entregado == False:
                 with transaction.atomic():                                                                                              
@@ -981,11 +996,13 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     RutDespacho.objects.filter(pk=visita.despacho_id).update(visitas_entregadas=F('visitas_entregadas') + 1)                                 
                     backblaze = Backblaze()
                     tenant = request.tenant.schema_name                    
-                    if imagenes:                        
-                        for imagen in imagenes:       
-                            #file_content = imagen.read()                                  
+                    if imagenes:
+                        for idx, imagen in enumerate(imagenes):
+                            #file_content = imagen.read()
                             file_content = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
-                            nombre_archivo = f'{id}.jpg'                                                   
+                            # Sufijo de indice para que cada foto tenga nombre
+                            # unico (antes todas se llamaban {id}.jpg y colisionaban).
+                            nombre_archivo = f'{id}_{idx}.jpg'
                             id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
                             archivo = GenArchivo()
                             archivo.archivo_tipo_id = 2
@@ -999,10 +1016,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                             archivo.url = url
                             archivo.save()
                     if firmas:
-                        for firma in firmas:       
+                        for idx, firma in enumerate(firmas):
                             # No comprimir porque daña el png
-                            file_content = firma.read()                                                                                           
-                            nombre_archivo = f'{id}.png'                                                   
+                            file_content = firma.read()
+                            # Sufijo de indice por el mismo motivo que las
+                            # imagenes: evitar colision de nombres.
+                            nombre_archivo = f'{id}_{idx}.png'
                             id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
                             archivo = GenArchivo()
                             archivo.archivo_tipo_id = 3
@@ -1186,10 +1205,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 despacho.visitas = despacho.visitas - 1    
                 if visita.estado_novedad:
                     despacho.visitas_novedad = despacho.visitas_novedad - 1              
-                despacho.save()  
-                visita.estado_despacho = False 
-                visita.despacho = None           
-                visita.save()                        
+                despacho.save()
+                visita.despacho_anterior_id = visita.despacho_id
+                visita.estado_despacho = False
+                visita.despacho = None
+                visita.save()
                 return Response({'mensaje': f'Se libero con exito'}, status=status.HTTP_200_OK)
             else:
                 return Response({'mensaje':'La visita ya fue entregada o no esta despachada', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
