@@ -452,14 +452,23 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 elif operador:
                     visitas = visitas.filter(**{f'{propiedad}__{operador}': valor})
         visitas_a_ordenar = visitas.filter(estado_decodificado=True)
+        rechazos_pre_orden: dict = {}
+        rechazos_pre_orden_ids: list = []
         if visitas_a_ordenar.exists():
             resultado_orden = VisitaServicio.ordenar(visitas_a_ordenar)
             if resultado_orden and resultado_orden.get('error'):
                 return Response({'mensaje': resultado_orden['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
+            # ordenar() ahora puede regresar visitas con cita vencida pre-rechazadas.
+            # Las dejamos fuera del queryset y las acarreamos al reporte final.
+            if resultado_orden:
+                rechazos_pre_orden = resultado_orden.get('rechazos', {})
+                rechazos_pre_orden_ids = resultado_orden.get('rechazos_ids', [])
+        if rechazos_pre_orden_ids:
+            visitas = visitas.exclude(id__in=rechazos_pre_orden_ids)
         visitas = visitas.order_by('orden')
         visitas_pendientes = list(visitas)
         despachos_creados = 0
-        rechazos = {}
+        rechazos = dict(rechazos_pre_orden)
 
         def vehiculo_puede_tomar_visita(vehiculo, visita, peso_actual, tiempo_actual, verificar_franja):
             if visita.peso is None or visita.tiempo is None:
