@@ -90,21 +90,60 @@ class VisitaServicio():
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
             return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
 
+        from django.utils import timezone
         visitas = list(visitas)
-        tiene_citas = any(v.cita_inicio is not None for v in visitas)
+
+        # Pre-filtro: rechazar visitas con cita obligatoria ya vencida en vez
+        # de abortar todo el rutear. Una visita "mala" no debe romper la pila.
+        # Las rechazadas se reportan al final junto con las que falle el
+        # algoritmo de asignacion (capacidad/franja/etc).
+        ahora = timezone.localtime(timezone.now())
+        rechazos: dict = {}
+        rechazos_ids: list = []
+        visitas_validas = []
+        for v in visitas:
+            if v.cita_inicio and v.cita_fin:
+                tipo = getattr(v, 'cita_tipo', 'obligatoria') or 'obligatoria'
+                if tipo == 'obligatoria' and v.cita_fin < ahora:
+                    ref = v.numero or v.documento or f'#{v.id}'
+                    rechazos[ref] = (
+                        f'Cita obligatoria ya pasó '
+                        f'({v.cita_inicio.strftime("%Y-%m-%d %H:%M")}-'
+                        f'{v.cita_fin.strftime("%H:%M")})'
+                    )
+                    rechazos_ids.append(v.id)
+                    continue
+            visitas_validas.append(v)
+
+        if not visitas_validas:
+            return {
+                'error': False,
+                'rechazos': rechazos,
+                'rechazos_ids': rechazos_ids,
+                'mensaje': 'Todas las visitas fueron rechazadas por cita vencida',
+            }
+
+        tiene_citas = any(v.cita_inicio is not None for v in visitas_validas)
         if tiene_citas:
-            resultado = VisitaServicio._ordenar_con_ventanas(visitas, configuracion)
+            resultado = VisitaServicio._ordenar_con_ventanas(visitas_validas, configuracion)
             if resultado and resultado.get('error'):
                 tiene_obligatorias = any(
                     getattr(v, 'cita_tipo', 'obligatoria') == 'obligatoria'
-                    for v in visitas if v.cita_inicio is not None
+                    for v in visitas_validas if v.cita_inicio is not None
                 )
                 if tiene_obligatorias:
+                    resultado['rechazos'] = {**resultado.get('rechazos', {}), **rechazos}
+                    resultado['rechazos_ids'] = [*resultado.get('rechazos_ids', []), *rechazos_ids]
                     return resultado
-                return VisitaServicio._ordenar_distancia(visitas, configuracion)
-            return resultado
+                resultado = VisitaServicio._ordenar_distancia(visitas_validas, configuracion)
         else:
-            return VisitaServicio._ordenar_distancia(visitas, configuracion)
+            resultado = VisitaServicio._ordenar_distancia(visitas_validas, configuracion)
+
+        if resultado is None:
+            resultado = {}
+        resultado['rechazos'] = {**resultado.get('rechazos', {}), **rechazos}
+        resultado['rechazos_ids'] = [*resultado.get('rechazos_ids', []), *rechazos_ids]
+        return resultado
 
     @staticmethod
     def _ordenar_distancia(visitas: RutVisita, configuracion):
@@ -197,11 +236,19 @@ class VisitaServicio():
 
                 # Validación previa para citas obligatorias
                 if tipo == 'obligatoria':
+                    # Identificador legible: numero si existe, sino documento, sino id.
+                    ref = v.numero or v.documento or f'#{v.id}'
                     if tw_fin < 0:
                         return {
                             'error': True,
-                            'mensaje': f'La cita obligatoria de la visita {v.numero} ya pasó.',
-                            'codigo': 14
+                            'mensaje': (
+                                f'La cita obligatoria de la visita {ref} ya pasó '
+                                f'({v.cita_inicio.strftime("%Y-%m-%d %H:%M")}-'
+                                f'{v.cita_fin.strftime("%H:%M")}). '
+                                f'Cambia la cita o pásala a "preferente".'
+                            ),
+                            'codigo': 14,
+                            'visita_id': v.id,
                         }
                     # Verificar si es físicamente posible llegar desde el origen
                     tiempo_minimo_desde_origen = time_matrix[0][len(ventanas)]
@@ -209,12 +256,13 @@ class VisitaServicio():
                         return {
                             'error': True,
                             'mensaje': (
-                                f'Imposible cumplir la cita obligatoria de la visita {v.numero}. '
+                                f'Imposible cumplir la cita obligatoria de la visita {ref}. '
                                 f'Cita: {v.cita_inicio.strftime("%H:%M")}-{v.cita_fin.strftime("%H:%M")}. '
                                 f'Tiempo mínimo de traslado: {tiempo_minimo_desde_origen} min. '
                                 f'Tiempo disponible: {max(0, tw_fin)} min.'
                             ),
-                            'codigo': 14
+                            'codigo': 14,
+                            'visita_id': v.id,
                         }
 
                 tw_inicio = max(0, tw_inicio)
