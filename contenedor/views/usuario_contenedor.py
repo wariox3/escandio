@@ -124,6 +124,12 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
             c.save()
             creados.append(uc.id)
 
+        # Si el usuario invitado era un auto-registro pendiente, queda aprobado.
+        if creados:
+            User.objects.filter(
+                pk=usuario_invitado_id, estado_registro='pendiente',
+            ).update(estado_registro='aprobado')
+
         return Response(
             {
                 'creados': creados,

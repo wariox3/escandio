@@ -62,7 +62,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
           - page (default 1)
           - page_size (default 25, max 200)
           - q: busqueda en username, nombre, apellido (case-insensitive)
-          - estado: todos | activos | inactivos | super_admin
+          - estado: todos | activos | inactivos | super_admin | pendientes
         """
         from django.db.models import Q
         from contenedor.models import Contenedor, UsuarioContenedor
@@ -86,6 +86,8 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             usuarios = usuarios.filter(is_active=False)
         elif estado == 'super_admin':
             usuarios = usuarios.filter(is_superuser=True)
+        elif estado == 'pendientes':
+            usuarios = usuarios.filter(estado_registro='pendiente')
         if q:
             usuarios = usuarios.filter(
                 Q(username__icontains=q)
@@ -131,6 +133,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'is_staff': u.is_staff,
                 'is_superuser': u.is_superuser,
                 'verificado': u.verificado,
+                'estado_registro': u.estado_registro,
+                'empresa_nombre': u.empresa_nombre,
+                'telefono': u.telefono,
                 'fecha_creacion': u.fecha_creacion,
                 'admin_de': admin_de.get(u.id, []),
                 'invitado_a': invitado_a.get(u.id, []),
@@ -145,6 +150,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'total': User.objects.count(),
                 'activos': User.objects.filter(is_active=True).count(),
                 'super_admins': User.objects.filter(is_superuser=True).count(),
+                'pendientes': User.objects.filter(estado_registro='pendiente').count(),
             },
         }, status=status.HTTP_200_OK)
 
@@ -314,6 +320,9 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 if not uc_ant.permisos:
                     uc_ant.permisos = plantilla_permisos('operativo')
                     uc_ant.save(update_fields=['permisos'])
+            if nuevo.estado_registro == 'pendiente':
+                nuevo.estado_registro = 'aprobado'
+                nuevo.save(update_fields=['estado_registro'])
             return Response({'mensaje':'Asignado como admin', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
         else:
             if contenedor.usuario_id == nuevo.id:
@@ -332,7 +341,21 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
             if not uc.permisos:
                 uc.permisos = plantilla_permisos('operativo')
                 uc.save(update_fields=['permisos'])
+            if nuevo.estado_registro == 'pendiente':
+                nuevo.estado_registro = 'aprobado'
+                nuevo.save(update_fields=['estado_registro'])
             return Response({'mensaje':'Asignado como usuario', 'contenedor_id': contenedor.id}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path=r'admin-rechazar', permission_classes=[permissions.IsAdminUser])
+    def admin_rechazar(self, request, pk=None):
+        """Rechaza un auto-registro pendiente: el conductor no obtiene acceso."""
+        user = self.get_object(pk)
+        user.estado_registro = 'rechazado'
+        user.save(update_fields=['estado_registro'])
+        return Response(
+            {'id': user.id, 'estado_registro': user.estado_registro},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=["post"], url_path=r'admin-cambiar-admin-contenedor', permission_classes=[permissions.IsAdminUser])
     def admin_cambiar_admin_contenedor(self, request):

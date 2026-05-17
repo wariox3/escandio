@@ -1,0 +1,1099 @@
+openapi: 3.0.3
+info:
+  title: Escandio API movil v2
+  version: 2.0.0
+  description: Contrato de la API v2 consumida por la app movil berkelio. Ver movil/contrato_v2.py.
+paths:
+  /api/v2/app/config/:
+    get:
+      operationId: app_config_retrieve
+      description: |-
+        Version minima soportada y si la app debe/puede actualizar.
+
+        La app consulta este endpoint al iniciar para decidir si muestra la
+        pantalla de 'actualizacion requerida'. Es publico: se consulta antes de
+        autenticar. Los valores se controlan por entorno (MOVIL_VERSION_*), asi se
+        puede subir el piso minimo sin un deploy de codigo.
+      tags:
+      - app
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppConfig'
+          description: ''
+  /api/v2/auth/clave/solicitar/:
+    post:
+      operationId: auth_clave_solicitar_create
+      description: Solicita el correo de cambio de clave.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitarClaveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SolicitarClaveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SolicitarClaveRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+          description: ''
+  /api/v2/auth/login/:
+    post:
+      operationId: auth_login_create
+      description: Autentica al conductor y devuelve tokens estandar + usuario.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sesion'
+          description: ''
+  /api/v2/auth/logout/:
+    post:
+      operationId: auth_logout_create
+      description: |-
+        Cierra la sesion. La invalidacion del token es del lado del cliente:
+        la app descarta access y refresh. Endpoint explicito para cerrar el flujo.
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+          description: ''
+  /api/v2/auth/registro/:
+    post:
+      operationId: auth_registro_create
+      description: Crea una cuenta de conductor y envia el correo de verificacion.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistroRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegistroRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegistroRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioMovil'
+          description: ''
+  /api/v2/auth/token/refresh/:
+    post:
+      operationId: auth_token_refresh_create
+      description: Renueva el access token a partir del refresh token.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v2/despachos/{id}/:
+    get:
+      operationId: despachos_retrieve
+      description: |-
+        Resuelve un codigo de despacho a su resumen + tenant (schema_name).
+
+        Es el endpoint de arranque: corre en el dominio base (no en un subdominio
+        de tenant) porque la app todavia no sabe a que tenant pertenece el codigo.
+        Por eso basta IsAuthenticated, no EsConductorMovil.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - despachos
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DespachoMovil'
+          description: ''
+  /api/v2/novedades/:
+    post:
+      operationId: novedades_create
+      description: Novedades reportadas por el conductor.
+      tags:
+      - novedades
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearNovedadRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CrearNovedadRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CrearNovedadRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Id'
+          description: ''
+  /api/v2/novedades/{id}/solucionar/:
+    post:
+      operationId: novedades_solucionar_create
+      description: Novedades reportadas por el conductor.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este rut novedad.
+        required: true
+      tags:
+      - novedades
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolucionarNovedadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SolucionarNovedadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SolucionarNovedadRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+          description: ''
+  /api/v2/novedades/tipos/:
+    get:
+      operationId: novedades_tipos_list
+      description: Novedades reportadas por el conductor.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      tags:
+      - novedades
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNovedadTipoMovilList'
+          description: ''
+  /api/v2/ubicacion/:
+    post:
+      operationId: ubicacion_create
+      description: Recibe los puntos de tracking que la app envia en background.
+      tags:
+      - ubicacion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UbicacionMovilRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UbicacionMovilRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UbicacionMovilRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UbicacionMovil'
+          description: ''
+  /api/v2/visitas/:
+    get:
+      operationId: visitas_list
+      description: |-
+        Visitas del conductor. Sin paginar: la app descarga la ruta completa.
+
+        Filtros utiles: ?despacho_id=&estado_entregado=&estado_novedad=
+      parameters:
+      - in: query
+        name: cita_fin__gte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: cita_fin__isnull
+        schema:
+          type: boolean
+      - in: query
+        name: cita_fin__lte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: cita_inicio__gte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: cita_inicio__isnull
+        schema:
+          type: boolean
+      - in: query
+        name: cita_inicio__lte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: despacho__vehiculo__placa
+        schema:
+          type: string
+      - in: query
+        name: despacho_id
+        schema:
+          type: integer
+      - in: query
+        name: destinatario__icontains
+        schema:
+          type: string
+      - in: query
+        name: documento
+        schema:
+          type: string
+      - in: query
+        name: documento__icontains
+        schema:
+          type: string
+      - in: query
+        name: estado_decodificado
+        schema:
+          type: boolean
+      - in: query
+        name: estado_decodificado_alerta
+        schema:
+          type: boolean
+      - in: query
+        name: estado_despacho
+        schema:
+          type: boolean
+      - in: query
+        name: estado_entregado
+        schema:
+          type: boolean
+      - in: query
+        name: estado_novedad
+        schema:
+          type: boolean
+      - in: query
+        name: fecha
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha__gt
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha__gte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha__lt
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha__lte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha_entrega
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha_entrega__gt
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha_entrega__gte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha_entrega__lt
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: fecha_entrega__lte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: franja_id
+        schema:
+          type: integer
+      - in: query
+        name: franja_id__in
+        schema:
+          type: array
+          items:
+            type: integer
+        description: Multiple values may be separated by commas.
+        explode: false
+        style: form
+      - in: query
+        name: id
+        schema:
+          type: integer
+      - in: query
+        name: numero
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Qué campo usar para ordenar los resultados.
+        schema:
+          type: string
+      tags:
+      - visitas
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VisitaMovil'
+          description: ''
+  /api/v2/visitas/{id}/entregar/:
+    post:
+      operationId: visitas_entregar_create
+      description: |-
+        Visitas del conductor. Sin paginar: la app descarga la ruta completa.
+
+        Filtros utiles: ?despacho_id=&estado_entregado=&estado_novedad=
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este rut visita.
+        required: true
+      tags:
+      - visitas
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntregaRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EntregaRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EntregaRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+          description: ''
+components:
+  schemas:
+    AppConfig:
+      type: object
+      properties:
+        version_minima:
+          type: string
+        version_actual:
+          type: string
+        actualizacion_requerida:
+          type: boolean
+        actualizacion_disponible:
+          type: boolean
+      required:
+      - actualizacion_disponible
+      - actualizacion_requerida
+      - version_actual
+      - version_minima
+    CrearNovedadRequestRequest:
+      type: object
+      description: Documenta el cuerpo multipart de POST /novedades/.
+      properties:
+        visita_id:
+          type: integer
+        novedad_tipo_id:
+          type: integer
+        fecha:
+          type: string
+          minLength: 1
+          description: 'Formato: YYYY-MM-DD HH:MM'
+        descripcion:
+          type: string
+          nullable: true
+        movil_token:
+          type: string
+          minLength: 1
+          description: Clave de idempotencia generada por la app.
+        imagenes:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Fotos de evidencia de la novedad.
+      required:
+      - fecha
+      - movil_token
+      - novedad_tipo_id
+      - visita_id
+    DespachoMovil:
+      type: object
+      description: |-
+        Resumen del despacho que la app resuelve a partir de un codigo.
+
+        Incluye `schema_name`: el tenant al que pertenece el despacho, que la app
+        usa para enrutar las llamadas posteriores al subdominio correcto.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        fecha:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        peso:
+          type: number
+          format: double
+          readOnly: true
+        volumen:
+          type: number
+          format: double
+          readOnly: true
+        tiempo:
+          type: number
+          format: double
+          maximum: 1000000
+          minimum: -1000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+        tiempo_servicio:
+          type: number
+          format: double
+          maximum: 1000000
+          minimum: -1000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+        tiempo_trayecto:
+          type: number
+          format: double
+          maximum: 1000000
+          minimum: -1000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+        visitas:
+          type: number
+          format: double
+          readOnly: true
+        visitas_entregadas:
+          type: number
+          format: double
+          readOnly: true
+        despacho_id:
+          type: integer
+          readOnly: true
+        contenedor_id:
+          type: integer
+          readOnly: true
+        usuario_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        schema_name:
+          type: string
+          readOnly: true
+          nullable: true
+      required:
+      - contenedor_id
+      - despacho_id
+      - fecha
+      - id
+      - peso
+      - schema_name
+      - tiempo
+      - tiempo_servicio
+      - tiempo_trayecto
+      - usuario_id
+      - visitas
+      - visitas_entregadas
+      - volumen
+    EntregaRequestRequest:
+      type: object
+      description: Documenta el cuerpo multipart de POST /visitas/{id}/entregar/.
+      properties:
+        fecha_entrega:
+          type: string
+          minLength: 1
+          description: 'Formato: YYYY-MM-DD HH:MM'
+        datos_adicionales:
+          type: string
+          description: JSON con datos de quien recibe (firma, identificacion, etc).
+        imagenes:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Fotos de evidencia de la entrega.
+        firmas:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Imagenes de firma del receptor.
+      required:
+      - fecha_entrega
+    Id:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username
+    Mensaje:
+      type: object
+      properties:
+        mensaje:
+          type: string
+      required:
+      - mensaje
+    NovedadTipoMovil:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nombre:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - nombre
+    PaginatedNovedadTipoMovilList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/NovedadTipoMovil'
+    RegistroRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        nombre:
+          type: string
+          maxLength: 255
+        telefono:
+          type: string
+          maxLength: 50
+        empresa_nombre:
+          type: string
+          maxLength: 255
+      required:
+      - password
+      - username
+    Sesion:
+      type: object
+      description: 'Respuesta de login: tokens estandar + usuario.'
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+        usuario:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioMovil'
+          readOnly: true
+      required:
+      - access
+      - refresh
+      - usuario
+    SolicitarClaveRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - username
+    SolucionarNovedadRequest:
+      type: object
+      properties:
+        solucion:
+          type: string
+          nullable: true
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    UbicacionMovil:
+      type: object
+      description: Punto de tracking enviado por la app en background.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        fecha:
+          type: string
+          format: date-time
+          readOnly: true
+        latitud:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: -10000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+        longitud:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: -10000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+        despacho:
+          type: integer
+          nullable: true
+        visita:
+          type: integer
+          nullable: true
+        detenido:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+      required:
+      - fecha
+      - id
+      - latitud
+      - longitud
+    UbicacionMovilRequest:
+      type: object
+      description: Punto de tracking enviado por la app en background.
+      properties:
+        latitud:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: -10000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+        longitud:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: -10000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+        despacho:
+          type: integer
+          nullable: true
+        visita:
+          type: integer
+          nullable: true
+        detenido:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+      required:
+      - latitud
+      - longitud
+    UsuarioMovil:
+      type: object
+      description: Representacion del usuario para la app movil.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+        correo:
+          type: string
+          readOnly: true
+          nullable: true
+        nombre:
+          type: string
+          readOnly: true
+          nullable: true
+        apellido:
+          type: string
+          readOnly: true
+          nullable: true
+        nombre_corto:
+          type: string
+          readOnly: true
+          nullable: true
+        telefono:
+          type: string
+          readOnly: true
+          nullable: true
+        numero_identificacion:
+          type: string
+          readOnly: true
+          nullable: true
+        imagen:
+          type: string
+          readOnly: true
+        verificado:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        estado:
+          type: string
+          readOnly: true
+      required:
+      - apellido
+      - correo
+      - estado
+      - id
+      - imagen
+      - is_active
+      - nombre
+      - nombre_corto
+      - numero_identificacion
+      - telefono
+      - username
+      - verificado
+    VisitaMovil:
+      type: object
+      description: Visita tal como la consume la app del conductor (solo lectura).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        numero:
+          type: integer
+          readOnly: true
+          nullable: true
+        fecha:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        documento:
+          type: string
+          readOnly: true
+          nullable: true
+        remitente:
+          type: string
+          readOnly: true
+          nullable: true
+        destinatario:
+          type: string
+          readOnly: true
+        destinatario_direccion:
+          type: string
+          readOnly: true
+        destinatario_direccion_formato:
+          type: string
+          readOnly: true
+          nullable: true
+        destinatario_direccion_complemento:
+          type: string
+          readOnly: true
+          nullable: true
+        destinatario_telefono:
+          type: string
+          readOnly: true
+          nullable: true
+        destinatario_correo:
+          type: string
+          readOnly: true
+          nullable: true
+        ciudad_nombre:
+          type: string
+          readOnly: true
+          nullable: true
+        unidades:
+          type: number
+          format: double
+          readOnly: true
+        peso:
+          type: number
+          format: double
+          readOnly: true
+        volumen:
+          type: number
+          format: double
+          readOnly: true
+        cobro:
+          type: number
+          format: double
+          maximum: 100000000000000
+          minimum: -100000000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+        tarifa:
+          type: number
+          format: double
+          maximum: 100000000000000
+          minimum: -100000000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+        latitud:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: -10000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+          nullable: true
+        longitud:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: -10000000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+          nullable: true
+        orden:
+          type: integer
+          readOnly: true
+        distancia:
+          type: number
+          format: double
+          maximum: 1000000
+          minimum: -1000000
+          exclusiveMaximum: true
+          exclusiveMinimum: true
+          readOnly: true
+        observacion:
+          type: string
+          readOnly: true
+          nullable: true
+        cita_inicio:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        cita_fin:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        despacho_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        franja_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        fecha_entrega:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        estado_entregado:
+          type: boolean
+          readOnly: true
+        estado_novedad:
+          type: boolean
+          readOnly: true
+        estado_devolucion:
+          type: boolean
+          readOnly: true
+        estado_despacho:
+          type: boolean
+          readOnly: true
+      required:
+      - cita_fin
+      - cita_inicio
+      - ciudad_nombre
+      - cobro
+      - despacho_id
+      - destinatario
+      - destinatario_correo
+      - destinatario_direccion
+      - destinatario_direccion_complemento
+      - destinatario_direccion_formato
+      - destinatario_telefono
+      - distancia
+      - documento
+      - estado_despacho
+      - estado_devolucion
+      - estado_entregado
+      - estado_novedad
+      - fecha
+      - fecha_entrega
+      - franja_id
+      - id
+      - latitud
+      - longitud
+      - numero
+      - observacion
+      - orden
+      - peso
+      - remitente
+      - tarifa
+      - unidades
+      - volumen
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
