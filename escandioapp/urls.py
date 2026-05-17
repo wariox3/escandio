@@ -12,6 +12,8 @@ urlpatterns = [
     path('vertical/', include("vertical.urls")),
     path('contenedor/', include("contenedor.urls")),
     path('mensajeria/', include("mensajeria.urls")),
+    # API movil v2 - ver movil/contrato_v2.py
+    path('api/v2/', include("movil.urls")),
     path('seguridad/login/', Login.as_view(), name='login'),
     path('seguridad/admin-login/', AdminLogin.as_view(), name='admin-login'),
     path('seguridad/token/', jwt_views.TokenObtainPairView.as_view(), name='token_obtain_pair'),

@@ -2,6 +2,16 @@ from django.db import models
 from django_tenants.models import TenantMixin, DomainMixin
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 
+# Estado de aprobacion de un auto-registro desde la app movil v2.
+# default 'aprobado': usuarios existentes y los creados por un admin no se
+# afectan. Solo el registro v2 setea 'pendiente' explicitamente.
+ESTADO_REGISTRO_CHOICES = [
+    ('pendiente', 'Pendiente de aprobacion'),
+    ('aprobado', 'Aprobado'),
+    ('rechazado', 'Rechazado'),
+]
+
+
 class UserManager(BaseUserManager):
     def _create_user(self, username, correo, nombre, apellido, numero_identificacion, password, is_staff, is_superuser, **extra_fields):
         user = self.model(
@@ -55,6 +65,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     aplicacion = models.CharField(max_length=10, null=True)
     dominio = models.CharField(max_length = 50, null=True)
     debe_cambiar_clave = models.BooleanField(default=False)
+    estado_registro = models.CharField(
+        max_length=10, choices=ESTADO_REGISTRO_CHOICES, default='aprobado',
+    )
     objects = UserManager()
 
     class Meta:

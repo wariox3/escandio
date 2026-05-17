@@ -121,6 +121,28 @@ class ContratoMovilV164Tests(TestCase):
             f'entrega devolvio 403 ({r.content!r}); rompe contrato v1.6.4',
         )
 
+    def test_RutUbicacionViewSet_create_es_alcanzable_con_solo_jwt(self):
+        # La app envia tracking de ubicacion en background. El contrato exige
+        # que POST /ruteo/ubicacion/ siga siendo alcanzable con solo un JWT:
+        # cualquier 403 (permiso) o 404/405 (ruta/metodo eliminados) rompe
+        # el tracking de la app v1.6.4 publicada.
+        login = self.client.post('/seguridad/login/', {
+            'username': self.user.username,
+            'password': self.password,
+            'proyecto': 'RUTEOAPP',
+        }, format='json')
+        self.assertEqual(login.status_code, 200, login.content)
+        token = login.data['token']
+        r = self.client.post(
+            '/ruteo/ubicacion/',
+            {},
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+        self.assertNotIn(
+            r.status_code, (403, 404, 405),
+            f'ubicacion devolvio {r.status_code} ({r.content!r}); rompe contrato v1.6.4',
+        )
+
     def test_default_tiene_acceso_movil_es_True(self):
         # blindaje: el default no debe revertirse a False, eso bloquearia
         # a conductores invitados existentes en cualquier viewset con RolMixin

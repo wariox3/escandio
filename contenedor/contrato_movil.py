@@ -56,6 +56,16 @@ Endpoints obligatorios:
   POST https://{schema}.ruteoapi.co/ruteo/novedad/solucionar/
        cls: ruteo.views.novedad.RutNovedadViewSet.solucionar
 
+  POST https://{schema}.ruteoapi.co/ruteo/ubicacion/
+       cls: ruteo.views.ubicacion.RutUbicacionViewSet.create (IsAuthenticated)
+       La app envia tracking de ubicacion en background. Debe seguir aceptando
+       POST con solo JWT (sin RolMixin / sin perfil movil).
+
+  POST /seguridad/logout/  (OJO: NO existe como ruta en el backend)
+       La app v1.6.4 llama este path, pero escandio no expone la ruta: responde
+       404 y la app hace logout local de todos modos. NO crear aqui una ruta que
+       devuelva 5xx ni que altere ese 404 tolerado.
+
 REGLAS:
   1. Para entrar a list/retrieve/entrega de RutVisitaViewSet basta con IsAuthenticated.
      OJO: en `acciones_publicas` van los NOMBRES DE METODO, no los url_path.
@@ -80,4 +90,5 @@ ENDPOINTS_MOVIL_V164 = (
     'GET /ruteo/novedad_tipo/',
     'POST /ruteo/novedad/nuevo/',
     'POST /ruteo/novedad/solucionar/',
+    'POST /ruteo/ubicacion/',
 )

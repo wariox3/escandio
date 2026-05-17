@@ -28,8 +28,10 @@ SHARED_APPS = (
     'django.contrib.messages',
     'django.contrib.admin',
     'django_tenants',
+    'drf_spectacular',
     'contenedor',
-    'vertical'
+    'vertical',
+    'movil',
 )
 
 TENANT_APPS = (
@@ -46,13 +48,15 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_spectacular',
     'django_tenants',
     "corsheaders",
     'contenedor',
     'vertical',
     'ruteo',
     'general',
-    'mensajeria'
+    'mensajeria',
+    'movil',
 ]
 
 MIDDLEWARE = [
@@ -65,6 +69,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'movil.middleware.VersionAppMiddleware',
 ]
 
 ROOT_URLCONF = 'escandioapp.urls'
@@ -156,6 +161,18 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'EXCEPTION_HANDLER': 'escandioapp.exceptions.custom_exception_handler',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# drf-spectacular: el schema solo cubre la API movil v2 (/api/v2/).
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Escandio API movil v2',
+    'DESCRIPTION': 'Contrato de la API v2 consumida por la app movil berkelio. '
+                   'Ver movil/contrato_v2.py.',
+    'VERSION': '2.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'PREPROCESSING_HOOKS': ['movil.spectacular.solo_endpoints_v2'],
 }
 
 SIMPLE_JWT = {      
