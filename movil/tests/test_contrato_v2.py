@@ -331,3 +331,71 @@ class ContratoV2DespachoConductorScopeTests(TestCase):
         ):
             r = self._get(despacho, self.coordinador)
             self.assertEqual(r.status_code, 200, r.content)
+
+
+class ContratoV2DespachosMiasTests(TestCase):
+    """GET /api/v2/despachos/ lista solo los asignados al usuario autenticado."""
+
+    @classmethod
+    def setUpTestData(cls):
+        _registrar_tenant_public()
+        cls.password = 'abc12345'
+
+        cls.conductor = User.objects.create(
+            username='cond.list@x.com', correo='cond.list@x.com',
+            nombre='C', apellido='L', is_active=True,
+        )
+        cls.conductor.set_password(cls.password)
+        cls.conductor.save()
+
+        cls.otro = User.objects.create(
+            username='otro.list@x.com', correo='otro.list@x.com',
+            nombre='O', apellido='L', is_active=True,
+        )
+
+        cls.empresa = Contenedor(schema_name='list_empresa', nombre='List Empresa')
+        cls.empresa.auto_create_schema = False
+        cls.empresa.save()
+
+        UsuarioContenedor.objects.create(
+            usuario_id=cls.conductor.id, contenedor_id=cls.empresa.id,
+            tiene_acceso_movil=True, perfil_movil='conductor',
+        )
+
+        cls.despacho_mio_1 = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='list_empresa',
+            despacho_id=10, usuario_id=cls.conductor.id,
+        )
+        cls.despacho_mio_2 = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='list_empresa',
+            despacho_id=11, usuario_id=cls.conductor.id,
+        )
+        cls.despacho_ajeno = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='list_empresa',
+            despacho_id=12, usuario_id=cls.otro.id,
+        )
+        cls.despacho_sin_asignar = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='list_empresa',
+            despacho_id=13,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        login = self.client.post('/api/v2/auth/login/', {
+            'username': self.conductor.username, 'password': self.password,
+        }, format='json')
+        self.token = login.data['access']
+
+    def test_lista_solo_despachos_asignados_al_conductor(self):
+        # Excluye los de otros conductores y los sin asignar.
+        r = self.client.get(
+            '/api/v2/despachos/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        ids = {item['id'] for item in r.data}
+        self.assertEqual(ids, {self.despacho_mio_1.id, self.despacho_mio_2.id})
+
+    def test_exige_autenticacion(self):
+        r = self.client.get('/api/v2/despachos/')
+        self.assertIn(r.status_code, (401, 403), r.content)

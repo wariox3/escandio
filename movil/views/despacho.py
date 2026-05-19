@@ -57,3 +57,24 @@ class DespachoMovilView(MovilApiMixin, generics.RetrieveAPIView):
     @extend_schema(tags=['despachos'])
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class DespachosMiasView(MovilApiMixin, generics.ListAPIView):
+    """Lista los despachos asignados al conductor autenticado.
+
+    Filtra VerEntrega por usuario_id == request.user.id, ordenados por fecha
+    descendente. Devuelve un array plano (sin paginar): un conductor maneja
+    pocos despachos vigentes a la vez, no vale la pena paginar.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = DespachoMovilSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return VerEntrega.objects.filter(
+            usuario_id=self.request.user.id,
+        ).order_by('-fecha', '-id')
+
+    @extend_schema(tags=['despachos'])
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

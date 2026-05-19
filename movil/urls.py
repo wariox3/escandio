@@ -16,7 +16,7 @@ from movil.views.auth import (
     SolicitarClaveView,
     TokenRefreshMovilView,
 )
-from movil.views.despacho import DespachoMovilView
+from movil.views.despacho import DespachoMovilView, DespachosMiasView
 from movil.views.novedad import NovedadMovilViewSet
 from movil.views.ubicacion import UbicacionMovilView
 from movil.views.visita import VisitaMovilViewSet
@@ -33,6 +33,7 @@ urlpatterns = [
     path('auth/logout/', LogoutView.as_view(), name='movil-logout'),
     path('auth/me/', MeView.as_view(), name='movil-me'),
     path('auth/clave/solicitar/', SolicitarClaveView.as_view(), name='movil-clave-solicitar'),
+    path('despachos/', DespachosMiasView.as_view(), name='movil-despachos-mias'),
     path('despachos/<int:pk>/', DespachoMovilView.as_view(), name='movil-despacho'),
     path('ubicacion/', UbicacionMovilView.as_view(), name='movil-ubicacion'),
     path('schema/', SpectacularAPIView.as_view(), name='schema-v2'),

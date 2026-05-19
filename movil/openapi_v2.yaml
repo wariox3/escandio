@@ -171,6 +171,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenRefresh'
           description: ''
+  /api/v2/despachos/:
+    get:
+      operationId: despachos_list
+      description: |-
+        Lista los despachos asignados al conductor autenticado.
+
+        Filtra VerEntrega por usuario_id == request.user.id, ordenados por fecha
+        descendente. Devuelve un array plano (sin paginar): un conductor maneja
+        pocos despachos vigentes a la vez, no vale la pena paginar.
+      tags:
+      - despachos
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DespachoMovil'
+          description: ''
   /api/v2/despachos/{id}/:
     get:
       operationId: despachos_retrieve
