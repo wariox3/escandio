@@ -14,9 +14,10 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from contenedor.models import Contenedor, Dominio, User
+from contenedor.models import Contenedor, Dominio, User, UsuarioContenedor
 from movil import responses
 from movil.contrato_v2 import ENDPOINTS_MOVIL_V2
+from vertical.models.entrega import VerEntrega
 
 SCHEMA_PATH = os.path.join(settings.BASE_DIR, 'movil', 'openapi_v2.yaml')
 
@@ -197,3 +198,136 @@ class ContratoV2PermisosTests(TestCase):
         self.assertTrue(r.data['actualizacion_requerida'])
         for clave in ('version_minima', 'version_actual', 'actualizacion_disponible'):
             self.assertIn(clave, r.data)
+
+
+class ContratoV2DespachoScopeTests(TestCase):
+    """El conductor solo puede cargar despachos de sus contenedores asignados."""
+
+    @classmethod
+    def setUpTestData(cls):
+        _registrar_tenant_public()
+        cls.password = 'abc12345'
+        cls.user = User.objects.create(
+            username='cond.scope@x.com', correo='cond.scope@x.com',
+            nombre='C', apellido='C', is_active=True,
+        )
+        cls.user.set_password(cls.password)
+        cls.user.save()
+        # auto_create_schema=False: el test solo necesita la fila.
+        cls.mio = Contenedor(schema_name='mi_empresa', nombre='Mi Empresa')
+        cls.mio.auto_create_schema = False
+        cls.mio.save()
+        cls.ajeno = Contenedor(schema_name='otra_empresa', nombre='Otra Empresa')
+        cls.ajeno.auto_create_schema = False
+        cls.ajeno.save()
+        UsuarioContenedor.objects.create(
+            usuario_id=cls.user.id, contenedor_id=cls.mio.id,
+            tiene_acceso_movil=True,
+        )
+        cls.despacho_mio = VerEntrega.objects.create(
+            contenedor_id=cls.mio.id, schema_name='mi_empresa', despacho_id=1,
+        )
+        cls.despacho_ajeno = VerEntrega.objects.create(
+            contenedor_id=cls.ajeno.id, schema_name='otra_empresa', despacho_id=2,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        login = self.client.post('/api/v2/auth/login/', {
+            'username': self.user.username, 'password': self.password,
+        }, format='json')
+        self.token = login.data['access']
+
+    def test_carga_despacho_de_su_contenedor(self):
+        r = self.client.get(
+            f'/api/v2/despachos/{self.despacho_mio.id}/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_no_carga_despacho_de_contenedor_ajeno(self):
+        r = self.client.get(
+            f'/api/v2/despachos/{self.despacho_ajeno.id}/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(r.status_code, 404, r.content)
+
+
+class ContratoV2DespachoConductorScopeTests(TestCase):
+    """El conductor solo resuelve sus despachos; el coordinador, todos."""
+
+    @classmethod
+    def setUpTestData(cls):
+        _registrar_tenant_public()
+        cls.password = 'abc12345'
+
+        cls.conductor = User.objects.create(
+            username='cond.fc@x.com', correo='cond.fc@x.com',
+            nombre='Co', apellido='Nd', is_active=True,
+        )
+        cls.conductor.set_password(cls.password)
+        cls.conductor.save()
+
+        cls.coordinador = User.objects.create(
+            username='coord.fc@x.com', correo='coord.fc@x.com',
+            nombre='Co', apellido='Or', is_active=True,
+        )
+        cls.coordinador.set_password(cls.password)
+        cls.coordinador.save()
+
+        cls.empresa = Contenedor(schema_name='fc_empresa', nombre='FC Empresa')
+        cls.empresa.auto_create_schema = False
+        cls.empresa.save()
+
+        UsuarioContenedor.objects.create(
+            usuario_id=cls.conductor.id, contenedor_id=cls.empresa.id,
+            tiene_acceso_movil=True, perfil_movil='conductor',
+        )
+        UsuarioContenedor.objects.create(
+            usuario_id=cls.coordinador.id, contenedor_id=cls.empresa.id,
+            tiene_acceso_movil=True, perfil_movil='coordinador',
+        )
+
+        cls.despacho_propio = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='fc_empresa',
+            despacho_id=1, usuario_id=cls.conductor.id,
+        )
+        cls.despacho_ajeno = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='fc_empresa',
+            despacho_id=2, usuario_id=cls.coordinador.id,
+        )
+        cls.despacho_sin_asignar = VerEntrega.objects.create(
+            contenedor_id=cls.empresa.id, schema_name='fc_empresa',
+            despacho_id=3,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _get(self, despacho, user):
+        login = self.client.post('/api/v2/auth/login/', {
+            'username': user.username, 'password': self.password,
+        }, format='json')
+        return self.client.get(
+            f'/api/v2/despachos/{despacho.id}/',
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+
+    def test_conductor_carga_su_despacho(self):
+        r = self._get(self.despacho_propio, self.conductor)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_conductor_carga_despacho_sin_asignar(self):
+        r = self._get(self.despacho_sin_asignar, self.conductor)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_conductor_no_carga_despacho_de_otro(self):
+        r = self._get(self.despacho_ajeno, self.conductor)
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def test_coordinador_carga_cualquier_despacho_del_contenedor(self):
+        for despacho in (
+            self.despacho_propio, self.despacho_ajeno, self.despacho_sin_asignar,
+        ):
+            r = self._get(despacho, self.coordinador)
+            self.assertEqual(r.status_code, 200, r.content)
