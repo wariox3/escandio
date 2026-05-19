@@ -10,5 +10,7 @@ class UsuarioContenedorFilter(django_filters.FilterSet):
             'contenedor_id': ['exact'],
             'usuario_id': ['exact'],
             'rol': ['exact'],
-            'contenedor__nombre': ['icontains'],    
+            'tiene_acceso_movil': ['exact'],
+            'perfil_movil': ['exact'],
+            'contenedor__nombre': ['icontains'],
         }

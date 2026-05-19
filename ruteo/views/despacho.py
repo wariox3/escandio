@@ -95,6 +95,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         entrega.tiempo = despacho.tiempo
                         entrega.visitas = despacho.visitas
                         entrega.visitas_entregadas = despacho.visitas_entregadas
+                        entrega.usuario_id = despacho.conductor_id
                         entrega.contenedor_id = request.tenant.id
                         entrega.schema_name = request.tenant.schema_name
                         entrega.save()

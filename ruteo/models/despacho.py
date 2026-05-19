@@ -21,8 +21,12 @@ class RutDespacho(models.Model):
     entrega_id = models.IntegerField(null=True)
     codigo_complemento = models.IntegerField(null=True)
     latitud = models.DecimalField(max_digits=25, decimal_places=15, null=True)
-    longitud = models.DecimalField(max_digits=25, decimal_places=15, null=True)    
+    longitud = models.DecimalField(max_digits=25, decimal_places=15, null=True)
     vehiculo = models.ForeignKey(RutVehiculo, null=True, on_delete=models.PROTECT, related_name='despachos_vehiculo_rel')
+    # Conductor asignado. Es un id plano a contenedor.User (no FK): User vive en
+    # el schema publico y ruteo es app de tenant -> se evita un FK cross-schema,
+    # igual que RutUbicacion.usuario_id / RutSeguimiento.usuario_id.
+    conductor_id = models.IntegerField(null=True)
 
     class Meta:
         db_table = "rut_despacho"
