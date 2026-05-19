@@ -121,6 +121,19 @@ class LogoutView(MovilApiMixin, APIView):
         return Response({'mensaje': 'Sesion cerrada'})
 
 
+class MeView(MovilApiMixin, APIView):
+    """Devuelve el usuario autenticado (estado, acceso_movil, etc.).
+
+    La app lo consulta para re-chequear si su registro ya fue aprobado, sin
+    tener que cerrar sesion y volver a entrar (pull-to-refresh).
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: UsuarioMovilSerializer}, tags=['auth'])
+    def get(self, request):
+        return Response(UsuarioMovilSerializer(request.user).data)
+
+
 class TokenRefreshMovilView(MovilApiMixin, TokenRefreshView):
     """Renueva el access token a partir del refresh token."""
 

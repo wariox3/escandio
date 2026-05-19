@@ -99,6 +99,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/Mensaje'
           description: ''
+  /api/v2/auth/me/:
+    get:
+      operationId: auth_me_retrieve
+      description: |-
+        Devuelve el usuario autenticado (estado, acceso_movil, etc.).
+
+        La app lo consulta para re-chequear si su registro ya fue aprobado, sin
+        tener que cerrar sesion y volver a entrar (pull-to-refresh).
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioMovil'
+          description: ''
   /api/v2/auth/registro/:
     post:
       operationId: auth_registro_create

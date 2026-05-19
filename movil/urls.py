@@ -11,6 +11,7 @@ from movil.views.app import AppConfigView
 from movil.views.auth import (
     LoginView,
     LogoutView,
+    MeView,
     RegistroView,
     SolicitarClaveView,
     TokenRefreshMovilView,
@@ -30,6 +31,7 @@ urlpatterns = [
     path('auth/registro/', RegistroView.as_view(), name='movil-registro'),
     path('auth/token/refresh/', TokenRefreshMovilView.as_view(), name='movil-token-refresh'),
     path('auth/logout/', LogoutView.as_view(), name='movil-logout'),
+    path('auth/me/', MeView.as_view(), name='movil-me'),
     path('auth/clave/solicitar/', SolicitarClaveView.as_view(), name='movil-clave-solicitar'),
     path('despachos/<int:pk>/', DespachoMovilView.as_view(), name='movil-despacho'),
     path('ubicacion/', UbicacionMovilView.as_view(), name='movil-ubicacion'),

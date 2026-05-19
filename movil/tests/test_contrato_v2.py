@@ -150,6 +150,23 @@ class ContratoV2AuthTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
 
+    def test_me_exige_autenticacion(self):
+        r = self.client.get('/api/v2/auth/me/')
+        self.assertIn(r.status_code, (401, 403), r.content)
+
+    def test_me_devuelve_usuario_con_estado_y_acceso(self):
+        login = self.client.post('/api/v2/auth/login/', {
+            'username': self.user.username, 'password': self.password,
+        }, format='json')
+        r = self.client.get(
+            '/api/v2/auth/me/',
+            HTTP_AUTHORIZATION=f"Bearer {login.data['access']}",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['username'], self.user.username)
+        self.assertIn('estado', r.data)
+        self.assertIn('acceso_movil', r.data)
+
 
 class ContratoV2PermisosTests(TestCase):
     """Los endpoints de tenant exigen autenticacion (EsConductorMovil)."""
