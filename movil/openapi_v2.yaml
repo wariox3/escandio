@@ -901,7 +901,11 @@ components:
         estado:
           type: string
           readOnly: true
+        acceso_movil:
+          type: boolean
+          readOnly: true
       required:
+      - acceso_movil
       - apellido
       - correo
       - estado

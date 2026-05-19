@@ -18,12 +18,27 @@ class UsuarioMovilSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(read_only=True)
     # Estado de aprobacion del auto-registro: pendiente / aprobado / rechazado.
     estado = serializers.CharField(source='estado_registro', read_only=True)
+    # True si el usuario tiene acceso a la app movil en algun contenedor.
+    # La app lo usa para mostrar la pantalla de "sin acceso" tras el login.
+    acceso_movil = serializers.SerializerMethodField()
 
     def get_imagen(self, instance) -> str:
         return (
             f"https://{config('DO_BUCKET')}.{config('DO_REGION')}"
             f".digitaloceanspaces.com/{instance.imagen}"
         )
+
+    def get_acceso_movil(self, instance) -> bool:
+        if instance.is_superuser:
+            return True
+        from contenedor.models import Contenedor, UsuarioContenedor
+        # Admin de algun contenedor.
+        if Contenedor.objects.filter(usuario_id=instance.id).exists():
+            return True
+        # Miembro con acceso movil en algun contenedor.
+        return UsuarioContenedor.objects.filter(
+            usuario_id=instance.id, tiene_acceso_movil=True,
+        ).exists()
 
 
 class SesionSerializer(serializers.Serializer):
