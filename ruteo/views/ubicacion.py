@@ -118,14 +118,31 @@ class RutUbicacionViewSet(viewsets.ModelViewSet):
             # Extraemos los datos relevantes
             result = google_data.get('result', {})
             geometry = result.get('geometry', {}).get('location', {})
-            
+            latitude = geometry.get('lat')
+            longitude = geometry.get('lng')
+
+            # Latitud y longitud son requeridas para que la direccion sirva en
+            # el ruteo. Si Google no las trajo (place sin geometry, cuota
+            # excedida, key sin Places API habilitada), respondemos error
+            # claro para que el frontend avise al usuario en lugar de devolver
+            # un address sin coordenadas que despues falla al guardar.
+            if latitude is None or longitude is None:
+                return Response(
+                    {
+                        'mensaje': 'La dirección seleccionada no tiene coordenadas disponibles. Intenta con otra.',
+                        'error': True,
+                        'codigo': 'sin_coordenadas',
+                    },
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
+
             return Response({
                 'mensaje': 'Proceso exitoso',
                 'error': False,
                 'data': {
                     'address': result.get('formatted_address', ''),
-                    'latitude': geometry.get('lat'),
-                    'longitude': geometry.get('lng')
+                    'latitude': latitude,
+                    'longitude': longitude,
                 }
             }, status=status.HTTP_200_OK)
 
