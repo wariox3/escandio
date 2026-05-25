@@ -9,7 +9,6 @@ class ConfiguracionViewSet(RolMixin, viewsets.ModelViewSet):
     modulo = 'configuracion'
     queryset = GenConfiguracion.objects.all()
     serializer_class = GenConfiguracionSerializador
-    acciones_admin = ['create', 'update', 'partial_update', 'destroy']
 
     
     @action(detail=False, methods=["post"], url_path=r'consulta',)
