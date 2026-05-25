@@ -8,7 +8,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.ubicacion import UbicacionFilter
 from ruteo.servicios.alerta import AlertaServicio
 from decouple import config
+import logging
 import requests
+
+logger = logging.getLogger(__name__)
 
 class RutUbicacionViewSet(viewsets.ModelViewSet):
     queryset = RutUbicacion.objects.all()
@@ -45,6 +48,18 @@ class RutUbicacionViewSet(viewsets.ModelViewSet):
             ubicacion.despacho.longitud = ubicacion.longitud
             ubicacion.despacho.save(update_fields=['fecha_ubicacion', 'latitud', 'longitud'])
             AlertaServicio.evaluar(ubicacion)
+
+    @staticmethod
+    def _mensaje_segun_google_status(google_status):
+        """Traduce el status de Google Places a un mensaje claro al usuario."""
+        mapeo = {
+            'ZERO_RESULTS': 'No se encontraron detalles para esta dirección. Intenta con otra.',
+            'OVER_QUERY_LIMIT': 'El servicio de mapas está saturado. Intenta en unos minutos.',
+            'REQUEST_DENIED': 'El servicio de mapas no está disponible. Contacta a soporte.',
+            'INVALID_REQUEST': 'La dirección seleccionada ya no es válida. Vuelve a buscarla.',
+            'UNKNOWN_ERROR': 'Error temporal del servicio de mapas. Intenta de nuevo.',
+        }
+        return mapeo.get(google_status, 'No se encontraron detalles para el lugar.')
 
     @action(detail=False, methods=["post"], url_path=r'autocompletar')
     def autocompletar(self, request):
@@ -108,10 +123,29 @@ class RutUbicacionViewSet(viewsets.ModelViewSet):
             
             response = requests.get(url, params=params)
             google_data = response.json()
+            google_status = google_data.get('status')
+            google_error = google_data.get('error_message', '')
 
-            if google_data.get('status') != 'OK':
+            if google_status != 'OK':
+                # Loggeamos el detalle real de Google para diagnosticar la causa
+                # raiz cuando los usuarios reporten que "no llega coordenada":
+                # - ZERO_RESULTS: place_id valido pero sin datos.
+                # - OVER_QUERY_LIMIT: cuota diaria/por-segundo excedida.
+                # - REQUEST_DENIED: key sin Places API habilitada o restringida.
+                # - INVALID_REQUEST: place_id expirado o malformado.
+                # - UNKNOWN_ERROR: transitorio, conviene reintentar.
+                logger.warning(
+                    'Google Places Details no devolvio OK | status=%s error=%s place_id=%s',
+                    google_status, google_error, place_id,
+                )
+                mensaje_usuario = self._mensaje_segun_google_status(google_status)
                 return Response(
-                    {'mensaje': 'No se encontraron detalles para el lugar', 'error': True},
+                    {
+                        'mensaje': mensaje_usuario,
+                        'error': True,
+                        'google_status': google_status,
+                        'google_error_message': google_error,
+                    },
                     status=status.HTTP_404_NOT_FOUND
                 )
 
@@ -122,11 +156,14 @@ class RutUbicacionViewSet(viewsets.ModelViewSet):
             longitude = geometry.get('lng')
 
             # Latitud y longitud son requeridas para que la direccion sirva en
-            # el ruteo. Si Google no las trajo (place sin geometry, cuota
-            # excedida, key sin Places API habilitada), respondemos error
-            # claro para que el frontend avise al usuario en lugar de devolver
-            # un address sin coordenadas que despues falla al guardar.
+            # el ruteo. Si Google las omite (place sin geometry para ese
+            # tipo, como regiones administrativas), respondemos error claro
+            # para que el frontend avise al usuario.
             if latitude is None or longitude is None:
+                logger.warning(
+                    'Google Places Details OK pero sin coordenadas | place_id=%s result_keys=%s',
+                    place_id, list(result.keys()),
+                )
                 return Response(
                     {
                         'mensaje': 'La dirección seleccionada no tiene coordenadas disponibles. Intenta con otra.',
