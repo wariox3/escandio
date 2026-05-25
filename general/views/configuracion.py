@@ -12,7 +12,7 @@ class ConfiguracionViewSet(RolMixin, viewsets.ModelViewSet):
 
     
     @action(detail=False, methods=["post"], url_path=r'consulta',)
-    def cosulta(self, request):
+    def consulta(self, request):
         raw = request.data
         campos = raw.get('campos')
         if campos:
