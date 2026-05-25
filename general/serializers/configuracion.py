@@ -30,6 +30,25 @@ class GenConfiguracionSerializador(serializers.ModelSerializer):
         ]
         select_related_fields = ['empresa']
 
+    # Campos nullable que el frontend a veces manda como "" (string vacio) cuando
+    # el usuario nunca configuro la direccion o limpia el ng-select de buscador.
+    # DecimalField rechaza "" con "A valid number is required" — coercemos a None
+    # antes de la validacion para que pase y se guarde como NULL.
+    _CAMPOS_NULLABLE_STRING_VACIO = (
+        'rut_direccion_origen',
+        'rut_latitud',
+        'rut_longitud',
+        'rut_whatsapp_plantilla_despacho',
+    )
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = data.copy()
+            for campo in self._CAMPOS_NULLABLE_STRING_VACIO:
+                if data.get(campo) == '':
+                    data[campo] = None
+        return super().to_internal_value(data)
+
 class GenConfiguracionRndcSerializador(serializers.ModelSerializer):
     empresa__numero_identificacion = serializers.CharField(source='empresa.numero_identificacion', read_only=True)
     class Meta:

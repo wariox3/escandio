@@ -97,9 +97,9 @@ class ContenedorViewSet(viewsets.ModelViewSet):
                         if empresaSerializador.is_valid():
                             empresaSerializador.save()
                             data = {
-                                'id':1,
-                                'empresa':1,
-                                'formato_factura':'F'}
+                                'id': 1,
+                                'empresa': 1,
+                            }
                             configuracionSerializador = GenConfiguracionSerializador(data=data)                                                
                             if configuracionSerializador.is_valid():
                                 configuracionSerializador.save()                            
