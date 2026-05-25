@@ -109,6 +109,34 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # Validar limite de usuarios del plan (si el contenedor tiene Plan
+        # con `usuarios_base`). Si el modelo Plan no esta resoluble en este
+        # entorno, no validamos — defensivo.
+        sobre_limite = []
+        for c in contenedores:
+            try:
+                plan = getattr(c, 'plan', None)
+                limite = getattr(plan, 'usuarios_base', None) if plan else None
+            except Exception:
+                limite = None
+            if limite and (c.usuarios or 0) >= limite:
+                sobre_limite.append({
+                    'contenedor_id': c.id,
+                    'nombre': c.nombre,
+                    'usados': c.usuarios,
+                    'limite': limite,
+                })
+        if sobre_limite:
+            nombres = ', '.join(s['nombre'] or str(s['contenedor_id']) for s in sobre_limite)
+            return Response(
+                {
+                    'mensaje': f'Has alcanzado el limite de usuarios de tu plan en: {nombres}. Actualiza tu plan o elimina miembros para liberar espacio.',
+                    'codigo': 24,
+                    'sobre_limite': sobre_limite,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Perfiles y accesos opcionales
         perfil_web = raw.get('perfil_web') or 'operativo'
         perfil_movil = raw.get('perfil_movil')
