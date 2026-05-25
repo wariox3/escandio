@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from contenedor.models import User
 from contenedor.models import Contenedor, UsuarioContenedor
+from contenedor.permisos import puede_editar_modulo, plantilla_permisos
 from contenedor.serializers.contenedor import ContenedorSerializador
 from contenedor.serializers.user import UserSerializer
 from contenedor.serializers.usuario_contenedor import UsuarioContenedorSerializador, UsuarioContenedorListaSerializador, UsuarioContenedorConfiguracionSerializador
@@ -57,6 +58,14 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         usuarioEmpresa = self.get_object()
+        # Quien elimina debe poder editar el modulo 'usuario' en ese
+        # contenedor: propietario (admin), supervisor por plantilla o super
+        # admin global. Operativo/consulta no.
+        if not puede_editar_modulo(request.user, usuarioEmpresa.contenedor, 'usuario'):
+            return Response(
+                {'mensaje': 'No autorizado', 'codigo': 13},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         if usuarioEmpresa.rol in ('invitado', 'usuario'):
             self.perform_destroy(usuarioEmpresa)
             empresa = Contenedor.objects.get(pk=usuarioEmpresa.contenedor_id)
@@ -86,18 +95,21 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validar que el invitador es admin de cada contenedor (super admin se salta)
+        # Validar que el invitador puede editar el modulo 'usuario' en cada
+        # contenedor. Aplica a propietario (admin del contenedor), supervisor
+        # via plantilla y super admin global.
         contenedores = Contenedor.objects.filter(id__in=ids)
-        if not request.user.is_superuser:
-            no_autorizados = [c.id for c in contenedores if c.usuario_id != usuario_id]
-            if no_autorizados:
-                return Response(
-                    {'mensaje': f'No eres administrador de los contenedores {no_autorizados}', 'codigo': 13},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        no_autorizados = [
+            c.id for c in contenedores
+            if not puede_editar_modulo(request.user, c, 'usuario')
+        ]
+        if no_autorizados:
+            return Response(
+                {'mensaje': f'No tienes permiso para gestionar miembros en los contenedores {no_autorizados}', 'codigo': 13},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # Perfiles y accesos opcionales
-        from contenedor.permisos import plantilla_permisos
         perfil_web = raw.get('perfil_web') or 'operativo'
         perfil_movil = raw.get('perfil_movil')
         tiene_acceso_web = bool(raw.get('tiene_acceso_web', True))
@@ -181,10 +193,12 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK)
 
     def _puede_admin_membresia(self, request, membresia):
-        """Super-admin global o admin del contenedor de la membresia."""
+        """Quien puede editar el modulo 'usuario' en ese contenedor:
+        super-admin global, admin del contenedor o supervisor con permiso
+        configurado en la plantilla."""
         if request.user.is_staff or request.user.is_superuser:
             return True
-        return membresia.contenedor.usuario_id == request.user.id
+        return puede_editar_modulo(request.user, membresia.contenedor, 'usuario')
 
     @action(detail=True, methods=["patch"], url_path=r'admin-actualizar')
     def admin_actualizar(self, request, pk=None):
@@ -218,7 +232,6 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path=r'aplicar-plantilla')
     def aplicar_plantilla(self, request, pk=None):
         """Carga un preset de permisos: 'consulta', 'operativo' o 'supervisor'."""
-        from contenedor.permisos import plantilla_permisos
         plantilla = (request.data.get('plantilla') or '').lower()
         if plantilla not in ('consulta', 'operativo', 'supervisor'):
             return Response({'mensaje': 'Plantilla invalida', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
@@ -254,7 +267,6 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             return Response({'mensaje':'Usuario no existe', 'codigo':17}, status=status.HTTP_404_NOT_FOUND)
 
-        from contenedor.permisos import plantilla_permisos
         admin_anterior_id = contenedor.usuario_id
         contenedor.usuario = nuevo
         contenedor.save()
