@@ -20,7 +20,6 @@ class RutVehiculoViewSet(RolMixin, viewsets.ModelViewSet):
     serializer_class = RutVehiculoSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = VehiculoFilter
-    acciones_admin = ['create', 'update', 'partial_update', 'destroy']
     serializadores = {
         'lista': RutVehiculoSerializador
     }

@@ -11,6 +11,7 @@ from ruteo.models.novedad_tipo import RutNovedadTipo
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.novedad import NovedadFilter
+from contenedor.mixins import RolMixin
 from django.db import transaction
 from django.utils import timezone
 from utilidades.backblaze import Backblaze
@@ -19,15 +20,18 @@ from utilidades.imagen import Imagen
 import base64
 from datetime import datetime
 
-class RutNovedadViewSet(viewsets.ModelViewSet):
+class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
     # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
-    # /ruteo/novedad/nuevo/ (multipart) y /ruteo/novedad/solucionar/ son consumidos
-    # por la app movil v1.6.4. Si se aplica RolMixin, deben quedar en acciones_publicas.
+    # /ruteo/novedad/nuevo/ y /ruteo/novedad/solucionar/ son consumidos por la
+    # app movil v1.6.4 (que NO tiene perfiles), asi que quedan en
+    # acciones_publicas — solo exigen IsAuthenticated. El resto del CRUD pasa
+    # por PermisoModuloEditar('novedad') via RolMixin.
+    modulo = 'novedad'
+    acciones_publicas = ['nuevo_action', 'solucionar']
     queryset = RutNovedad.objects.all()
     serializer_class = RutNovedadSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = NovedadFilter 
+    filterset_class = NovedadFilter
 
     def get_serializer_class(self):
         serializador_parametro = self.request.query_params.get('serializador', None)

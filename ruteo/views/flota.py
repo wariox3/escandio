@@ -18,7 +18,6 @@ class RutFlotaViewSet(RolMixin, viewsets.ModelViewSet):
     serializer_class = RutFlotaSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = FlotaFilter
-    acciones_admin = ['create', 'update', 'partial_update', 'destroy', 'cambiar_prioridad']
     serializadores = {
         'lista': RutFlotaSerializador
     }

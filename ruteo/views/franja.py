@@ -29,7 +29,6 @@ class RutFranjaViewSet(RolMixin, viewsets.ModelViewSet):
     serializer_class = RutFranjaSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = FranjaFilter
-    acciones_admin = ['create', 'update', 'partial_update', 'destroy']
     serializadores = {
         'lista': RutFranjaSerializador
     }
