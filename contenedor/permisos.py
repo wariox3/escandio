@@ -46,6 +46,7 @@ MODULOS_ADMINISTRATIVOS = (
     'mensajeria',
     'facturacion',
     'usuario',
+    'complemento',
 )
 
 MODULOS = MODULOS_OPERATIVOS + MODULOS_ADMINISTRATIVOS

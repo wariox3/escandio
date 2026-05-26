@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from general.models.complemento import GenComplemento
@@ -6,14 +6,19 @@ from general.serializers.complemento import GenComplementoSerializador
 from general.filters.complemento import ComplementoFilter
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from contenedor.mixins import RolMixin
 from utilidades.holmio import Holmio
 
-class ComplementoViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+class ComplementoViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'complemento'
+    # Credenciales de Reddoc y la accion validar son sensibles: las
+    # restringimos a admin del contenedor aunque supervisor tenga
+    # editar=True sobre el modulo (puede ver, no tocar).
+    acciones_admin = ['create', 'update', 'partial_update', 'destroy', 'validar_action']
     queryset = GenComplemento.objects.all()
-    serializer_class = GenComplementoSerializador    
-    filter_backends = [DjangoFilterBackend, OrderingFilter]    
-    filterset_class = ComplementoFilter 
+    serializer_class = GenComplementoSerializador
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_class = ComplementoFilter
     serializadores = {
         'lista': GenComplementoSerializador
     }
