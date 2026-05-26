@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from ruteo.models.seguimiento import RutSeguimiento
@@ -7,15 +7,15 @@ from ruteo.filters.seguimiento import SeguimientoFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
+from contenedor.mixins import RolMixin
 
 
-
-class RutSeguimientoViewSet(viewsets.ModelViewSet):
+class RutSeguimientoViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'despacho'
     queryset = RutSeguimiento.objects.all()
     serializer_class = RutSeguimientoSerializador
-    permission_classes = [permissions.IsAuthenticated]    
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = SeguimientoFilter   
+    filterset_class = SeguimientoFilter
     serializadores = {
         'trafico' : RutSeguimientoSerializador
     }

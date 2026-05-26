@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from ruteo.models.ubicacion import RutUbicacion
@@ -7,18 +7,22 @@ from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.ubicacion import UbicacionFilter
 from ruteo.servicios.alerta import AlertaServicio
+from contenedor.mixins import RolMixin
 from decouple import config
 import logging
 import requests
 
 logger = logging.getLogger(__name__)
 
-class RutUbicacionViewSet(viewsets.ModelViewSet):
+class RutUbicacionViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'despacho'
+    # RETROCOMPAT MOVIL v1.6.4: POST /ruteo/ubicacion/ envia tracking en
+    # background sin perfil web. Ver contenedor/contrato_movil.py.
+    acciones_publicas = ['create', 'autocompletar', 'place_details']
     queryset = RutUbicacion.objects.all()
     serializer_class = RutUbicacionSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = UbicacionFilter   
+    filterset_class = UbicacionFilter
     serializadores = {
         'trafico' : RutUbicacionTraficoSerializador
     }

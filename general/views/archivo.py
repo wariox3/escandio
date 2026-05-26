@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from general.models.archivo import GenArchivo
@@ -9,15 +9,15 @@ from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from general.filters.archivo import ArchivoFilter
 from utilidades.excel_exportar import ExcelExportar
+from contenedor.mixins import RolMixin
 from django.http import HttpResponse
 from io import BytesIO
 
-class ArchivoViewSet(viewsets.ModelViewSet):
+class ArchivoViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = GenArchivo.objects.all()
     serializer_class = GenArchivoSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_class = ArchivoFilter 
+    filterset_class = ArchivoFilter
     serializadores = {'lista': GenArchivoSerializador}
 
     def get_serializer_class(self):

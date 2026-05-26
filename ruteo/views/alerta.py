@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter
@@ -7,12 +7,13 @@ from django.utils import timezone
 from ruteo.models.alerta import RutAlerta
 from ruteo.serializers.alerta import RutAlertaSerializador
 from ruteo.filters.alerta import AlertaFilter
+from contenedor.mixins import RolMixin
 
 
-class RutAlertaViewSet(viewsets.ModelViewSet):
+class RutAlertaViewSet(RolMixin, viewsets.ModelViewSet):
+    modulo = 'despacho'
     queryset = RutAlerta.objects.all()
     serializer_class = RutAlertaSerializador
-    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = AlertaFilter
     http_method_names = ['get', 'patch', 'delete', 'head', 'options']
