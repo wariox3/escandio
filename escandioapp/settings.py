@@ -12,8 +12,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-x)e8ci34g3_w6y6&p-=4lcnn2z@jnic9#4h(s8&8bhq_jz9mj!'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Se apaga automaticamente en prod (ENV='prod' en el .env del server) y queda
+# True en dev/test. Con DEBUG=True Django acumula connection.queries por la
+# vida del worker -> fue la causa del OOM del backend el 2026-06-01.
+DEBUG = config('ENV', default='dev') != 'prod'
 
 ALLOWED_HOSTS = ['*']
 
