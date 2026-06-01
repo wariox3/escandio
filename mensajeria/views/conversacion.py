@@ -29,13 +29,30 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
     ordering_fields = ['ultimo_mensaje_fecha', 'id', 'no_leidos']
 
     def _obtener_conexion(self):
+        # Devuelve la conexion del schema actual sin filtrar por estado, para que
+        # quien llame distinga "no configurada" / "pendiente" / "error" / "activo".
         contenedor = Contenedor.objects.filter(schema_name=connection.schema_name).first()
         if not contenedor:
             return None
-        return CtnWhatsappConexion.objects.filter(
-            contenedor=contenedor,
-            estado=CtnWhatsappConexion.ESTADO_ACTIVO,
-        ).first()
+        return CtnWhatsappConexion.objects.filter(contenedor=contenedor).first()
+
+    def _respuesta_si_no_activa(self, conexion):
+        if conexion is None:
+            return Response({
+                'detail': 'WhatsApp no está configurado para este contenedor.',
+                'codigo': 'whatsapp_no_configurado',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if conexion.estado == CtnWhatsappConexion.ESTADO_PENDIENTE:
+            return Response({
+                'detail': 'La conexión WhatsApp está pendiente de activación.',
+                'codigo': 'whatsapp_pendiente',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if conexion.estado == CtnWhatsappConexion.ESTADO_ERROR:
+            return Response({
+                'detail': f'Conexión WhatsApp con error: {conexion.error_mensaje or "sin detalle"}',
+                'codigo': 'whatsapp_error',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        return None
 
     @action(detail=True, methods=['get'])
     def mensajes(self, request, pk=None):
@@ -75,8 +92,9 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
         """
         conversacion = self.get_object()
         conexion = self._obtener_conexion()
-        if not conexion:
-            return Response({'detail': 'Sin conexión WhatsApp activa'}, status=status.HTTP_400_BAD_REQUEST)
+        error = self._respuesta_si_no_activa(conexion)
+        if error:
+            return error
 
         datos = request.data
         tipo = datos.get('tipo', 'texto')
@@ -227,8 +245,9 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
         variables = datos.get('plantilla_variables') or []
 
         conexion = self._obtener_conexion()
-        if not conexion:
-            return Response({'detail': 'Sin conexion WhatsApp activa'}, status=status.HTTP_400_BAD_REQUEST)
+        error = self._respuesta_si_no_activa(conexion)
+        if error:
+            return error
 
         nombre_cliente = (datos.get('nombre') or '').strip() or None
         conversacion, creada = MsjConversacion.objects.get_or_create(

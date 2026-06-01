@@ -229,6 +229,7 @@ class ContenedorViewSet(viewsets.ModelViewSet):
             c['whatsapp_phone_number_id'] = conexion.phone_number_id if conexion else None
             c['whatsapp_display'] = conexion.display_phone_number if conexion else None
             c['whatsapp_estado'] = conexion.estado if conexion else None
+            c['whatsapp_error_mensaje'] = conexion.error_mensaje if conexion else None
         return Response(contenedores, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path=r'admin-whatsapp/numeros', permission_classes=[permissions.IsAdminUser])
