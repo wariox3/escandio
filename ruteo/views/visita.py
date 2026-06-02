@@ -960,128 +960,141 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'entrega',)
-    def entrega_action(self, request):                     
+    def entrega_action(self, request):
         id = request.POST.get('id')
         imagenes = request.FILES.getlist('imagenes')
         firmas = request.FILES.getlist('firmas')
         fecha_entrega_parametro = request.POST.get('fecha_entrega')
-        datos_adicionales = request.POST.get('datos_adicionales')        
+        datos_adicionales = request.POST.get('datos_adicionales')
         if id and fecha_entrega_parametro:
             try:
                 fecha_entrega_nativa = datetime.strptime(fecha_entrega_parametro, '%Y-%m-%d %H:%M')
                 fecha_entrega = timezone.make_aware(fecha_entrega_nativa)
                 if fecha_entrega > timezone.now():
-                    return Response({'mensaje':'La fecha de entrega no puede ser mayor a la fecha actual', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)                             
+                    return Response({'mensaje':'La fecha de entrega no puede ser mayor a la fecha actual', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             except ValueError:
-                return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)            
+                return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             try:
-                visita = RutVisita.objects.get(pk=id)                            
-            except RutVisita.DoesNotExist:
-                return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)                               
-            if visita.despacho_id is None:
-                # Visita detachada de su despacho (admin libero/anulo/retiro/
-                # destroyo o rutear cleanup) mientras berkelio v1.6.4 (congelada)
-                # la tenia cacheada. Manejamos dos casos:
-                #   1. Si hay rastro (despacho_anterior_id) la re-vinculamos al
-                #      despacho original.
-                #   2. Si no hay rastro (visitas legacy detachadas antes del
-                #      deploy de este fix), dejamos que la entrega proceda
-                #      igual: mejor registrar la entrega huérfana que dejar
-                #      al conductor en error 400 sin salida. El counter del
-                #      despacho se vuelve no-op (filter pk=None).
-                if visita.despacho_anterior_id is not None:
-                    visita.despacho_id = visita.despacho_anterior_id
-                    visita.estado_despacho = True
-                    visita.despacho_anterior = None
-                    # Persistir aqui mismo: si la visita ya estaba entregada
-                    # (edge case) el flujo bajo retorna sin save y la
-                    # re-vinculacion se perderia.
-                    visita.save()
-                            
-            if visita.estado_entregado == False:
-                with transaction.atomic():                                                                                              
-                    datos_entrega = UtilidadGeneral.json_texto(datos_adicionales)
-                    visita.estado_entregado = True
-                    visita.fecha_entrega = fecha_entrega
-                    visita.datos_entrega = datos_entrega
-                    visita.save()
-                    RutDespacho.objects.filter(pk=visita.despacho_id).update(visitas_entregadas=F('visitas_entregadas') + 1)                                 
-                    backblaze = Backblaze()
-                    tenant = request.tenant.schema_name                    
-                    if imagenes:
-                        for idx, imagen in enumerate(imagenes):
-                            #file_content = imagen.read()
-                            file_content = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
-                            # Sufijo de indice para que cada foto tenga nombre
-                            # unico (antes todas se llamaban {id}.jpg y colisionaban).
-                            nombre_archivo = f'{id}_{idx}.jpg'
-                            id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
-                            archivo = GenArchivo()
-                            archivo.archivo_tipo_id = 2
-                            archivo.almacenamiento_id = id_almacenamiento
-                            archivo.nombre = nombre_archivo
-                            archivo.tipo = tipo
-                            archivo.tamano = tamano
-                            archivo.uuid = uuid
-                            archivo.codigo = id
-                            archivo.modelo = "RutVisita"
-                            archivo.url = url
-                            archivo.save()
-                    if firmas:
-                        for idx, firma in enumerate(firmas):
-                            # No comprimir porque daña el png
-                            file_content = firma.read()
-                            # Sufijo de indice por el mismo motivo que las
-                            # imagenes: evitar colision de nombres.
-                            nombre_archivo = f'{id}_{idx}.png'
-                            id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
-                            archivo = GenArchivo()
-                            archivo.archivo_tipo_id = 3
-                            archivo.almacenamiento_id = id_almacenamiento
-                            archivo.nombre = nombre_archivo
-                            archivo.tipo = tipo
-                            archivo.tamano = tamano
-                            archivo.uuid = uuid
-                            archivo.codigo = id
-                            archivo.modelo = "RutVisita"
-                            archivo.url = url
-                            archivo.save()                        
-                    configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_sincronizar_complemento')[0]
-                    if configuracion['rut_sincronizar_complemento']:
-                        imagenes_b64 = []
-                        if imagenes:                        
-                            for imagen in imagenes:    
-                                imagen.seek(0)   
-                                file_content = imagen.read()   
-                                base64_encoded = base64.b64encode(file_content).decode('utf-8')                                                    
-                                imagenes_b64.append({
-                                    'base64': base64_encoded,
-                                })     
-                        firmas_b64 = []
+                with transaction.atomic():
+                    # Lock de fila (select_for_update): serializa los reenvios
+                    # CONCURRENTES del auto-sync sobre la MISMA visita. Si un
+                    # segundo POST llega mientras el primero sigue dentro de la
+                    # transaccion (p.ej. todavia subiendo a Backblaze), espera
+                    # aqui hasta el commit del primero, lee estado_entregado=True
+                    # y cae en la rama "ya estaba entregada" sin duplicar
+                    # registro, archivos, contador ni notificacion. El lock es
+                    # POR FILA (pk): NO bloquea entregas de visitas distintas.
+                    # El reenvio SECUENCIAL (respuesta perdida) ya era idempotente
+                    # por el chequeo de estado_entregado; esto cierra el hueco del
+                    # solape concurrente que el auto-sync hace mas probable.
+                    visita = RutVisita.objects.select_for_update().get(pk=id)
+
+                    if visita.despacho_id is None:
+                        # Visita detachada de su despacho (admin libero/anulo/retiro/
+                        # destroyo o rutear cleanup) mientras berkelio v1.6.4 (congelada)
+                        # la tenia cacheada. Manejamos dos casos:
+                        #   1. Si hay rastro (despacho_anterior_id) la re-vinculamos al
+                        #      despacho original.
+                        #   2. Si no hay rastro (visitas legacy detachadas antes del
+                        #      deploy de este fix), dejamos que la entrega proceda
+                        #      igual: mejor registrar la entrega huérfana que dejar
+                        #      al conductor en error 400 sin salida. El counter del
+                        #      despacho se vuelve no-op (filter pk=None).
+                        if visita.despacho_anterior_id is not None:
+                            visita.despacho_id = visita.despacho_anterior_id
+                            visita.estado_despacho = True
+                            visita.despacho_anterior = None
+                            visita.save()
+
+                    # El chequeo de idempotencia va BAJO el lock: es lo que vuelve
+                    # seguro al reenvio concurrente.
+                    entrega_nueva = visita.estado_entregado == False
+                    if entrega_nueva:
+                        datos_entrega = UtilidadGeneral.json_texto(datos_adicionales)
+                        visita.estado_entregado = True
+                        visita.fecha_entrega = fecha_entrega
+                        visita.datos_entrega = datos_entrega
+                        visita.save()
+                        RutDespacho.objects.filter(pk=visita.despacho_id).update(visitas_entregadas=F('visitas_entregadas') + 1)
+                        backblaze = Backblaze()
+                        tenant = request.tenant.schema_name
+                        if imagenes:
+                            for idx, imagen in enumerate(imagenes):
+                                #file_content = imagen.read()
+                                file_content = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
+                                # Sufijo de indice para que cada foto tenga nombre
+                                # unico (antes todas se llamaban {id}.jpg y colisionaban).
+                                nombre_archivo = f'{id}_{idx}.jpg'
+                                id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
+                                archivo = GenArchivo()
+                                archivo.archivo_tipo_id = 2
+                                archivo.almacenamiento_id = id_almacenamiento
+                                archivo.nombre = nombre_archivo
+                                archivo.tipo = tipo
+                                archivo.tamano = tamano
+                                archivo.uuid = uuid
+                                archivo.codigo = id
+                                archivo.modelo = "RutVisita"
+                                archivo.url = url
+                                archivo.save()
                         if firmas:
-                            for firma in firmas:
-                                firma.seek(0)       
-                                file_content = firma.read()   
-                                base64_encoded = base64.b64encode(file_content).decode('utf-8')                                                    
-                                firmas_b64.append({
-                                    'base64': base64_encoded,
-                                })                                                                                                                                                                                                     
-                        VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
-                # Tras commit, notificar al cliente con la plantilla 'entregado'.
-                # Falla silenciosa: si Whatsapp esta caido o el tenant no lo tiene
-                # habilitado, NO bloqueamos la confirmacion de la entrega.
-                try:
-                    NotificacionServicio.notificar_visita_entregada(
-                        visita_id=visita.id,
-                        schema_name=request.tenant.schema_name,
-                        nombre_empresa=request.tenant.nombre,
-                        contenedor_id=request.tenant.id,
-                    )
-                except Exception:
-                    pass
-                return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
-            else:
+                            for idx, firma in enumerate(firmas):
+                                # No comprimir porque daña el png
+                                file_content = firma.read()
+                                # Sufijo de indice por el mismo motivo que las
+                                # imagenes: evitar colision de nombres.
+                                nombre_archivo = f'{id}_{idx}.png'
+                                id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
+                                archivo = GenArchivo()
+                                archivo.archivo_tipo_id = 3
+                                archivo.almacenamiento_id = id_almacenamiento
+                                archivo.nombre = nombre_archivo
+                                archivo.tipo = tipo
+                                archivo.tamano = tamano
+                                archivo.uuid = uuid
+                                archivo.codigo = id
+                                archivo.modelo = "RutVisita"
+                                archivo.url = url
+                                archivo.save()
+                        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_sincronizar_complemento')[0]
+                        if configuracion['rut_sincronizar_complemento']:
+                            imagenes_b64 = []
+                            if imagenes:
+                                for imagen in imagenes:
+                                    imagen.seek(0)
+                                    file_content = imagen.read()
+                                    base64_encoded = base64.b64encode(file_content).decode('utf-8')
+                                    imagenes_b64.append({
+                                        'base64': base64_encoded,
+                                    })
+                            firmas_b64 = []
+                            if firmas:
+                                for firma in firmas:
+                                    firma.seek(0)
+                                    file_content = firma.read()
+                                    base64_encoded = base64.b64encode(file_content).decode('utf-8')
+                                    firmas_b64.append({
+                                        'base64': base64_encoded,
+                                    })
+                            VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
+            except RutVisita.DoesNotExist:
+                return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not entrega_nueva:
                 return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
+            # Tras commit, notificar al cliente con la plantilla 'entregado'.
+            # Falla silenciosa: si Whatsapp esta caido o el tenant no lo tiene
+            # habilitado, NO bloqueamos la confirmacion de la entrega.
+            try:
+                NotificacionServicio.notificar_visita_entregada(
+                    visita_id=visita.id,
+                    schema_name=request.tenant.schema_name,
+                    nombre_empresa=request.tenant.nombre,
+                    contenedor_id=request.tenant.id,
+                )
+            except Exception:
+                pass
+            return Response({'mensaje': f'Entrega con exito'}, status=status.HTTP_200_OK)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
