@@ -649,9 +649,14 @@ components:
           type: string
           readOnly: true
           nullable: true
+        empresa_nombre:
+          type: string
+          nullable: true
+          readOnly: true
       required:
       - contenedor_id
       - despacho_id
+      - empresa_nombre
       - fecha
       - id
       - peso

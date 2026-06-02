@@ -245,6 +245,27 @@ class ContratoV2DespachoScopeTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
 
+    def test_despacho_incluye_empresa_nombre(self):
+        # Campo aditivo: nombre comercial de la transportadora (Contenedor.nombre)
+        # para el boton de WhatsApp de la app. Ver memoria empresa-nombre-por-orden.
+        r = self.client.get(
+            f'/api/v2/despachos/{self.despacho_mio.id}/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['empresa_nombre'], self.mio.nombre)
+
+    def test_empresa_nombre_es_null_safe(self):
+        # Si el Contenedor no tiene nombre, devuelve null (la app cae al slug).
+        self.mio.nombre = None
+        self.mio.save(update_fields=['nombre'])
+        r = self.client.get(
+            f'/api/v2/despachos/{self.despacho_mio.id}/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNone(r.data['empresa_nombre'])
+
     def test_no_carga_despacho_de_contenedor_ajeno(self):
         r = self.client.get(
             f'/api/v2/despachos/{self.despacho_ajeno.id}/',
