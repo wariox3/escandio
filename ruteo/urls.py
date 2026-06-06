@@ -9,6 +9,7 @@ from .views.novedad_tipo import RutNovedadTipoViewSet
 from .views.novedad import RutNovedadViewSet
 from .views.seguimiento import RutSeguimientoViewSet
 from .views.alerta import RutAlertaViewSet
+from .views.reporte import ReporteMensajeroView
 from rest_framework import routers
 
 router = routers.DefaultRouter()
@@ -23,6 +24,7 @@ router.register(r'novedad_tipo', RutNovedadTipoViewSet)
 router.register(r'seguimiento', RutSeguimientoViewSet)
 router.register(r'alerta', RutAlertaViewSet)
 
-urlpatterns = [    
+urlpatterns = [
+    path('reporte/mensajero/', ReporteMensajeroView.as_view(), name='reporte-mensajero'),
     path('', include(router.urls)),
 ]

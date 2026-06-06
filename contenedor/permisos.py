@@ -38,6 +38,7 @@ MODULOS_OPERATIVOS = (
     'flota',
     'novedad',
     'contacto',
+    'reporte',
 )
 
 MODULOS_ADMINISTRATIVOS = (
