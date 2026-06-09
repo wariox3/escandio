@@ -413,8 +413,7 @@ class VisitaServicio():
         }
         holmio = Holmio()
         respuesta = holmio.ruteo_pendiente(parametros)
-        if respuesta['error'] == False:  
-            configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_decodificar_direcciones')[0]        
+        if respuesta['error'] == False:
             google = Google()
             franjas = RutFranja.objects.all()
             cantidad = 0                                                    
@@ -453,28 +452,26 @@ class VisitaServicio():
                     'cita_inicio': guia.get('citaInicio'),
                     'cita_fin': guia.get('citaFin'),
                 } 
-                if direccion_destinatario:                   
-                    if configuracion['rut_decodificar_direcciones']:
-                        # Ojo usar el servicio de direccion
-                        direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
-                        if direccion:
-                            data['estado_decodificado'] = True            
-                            data['latitud'] = direccion.latitud                        
-                            data['longitud'] = direccion.longitud
-                            data['destinatario_direccion_formato'] = direccion.direccion_formato
-                            data['resultados'] = direccion.resultados
-                            if direccion.cantidad_resultados > 1:
-                                data['estado_decodificado_alerta'] = True                                
-                        else:                    
-                            respuesta = google.decodificar_direccion(data['destinatario_direccion'])
-                            if respuesta['error'] == False:   
-                                data['estado_decodificado'] = True            
-                                data['latitud'] = respuesta['latitud']
-                                data['longitud'] = respuesta['longitud']
-                                data['destinatario_direccion_formato'] = respuesta['direccion_formato']
-                                data['resultados'] = respuesta['resultados']
-                                if respuesta['cantidad_resultados'] > 1:
-                                    data['estado_decodificado_alerta'] = True
+                if direccion_destinatario:
+                    direccion = CtnDireccion.objects.filter(direccion=direccion_destinatario).first()
+                    if direccion:
+                        data['estado_decodificado'] = True
+                        data['latitud'] = direccion.latitud
+                        data['longitud'] = direccion.longitud
+                        data['destinatario_direccion_formato'] = direccion.direccion_formato
+                        data['resultados'] = direccion.resultados
+                        if direccion.cantidad_resultados > 1:
+                            data['estado_decodificado_alerta'] = True
+                    else:
+                        respuesta = google.decodificar_direccion(data['destinatario_direccion'])
+                        if respuesta['error'] == False:
+                            data['estado_decodificado'] = True
+                            data['latitud'] = respuesta['latitud']
+                            data['longitud'] = respuesta['longitud']
+                            data['destinatario_direccion_formato'] = respuesta['direccion_formato']
+                            data['resultados'] = respuesta['resultados']
+                            if respuesta['cantidad_resultados'] > 1:
+                                data['estado_decodificado_alerta'] = True
                 if data['estado_decodificado'] == True:
                     respuesta = VisitaServicio.ubicar_punto(franjas, data['latitud'], data['longitud'])
                     if respuesta['encontrado']:
