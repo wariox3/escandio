@@ -9,6 +9,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from movil import responses
 from movil.serializers.auth import (
+    ActualizarPerfilMovilSerializer,
     LoginSerializer,
     RegistroSerializer,
     SesionSerializer,
@@ -132,6 +133,29 @@ class MeView(MovilApiMixin, APIView):
     @extend_schema(responses={200: UsuarioMovilSerializer}, tags=['auth'])
     def get(self, request):
         return Response(UsuarioMovilSerializer(request.user).data)
+
+    @extend_schema(
+        request=ActualizarPerfilMovilSerializer,
+        responses={200: UsuarioMovilSerializer},
+        tags=['auth'],
+    )
+    def patch(self, request):
+        """Actualiza el perfil del usuario autenticado (por ahora solo el nombre).
+
+        Solo el dueno del token se modifica a si mismo: se opera sobre
+        request.user, no hay id en la ruta. Devuelve el MISMO shape que GET me/.
+        """
+        entrada = ActualizarPerfilMovilSerializer(data=request.data)
+        if not entrada.is_valid():
+            return responses.error(
+                'El nombre es obligatorio (maximo 80 caracteres)',
+                responses.COD_PARAMETROS, 400, titulo='Datos invalidos',
+                extra={'validaciones': entrada.errors},
+            )
+        usuario = request.user
+        usuario.nombre = entrada.validated_data['nombre']
+        usuario.save(update_fields=['nombre'])
+        return Response(UsuarioMovilSerializer(usuario).data)
 
 
 class TokenRefreshMovilView(MovilApiMixin, TokenRefreshView):

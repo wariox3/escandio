@@ -69,3 +69,12 @@ class RegistroSerializer(serializers.Serializer):
 
 class SolicitarClaveSerializer(serializers.Serializer):
     username = serializers.EmailField()
+
+
+class ActualizarPerfilMovilSerializer(serializers.Serializer):
+    """Edicion de perfil desde la app movil. Por ahora solo el nombre.
+
+    CharField recorta espacios (trim_whitespace) y rechaza vacio
+    (allow_blank=False por defecto). max_length=80 se valida tras el trim.
+    """
+    nombre = serializers.CharField(max_length=80, trim_whitespace=True)

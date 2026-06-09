@@ -21,6 +21,7 @@ Endpoints — ver paths y shapes exactos en openapi_v2.yaml:
     POST /api/v2/auth/token/refresh/     -> {access, refresh}
     POST /api/v2/auth/logout/            -> 200 {mensaje}
     GET  /api/v2/auth/me/                -> usuario autenticado (estado, acceso_movil)
+    PATCH /api/v2/auth/me/               -> actualiza el nombre, devuelve el usuario
     POST /api/v2/auth/clave/solicitar/   -> 200 {mensaje}
     GET  /api/v2/despachos/              -> lista de despachos asignados al conductor
     GET  /api/v2/despachos/<id>/         -> {schema_name, despacho_id, ...}
@@ -56,6 +57,7 @@ ENDPOINTS_MOVIL_V2 = (
     'POST /api/v2/auth/token/refresh/',
     'POST /api/v2/auth/logout/',
     'GET /api/v2/auth/me/',
+    'PATCH /api/v2/auth/me/',
     'POST /api/v2/auth/clave/solicitar/',
     'GET /api/v2/despachos/',
     'GET /api/v2/despachos/<id>/',

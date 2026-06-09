@@ -118,6 +118,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/UsuarioMovil'
           description: ''
+    patch:
+      operationId: auth_me_partial_update
+      description: |-
+        Actualiza el perfil del usuario autenticado (por ahora solo el nombre).
+
+        Solo el dueno del token se modifica a si mismo: se opera sobre
+        request.user, no hay id en la ruta. Devuelve el MISMO shape que GET me/.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedActualizarPerfilMovilRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedActualizarPerfilMovilRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedActualizarPerfilMovilRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioMovil'
+          description: ''
   /api/v2/auth/registro/:
     post:
       operationId: auth_registro_create
@@ -755,6 +784,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NovedadTipoMovil'
+    PatchedActualizarPerfilMovilRequest:
+      type: object
+      description: |-
+        Edicion de perfil desde la app movil. Por ahora solo el nombre.
+
+        CharField recorta espacios (trim_whitespace) y rechaza vacio
+        (allow_blank=False por defecto). max_length=80 se valida tras el trim.
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 80
     RegistroRequest:
       type: object
       properties:

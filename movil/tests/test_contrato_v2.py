@@ -168,6 +168,46 @@ class ContratoV2AuthTests(TestCase):
         self.assertIn('estado', r.data)
         self.assertIn('acceso_movil', r.data)
 
+    def _token(self):
+        login = self.client.post('/api/v2/auth/login/', {
+            'username': self.user.username, 'password': self.password,
+        }, format='json')
+        return login.data['access']
+
+    def test_patch_me_actualiza_nombre_y_devuelve_shape_de_me(self):
+        r = self.client.patch(
+            '/api/v2/auth/me/', {'nombre': '  Pedro Perez  '}, format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self._token()}',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        # trim aplicado
+        self.assertEqual(r.data['nombre'], 'Pedro Perez')
+        # mismo shape que GET me/ (UsuarioMovilSerializer)
+        for clave in ('id', 'username', 'nombre', 'estado', 'acceso_movil'):
+            self.assertIn(clave, r.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.nombre, 'Pedro Perez')
+
+    def test_patch_me_nombre_vacio_devuelve_error_400(self):
+        r = self.client.patch(
+            '/api/v2/auth/me/', {'nombre': '   '}, format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self._token()}',
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('titulo', r.data)
+        self.assertIn('mensaje', r.data)
+
+    def test_patch_me_nombre_muy_largo_devuelve_error_400(self):
+        r = self.client.patch(
+            '/api/v2/auth/me/', {'nombre': 'x' * 81}, format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self._token()}',
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_patch_me_exige_autenticacion(self):
+        r = self.client.patch('/api/v2/auth/me/', {'nombre': 'X'}, format='json')
+        self.assertIn(r.status_code, (401, 403), r.content)
+
 
 class ContratoV2PermisosTests(TestCase):
     """Los endpoints de tenant exigen autenticacion (EsConductorMovil)."""
