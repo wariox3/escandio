@@ -494,21 +494,25 @@ class VisitaServicio():
             }
 
     @staticmethod
-    def entrega_complemento(visita: RutVisita, imagenes_b64, firmas_b64, datos_entrega): 
+    def entrega_complemento(visita: RutVisita, imagenes_b64, firmas_b64, datos_entrega):
+        if visita.fecha_entrega is None:
+            return {'error': True, 'mensaje': 'La visita no tiene fecha de entrega'}
         holmio = Holmio()
         fecha_formateada = visita.fecha_entrega.strftime('%Y-%m-%d %H:%M')
         parametros = {
             'codigoGuia': visita.numero,
             'fechaEntrega': fecha_formateada,
-            'usuario': 'ruteo'            
+            'usuario': 'ruteo'
         }
         if imagenes_b64:
             parametros['imagenes'] = imagenes_b64
         if firmas_b64:
             parametros['firmarBase64'] = firmas_b64[0]['base64']
         if datos_entrega:
-            parametros.update(datos_entrega)                    
+            parametros.update(datos_entrega)
         respuesta = holmio.entrega(parametros)
         if respuesta['error'] == False:
             visita.estado_entregado_complemento = True
-            visita.save()
+            visita.save(update_fields=['estado_entregado_complemento'])
+            return {'error': False}
+        return respuesta

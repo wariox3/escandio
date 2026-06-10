@@ -1,4 +1,5 @@
 from b2sdk.v2 import InMemoryAccountInfo, B2Api, UploadSourceBytes
+from b2sdk.v2.exception import B2Error
 from decouple import config
 from datetime import datetime
 import base64
@@ -51,10 +52,13 @@ class Backblaze():
         bucket_nombre = config('B2_BUCKET_NAME')
         bucket = self.b2_api.get_bucket_by_name(bucket_nombre)
         if bucket is None:
-            raise ValueError(f"El bucket '{bucket_nombre}' no existe.")         
-                        
-        downloaded_file = bucket.download_file_by_id(archivo_id)  
-        return downloaded_file.response.content    
+            raise ValueError(f"El bucket '{bucket_nombre}' no existe.")
+
+        try:
+            downloaded_file = bucket.download_file_by_id(archivo_id)
+        except B2Error:
+            return None
+        return downloaded_file.response.content
     
     def eliminar(self, archivo_id):
         try:

@@ -1272,31 +1272,47 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         return response
 
     @action(detail=False, methods=["post"], url_path=r'entrega-complemento',)
-    def entrega_complemento_action(self, request):   
-        backblaze = Backblaze()
-        visitas = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)                
+    def entrega_complemento_action(self, request):
+        try:
+            backblaze = Backblaze()
+        except Exception as e:
+            return Response({'mensaje': f'No fue posible conectar con el almacenamiento: {e}', 'codigo': 1}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        visitas = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)
+        procesadas = 0
+        fallidas = []
         for visita in visitas:
-            imagenes_b64 = []
-            archivos = GenArchivo.objects.filter(modelo='RutVisita', codigo=visita.id, archivo_tipo_id=2)
-            for archivo in archivos:
-                contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
-                if contenido is not None:
-                    contenido_base64 = base64.b64encode(contenido).decode('utf-8')                    
-                    imagenes_b64.append({
-                        'comprimido': True,
-                        'base64': contenido_base64,
-                    })   
-            firmas_b64 = []
-            archivos = GenArchivo.objects.filter(modelo='RutVisita', codigo=visita.id, archivo_tipo_id=3)
-            for archivo in archivos:
-                contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
-                if contenido is not None:
-                    contenido_base64 = base64.b64encode(contenido).decode('utf-8')                    
-                    firmas_b64.append({
-                        'base64': contenido_base64,
-                    })                              
-            VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, visita.datos_entrega)
-        return Response({'mensaje': f'Entrega complemento {visitas.count()}'}, status=status.HTTP_200_OK)
+            try:
+                imagenes_b64 = []
+                archivos = GenArchivo.objects.filter(modelo='RutVisita', codigo=visita.id, archivo_tipo_id=2)
+                for archivo in archivos:
+                    contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
+                    if contenido is not None:
+                        contenido_base64 = base64.b64encode(contenido).decode('utf-8')
+                        imagenes_b64.append({
+                            'comprimido': True,
+                            'base64': contenido_base64,
+                        })
+                firmas_b64 = []
+                archivos = GenArchivo.objects.filter(modelo='RutVisita', codigo=visita.id, archivo_tipo_id=3)
+                for archivo in archivos:
+                    contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
+                    if contenido is not None:
+                        contenido_base64 = base64.b64encode(contenido).decode('utf-8')
+                        firmas_b64.append({
+                            'base64': contenido_base64,
+                        })
+                respuesta = VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, visita.datos_entrega)
+                if respuesta['error']:
+                    fallidas.append({'id': visita.id, 'numero': visita.numero, 'mensaje': respuesta['mensaje']})
+                else:
+                    procesadas += 1
+            except Exception as e:
+                fallidas.append({'id': visita.id, 'numero': visita.numero, 'mensaje': str(e)})
+        return Response({
+            'mensaje': f'Entrega complemento: {procesadas} procesadas, {len(fallidas)} con error',
+            'procesadas': procesadas,
+            'fallidas': fallidas,
+        }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=["get"], url_path=r'estado',)
     def estado_action(self, request):           
