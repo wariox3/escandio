@@ -49,6 +49,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'importar_complemento_action',
         'rutear',
         'eliminar_todos',
+        'entrega_complemento_action',
     ]
     # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
     # 'list', 'retrieve' y 'entrega_action' DEBEN permanecer aqui. La app movil
@@ -1278,9 +1279,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         except Exception as e:
             return Response({'mensaje': f'No fue posible conectar con el almacenamiento: {e}', 'codigo': 1}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         visitas = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)
+        total_pendientes = visitas.count()
+        limite_lote = 50
         procesadas = 0
         fallidas = []
-        for visita in visitas:
+        for visita in visitas.order_by('id')[:limite_lote]:
             try:
                 imagenes_b64 = []
                 archivos = GenArchivo.objects.filter(modelo='RutVisita', codigo=visita.id, archivo_tipo_id=2)
@@ -1308,10 +1311,14 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     procesadas += 1
             except Exception as e:
                 fallidas.append({'id': visita.id, 'numero': visita.numero, 'mensaje': str(e)})
+            if procesadas == 0 and len(fallidas) >= 5:
+                break
+        sin_procesar = total_pendientes - procesadas - len(fallidas)
         return Response({
-            'mensaje': f'Entrega complemento: {procesadas} procesadas, {len(fallidas)} con error',
+            'mensaje': f'Entrega complemento: {procesadas} sincronizadas, {len(fallidas)} con error, {sin_procesar} sin procesar',
             'procesadas': procesadas,
             'fallidas': fallidas,
+            'sin_procesar': sin_procesar,
         }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=["get"], url_path=r'estado',)
