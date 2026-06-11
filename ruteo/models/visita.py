@@ -36,6 +36,7 @@ class RutVisita(models.Model):
     estado_despacho = models.BooleanField(default = False)
     estado_entregado = models.BooleanField(default = False)
     estado_entregado_complemento = models.BooleanField(default = False)
+    entrega_complemento_intentos = models.PositiveIntegerField(default=0)
     estado_novedad = models.BooleanField(default = False)
     estado_devolucion = models.BooleanField(default = False)
     orden = models.IntegerField(default=0)

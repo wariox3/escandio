@@ -496,6 +496,7 @@ class VisitaServicio():
     @staticmethod
     def entrega_complemento(visita: RutVisita, imagenes_b64, firmas_b64, datos_entrega):
         if visita.fecha_entrega is None:
+            VisitaServicio._sumar_intento_complemento(visita)
             return {'error': True, 'mensaje': 'La visita no tiene fecha de entrega'}
         holmio = Holmio()
         fecha_formateada = visita.fecha_entrega.strftime('%Y-%m-%d %H:%M')
@@ -515,4 +516,11 @@ class VisitaServicio():
             visita.estado_entregado_complemento = True
             visita.save(update_fields=['estado_entregado_complemento'])
             return {'error': False}
+        if respuesta.get('rechazo'):
+            VisitaServicio._sumar_intento_complemento(visita)
         return respuesta
+
+    @staticmethod
+    def _sumar_intento_complemento(visita: RutVisita):
+        visita.entrega_complemento_intentos += 1
+        visita.save(update_fields=['entrega_complemento_intentos'])

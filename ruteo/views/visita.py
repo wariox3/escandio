@@ -1278,12 +1278,16 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             backblaze = Backblaze()
         except Exception as e:
             return Response({'mensaje': f'No fue posible conectar con el almacenamiento: {e}', 'codigo': 1}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        visitas = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)
+        pendientes = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)
+        limite_intentos = 5
+        if request.data.get('reiniciar_descartadas'):
+            pendientes.filter(entrega_complemento_intentos__gte=limite_intentos).update(entrega_complemento_intentos=0)
+        visitas = pendientes.filter(entrega_complemento_intentos__lt=limite_intentos)
         total_pendientes = visitas.count()
         limite_lote = 50
         procesadas = 0
         fallidas = []
-        for visita in visitas.order_by('id')[:limite_lote]:
+        for visita in visitas.order_by('entrega_complemento_intentos', 'id')[:limite_lote]:
             try:
                 imagenes_b64 = []
                 archivos = GenArchivo.objects.filter(modelo='RutVisita', codigo=visita.id, archivo_tipo_id=2)
@@ -1314,11 +1318,16 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             if procesadas == 0 and len(fallidas) >= 5:
                 break
         sin_procesar = total_pendientes - procesadas - len(fallidas)
+        descartadas = pendientes.filter(entrega_complemento_intentos__gte=limite_intentos).count()
+        mensaje = f'Entrega complemento: {procesadas} sincronizadas, {len(fallidas)} con error, {sin_procesar} sin procesar'
+        if descartadas:
+            mensaje += f', {descartadas} descartadas tras {limite_intentos} intentos'
         return Response({
-            'mensaje': f'Entrega complemento: {procesadas} sincronizadas, {len(fallidas)} con error, {sin_procesar} sin procesar',
+            'mensaje': mensaje,
             'procesadas': procesadas,
             'fallidas': fallidas,
             'sin_procesar': sin_procesar,
+            'descartadas': descartadas,
         }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=["get"], url_path=r'estado',)

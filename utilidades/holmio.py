@@ -35,7 +35,7 @@ class Holmio():
             if error_codigo == 1:
                 return {'error':False}
             detalle = datos.get('errorMensaje') or datos.get('mensaje') or 'sin detalle'
-            return {'error':True, 'mensaje':f'Ocurrio un error con la entrega: {detalle}'}
+            return {'error':True, 'rechazo':True, 'mensaje':f'Ocurrio un error con la entrega: {detalle}'}
         else:
             return {'error':True, 'mensaje':f'Ocurrio un error con la clase: {respuesta["mensaje"]}'}
 
