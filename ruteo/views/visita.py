@@ -50,7 +50,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'rutear',
         'eliminar_todos',
         'entrega_complemento_action',
+        'entrega_complemento_resumen_action',
     ]
+    LIMITE_LOTE_COMPLEMENTO = 50
+    LIMITE_INTENTOS_COMPLEMENTO = 5
     # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
     # 'list', 'retrieve' y 'entrega_action' DEBEN permanecer aqui. La app movil
     # v1.6.4 publicada los consume y no se puede actualizar. Quitarlos rompe la
@@ -1279,12 +1282,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         except Exception as e:
             return Response({'mensaje': f'No fue posible conectar con el almacenamiento: {e}', 'codigo': 1}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         pendientes = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)
-        limite_intentos = 5
+        limite_intentos = self.LIMITE_INTENTOS_COMPLEMENTO
         if request.data.get('reiniciar_descartadas'):
             pendientes.filter(entrega_complemento_intentos__gte=limite_intentos).update(entrega_complemento_intentos=0)
         visitas = pendientes.filter(entrega_complemento_intentos__lt=limite_intentos)
         total_pendientes = visitas.count()
-        limite_lote = 50
+        limite_lote = self.LIMITE_LOTE_COMPLEMENTO
         procesadas = 0
         fallidas = []
         for visita in visitas.order_by('entrega_complemento_intentos', 'id')[:limite_lote]:
@@ -1329,7 +1332,17 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             'sin_procesar': sin_procesar,
             'descartadas': descartadas,
         }, status=status.HTTP_200_OK)
-    
+
+    @action(detail=False, methods=["get"], url_path=r'entrega-complemento/resumen',)
+    def entrega_complemento_resumen_action(self, request):
+        pendientes = RutVisita.objects.filter(estado_entregado=True, estado_entregado_complemento=False)
+        descartadas = pendientes.filter(entrega_complemento_intentos__gte=self.LIMITE_INTENTOS_COMPLEMENTO).count()
+        return Response({
+            'pendientes': pendientes.count() - descartadas,
+            'descartadas': descartadas,
+            'lote': self.LIMITE_LOTE_COMPLEMENTO,
+        }, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["get"], url_path=r'estado',)
     def estado_action(self, request):           
         id = request.query_params.get('id', 10)
