@@ -5,7 +5,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import authenticate
 from decouple import config
 from contenedor.serializers.user import CustomTokenObtainPairSerializer, UserSerializer
-from .turnstile import CloudflareTurnstile  # Importación comentada ya que no se usará Turnstile
+from .turnstile import CloudflareTurnstile
 
 class AdminLogin(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -61,7 +61,7 @@ class Login(TokenObtainPairView):
 
     def post(self, request, *args, **kwargs):
         try:
-            turnstile_token = request.data.get('cf_turnstile_response', '')  # Ya no se necesita el token de Turnstile
+            turnstile_token = request.data.get('cf_turnstile_response', '')
             proyecto = request.data.get('proyecto', 'REDDOC').upper()
 
             auth_interna = request.headers.get('X-Internal-Auth') == config('AUT_INTERNA')
@@ -74,15 +74,11 @@ class Login(TokenObtainPairView):
                     'proyectos_validos': proyectos_validos
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Obtener secret key para el proyecto (comentado porque ya no se usa Turnstile)
             turnstile_secret_key = config(f'CF_TURNSTILE_SECRET_KEY_{proyecto}', default='')
-            
-            # Verificar entorno (la verificación de entorno ya no es necesaria para Turnstile)
             env = config('ENV', default='prod').lower()
-            
-            # Sección de verificación de Turnstile completamente comentada
-            # Ya no se valida Turnstile en ningún entorno, ni siquiera en producción
-            if env not in ['dev', 'test'] and turnstile_secret_key and proyecto != 'RUTEOAPP' and not auth_interna:
+            turnstile_habilitado = config('ENABLE_TURNSTILE', default=True, cast=bool)
+
+            if turnstile_habilitado and env not in ['dev', 'test'] and turnstile_secret_key and proyecto != 'RUTEOAPP' and not auth_interna:
                 client_ip = request.META.get('HTTP_X_FORWARDED_FOR') or request.META.get('REMOTE_ADDR')
                 try:
                     CloudflareTurnstile.verify_token(turnstile_token, turnstile_secret_key, client_ip)
@@ -93,7 +89,6 @@ class Login(TokenObtainPairView):
                         'codigo': 8 
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Resto de la lógica de autenticación...
             username = request.data.get('username', '').strip()
             password = request.data.get('password', '').strip()
             
