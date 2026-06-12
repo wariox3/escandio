@@ -28,6 +28,12 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
     # por PermisoModuloEditar('novedad') via RolMixin.
     modulo = 'novedad'
     acciones_publicas = ['nuevo_action', 'solucionar']
+    acciones_admin = [
+        'nuevo_complemento_action',
+        'nuevo_complemento_resumen_action',
+    ]
+    LIMITE_LOTE_COMPLEMENTO = 50
+    LIMITE_INTENTOS_COMPLEMENTO = 5
     queryset = RutNovedad.objects.all()
     serializer_class = RutNovedadSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -178,38 +184,82 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)  
 
     @action(detail=False, methods=["post"], url_path=r'nuevo_complemento',)
-    def nuevo_complemento_action(self, request):   
-        backblaze = Backblaze()
-        novedades = RutNovedad.objects.filter(nuevo_complemento=False)                
-        for novedad in novedades:
-            imagenes_b64 = []
-            archivos = GenArchivo.objects.filter(modelo='RutNovedad', codigo=novedad.id, archivo_tipo_id=2)
-            for archivo in archivos:
-                contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
-                if contenido is not None:
-                    contenido_base64 = base64.b64encode(contenido).decode('utf-8')                    
-                    imagenes_b64.append({
-                        'comprimido': True,
-                        'base64': contenido_base64,
-                    })                                
-            self.nuevo_complemento(novedad, imagenes_b64)
-        return Response({'mensaje': f'Nuevo complemento {novedades.count()}'}, status=status.HTTP_200_OK)
+    def nuevo_complemento_action(self, request):
+        try:
+            backblaze = Backblaze()
+        except Exception as e:
+            return Response({'mensaje': f'No fue posible conectar con el almacenamiento: {e}', 'codigo': 1}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        pendientes = RutNovedad.objects.filter(nuevo_complemento=False)
+        limite_intentos = self.LIMITE_INTENTOS_COMPLEMENTO
+        if request.data.get('reiniciar_descartadas'):
+            pendientes.filter(nuevo_complemento_intentos__gte=limite_intentos).update(nuevo_complemento_intentos=0)
+        novedades = pendientes.filter(nuevo_complemento_intentos__lt=limite_intentos)
+        total_pendientes = novedades.count()
+        procesadas = 0
+        fallidas = []
+        for novedad in novedades.select_related('visita').order_by('nuevo_complemento_intentos', 'id')[:self.LIMITE_LOTE_COMPLEMENTO]:
+            try:
+                imagenes_b64 = []
+                archivos = GenArchivo.objects.filter(modelo='RutNovedad', codigo=novedad.id, archivo_tipo_id=2)
+                for archivo in archivos:
+                    contenido = backblaze.descargar_bytes(archivo.almacenamiento_id)
+                    if contenido is not None:
+                        contenido_base64 = base64.b64encode(contenido).decode('utf-8')
+                        imagenes_b64.append({
+                            'comprimido': True,
+                            'base64': contenido_base64,
+                        })
+                respuesta = self.nuevo_complemento(novedad, imagenes_b64)
+                if respuesta['error']:
+                    fallidas.append({'id': novedad.id, 'numero': novedad.visita.numero, 'mensaje': respuesta['mensaje']})
+                else:
+                    procesadas += 1
+            except Exception as e:
+                fallidas.append({'id': novedad.id, 'numero': novedad.visita.numero, 'mensaje': str(e)})
+            if procesadas == 0 and len(fallidas) >= 5:
+                break
+        sin_procesar = total_pendientes - procesadas - len(fallidas)
+        descartadas = pendientes.filter(nuevo_complemento_intentos__gte=limite_intentos).count()
+        mensaje = f'Novedad complemento: {procesadas} sincronizadas, {len(fallidas)} con error, {sin_procesar} sin procesar'
+        if descartadas:
+            mensaje += f', {descartadas} descartadas tras {limite_intentos} intentos'
+        return Response({
+            'mensaje': mensaje,
+            'procesadas': procesadas,
+            'fallidas': fallidas,
+            'sin_procesar': sin_procesar,
+            'descartadas': descartadas,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path=r'nuevo_complemento/resumen',)
+    def nuevo_complemento_resumen_action(self, request):
+        pendientes = RutNovedad.objects.filter(nuevo_complemento=False)
+        descartadas = pendientes.filter(nuevo_complemento_intentos__gte=self.LIMITE_INTENTOS_COMPLEMENTO).count()
+        return Response({
+            'pendientes': pendientes.count() - descartadas,
+            'descartadas': descartadas,
+            'lote': self.LIMITE_LOTE_COMPLEMENTO,
+        }, status=status.HTTP_200_OK)
 
     def nuevo_complemento(self, novedad: RutNovedad, imagenes_b64):
-        holmio = Holmio()        
+        holmio = Holmio()
         parametros = {
-            'codigoGuia': novedad.visita.numero,            
+            'codigoGuia': novedad.visita.numero,
             'codigoNovedadTipo': novedad.novedad_tipo_id,
             'descripcion': novedad.descripcion,
             'usuario': 'ruteo'
         }
         if imagenes_b64:
-            parametros['imagenes'] = imagenes_b64                    
+            parametros['imagenes'] = imagenes_b64
         respuesta = holmio.novedad(parametros)
         if respuesta['error'] == False:
             novedad.nuevo_complemento = True
-            novedad.save()
-        return True          
+            novedad.save(update_fields=['nuevo_complemento'])
+            return {'error': False}
+        if respuesta.get('rechazo'):
+            novedad.nuevo_complemento_intentos += 1
+            novedad.save(update_fields=['nuevo_complemento_intentos'])
+        return respuesta
 
 
 

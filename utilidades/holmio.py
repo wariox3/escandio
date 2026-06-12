@@ -40,9 +40,13 @@ class Holmio():
             return {'error':True, 'mensaje':f'Ocurrio un error con la clase: {respuesta["mensaje"]}'}
 
     def novedad(self, parametros):
-        url = "/api/transporte/novedad/nuevo"        
-        respuesta = self.consumirPost(parametros, url)        
+        url = "/api/transporte/novedad/nuevo"
+        respuesta = self.consumirPost(parametros, url)
         if respuesta['status'] == 200:
+            datos = respuesta['datos']
+            if isinstance(datos, dict) and datos.get('error') == True:
+                detalle = datos.get('errorMensaje') or datos.get('mensaje') or 'sin detalle'
+                return {'error':True, 'rechazo':True, 'mensaje':f'Ocurrio un error con la novedad: {detalle}'}
             return {'error':False}
         else:
             return {'error':True, 'mensaje':f'Ocurrio un error con la clase: {respuesta["mensaje"]}'}

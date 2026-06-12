@@ -9,8 +9,9 @@ class RutNovedad(models.Model):
     descripcion = models.CharField(max_length=255, null=True)
     solucion = models.CharField(max_length=255, null=True)
     estado_solucion = models.BooleanField(default = False)
-    nuevo_complemento = models.BooleanField(default = False) 
-    movil_token = models.CharField(max_length=50, null=True)   
+    nuevo_complemento = models.BooleanField(default = False)
+    nuevo_complemento_intentos = models.PositiveIntegerField(default=0)
+    movil_token = models.CharField(max_length=50, null=True)
     visita = models.ForeignKey(RutVisita, on_delete=models.CASCADE, related_name='novedades_visita_rel')
     novedad_tipo = models.ForeignKey(RutNovedadTipo, on_delete=models.PROTECT, related_name='novedades_novedad_tipo_rel')        
 
