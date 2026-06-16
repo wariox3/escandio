@@ -1,4 +1,9 @@
+import logging
+from pathlib import Path
+
+from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from django_tenants.utils import schema_context
 
 from contenedor.models import Contenedor
@@ -17,6 +22,7 @@ class Command(BaseCommand):
         parser.add_argument('--solo-novedades', action='store_true', help='Sincroniza solo novedades.')
 
     def handle(self, *args, **options):
+        self._logger = self._configurar_logger()
         contenedores = Contenedor.objects.exclude(schema_name='public')
         if options.get('schema'):
             contenedores = contenedores.filter(schema_name=options['schema'])
@@ -24,21 +30,39 @@ class Command(BaseCommand):
         hacer_entregas = not options['solo_novedades']
         hacer_novedades = not options['solo_entregas']
 
+        self._log(f'inicio ({timezone.now():%Y-%m-%d %H:%M:%S})')
+        contenedores_activos = 0
+        totales = {'procesadas': 0, 'fallidas': 0, 'descartadas': 0}
         for contenedor in contenedores.order_by('schema_name'):
             try:
                 with schema_context(contenedor.schema_name):
                     configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_sincronizar_complemento').first()
                     if not (configuracion and configuracion['rut_sincronizar_complemento']):
                         continue
-
+                    contenedores_activos += 1
                     if hacer_entregas:
-                        entregas = self._drenar(ComplementoServicio.sincronizar_entregas)
-                        self._reportar(contenedor.schema_name, 'entregas', entregas)
+                        self._procesar(contenedor.schema_name, 'entregas', ComplementoServicio.sincronizar_entregas, totales)
                     if hacer_novedades:
-                        novedades = self._drenar(ComplementoServicio.sincronizar_novedades)
-                        self._reportar(contenedor.schema_name, 'novedades', novedades)
+                        self._procesar(contenedor.schema_name, 'novedades', ComplementoServicio.sincronizar_novedades, totales)
             except Exception as e:
-                self.stderr.write(self.style.ERROR(f'{contenedor.schema_name}: ERROR - {e}'))
+                self._log(f'{contenedor.schema_name}: ERROR - {e}', error=True)
+
+        self._log(
+            f"fin: {contenedores_activos} contenedores activos, "
+            f"{totales['procesadas']} sincronizadas, {totales['fallidas']} con error, "
+            f"{totales['descartadas']} descartadas"
+        )
+
+    def _procesar(self, schema, tipo, sincronizar, totales):
+        resultado = self._drenar(sincronizar)
+        totales['procesadas'] += resultado['procesadas']
+        totales['fallidas'] += resultado['fallidas']
+        totales['descartadas'] += resultado['descartadas']
+        if resultado['procesadas'] or resultado['fallidas'] or resultado['descartadas']:
+            self._log(
+                f"{schema} [{tipo}]: {resultado['procesadas']} sincronizadas, "
+                f"{resultado['fallidas']} con error, {resultado['descartadas']} descartadas"
+            )
 
     @staticmethod
     def _drenar(sincronizar):
@@ -54,9 +78,22 @@ class Command(BaseCommand):
                 break
         return {'procesadas': procesadas, 'fallidas': fallidas, 'descartadas': descartadas}
 
-    def _reportar(self, schema, tipo, resultado):
-        if resultado['procesadas'] or resultado['fallidas'] or resultado['descartadas']:
-            self.stdout.write(
-                f"{schema} [{tipo}]: {resultado['procesadas']} sincronizadas, "
-                f"{resultado['fallidas']} con error, {resultado['descartadas']} descartadas"
-            )
+    def _log(self, mensaje, error=False):
+        if error:
+            self._logger.error(mensaje)
+            self.stderr.write(self.style.ERROR(mensaje))
+        else:
+            self._logger.info(mensaje)
+            self.stdout.write(mensaje)
+
+    @staticmethod
+    def _configurar_logger():
+        logger = logging.getLogger('complemento.sincronizar')
+        logger.setLevel(logging.INFO)
+        if not logger.handlers:
+            logs_dir = Path(settings.BASE_DIR) / 'logs'
+            logs_dir.mkdir(exist_ok=True)
+            handler = logging.FileHandler(logs_dir / 'sincronizar_complemento.log')
+            handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+            logger.addHandler(handler)
+        return logger
