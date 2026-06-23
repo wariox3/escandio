@@ -188,9 +188,24 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho = RutDespacho.objects.get(pk=id)
                     if despacho.estado_aprobado == True:
                         if despacho.estado_terminado == False:
-                            visitas = RutVisita.objects.filter(despacho_id=id, estado_entregado=False, estado_novedad=False).first()
-                            if visitas:
-                                return Response({'mensaje':'El despacho tiene visitas sin entregar', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                            pendientes = list(
+                                RutVisita.objects.filter(
+                                    despacho_id=id, estado_entregado=False, estado_novedad=False
+                                ).values_list('numero', 'destinatario')
+                            )
+                            if pendientes:
+                                # Nombra las bloqueantes (num + destinatario) para que el
+                                # operador sepa cual liberar o resolver, sin adivinar.
+                                detalle = ', '.join(
+                                    f'#{numero or "s/n"} {(destinatario or "").strip()}'.strip()
+                                    for numero, destinatario in pendientes[:5]
+                                )
+                                if len(pendientes) > 5:
+                                    detalle += f' y {len(pendientes) - 5} mas'
+                                return Response(
+                                    {'mensaje': f'El despacho tiene {len(pendientes)} visita(s) sin entregar ni novedad: {detalle}', 'codigo': 1},
+                                    status=status.HTTP_400_BAD_REQUEST,
+                                )
                             despacho.estado_terminado = True
                             despacho.save()
                             if despacho.vehiculo_id:
@@ -432,9 +447,16 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                             despacho = serializador.save()
                             limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
                             respuesta = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
-                            #visitas = RutVisita.objects.filter(despacho_id=despacho.id)
-                            #VisitaServicio.ubicar(visitas)
-                            #VisitaServicio.ordenar(visitas) 
+                            # Ubicar todas (es segura ante lat/lng nulos) y ordenar solo
+                            # las decodificadas: una visita sin coordenadas rompe
+                            # haversine() y dejaria sin 'orden' a todo el despacho.
+                            # ordenar() ademas calcula tiempo/tiempo_trayecto, asi que
+                            # debe correr ANTES de regenerar_valores (que los suma).
+                            visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id)
+                            VisitaServicio.ubicar(visitas_despacho)
+                            visitas_a_ordenar = visitas_despacho.filter(estado_decodificado=True)
+                            if visitas_a_ordenar.count() > 1:
+                                VisitaServicio.ordenar(visitas_a_ordenar)
                             DespachoServicio.regenerar_valores(despacho)
                             return Response({'mensaje': f'Se creo el despacho con exito'}, status=status.HTTP_200_OK)
                         else:

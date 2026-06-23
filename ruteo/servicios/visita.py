@@ -463,19 +463,19 @@ class VisitaServicio():
                         if direccion.cantidad_resultados > 1:
                             data['estado_decodificado_alerta'] = True
                     else:
-                        respuesta = google.decodificar_direccion(data['destinatario_direccion'])
-                        if respuesta['error'] == False:
+                        respuesta_google = google.decodificar_direccion(data['destinatario_direccion'])
+                        if respuesta_google['error'] == False:
                             data['estado_decodificado'] = True
-                            data['latitud'] = respuesta['latitud']
-                            data['longitud'] = respuesta['longitud']
-                            data['destinatario_direccion_formato'] = respuesta['direccion_formato']
-                            data['resultados'] = respuesta['resultados']
-                            if respuesta['cantidad_resultados'] > 1:
+                            data['latitud'] = respuesta_google['latitud']
+                            data['longitud'] = respuesta_google['longitud']
+                            data['destinatario_direccion_formato'] = respuesta_google['direccion_formato']
+                            data['resultados'] = respuesta_google['resultados']
+                            if respuesta_google['cantidad_resultados'] > 1:
                                 data['estado_decodificado_alerta'] = True
                 if data['estado_decodificado'] == True:
-                    respuesta = VisitaServicio.ubicar_punto(franjas, data['latitud'], data['longitud'])
-                    if respuesta['encontrado']:
-                        data['franja'] = respuesta['franja']['id']
+                    respuesta_franja = VisitaServicio.ubicar_punto(franjas, data['latitud'], data['longitud'])
+                    if respuesta_franja['encontrado']:
+                        data['franja'] = respuesta_franja['franja']['id']
                         data['estado_franja'] = True
                     else:
                         data['estado_franja'] = False

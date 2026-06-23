@@ -318,9 +318,13 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if respuesta['error'] == False:
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
-            #visitas = RutVisita.objects.filter(estado_despacho = False, estado_decodificado = True)
             VisitaServicio.ubicar(visitas)
-            VisitaServicio.ordenar(visitas)
+            # Solo se ordena lo decodificado: ordenar() construye una matriz de
+            # distancias y una visita sin lat/lng (estado_decodificado=False)
+            # hace fallar haversine() y deja sin 'orden' a todo el lote.
+            visitas_a_ordenar = [v for v in visitas if v.estado_decodificado]
+            if visitas_a_ordenar:
+                VisitaServicio.ordenar(visitas_a_ordenar)
             return Response({'mensaje': f'Se importaron {cantidad} guias con exito'}, status=status.HTTP_200_OK)
         else:
             return Response({'mensaje': respuesta['mensaje'], 'validaciones': respuesta.get('validaciones')}, status=status.HTTP_400_BAD_REQUEST)
