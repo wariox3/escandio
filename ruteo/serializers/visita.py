@@ -67,6 +67,10 @@ class RutVistaListaSerializador(serializers.ModelSerializer):
             'estado_devolucion',
             'estado_entregado',
             'estado_despacho',
+            # La lista tiene columnas 'Decodificado'/'Alerta' y resalta filas con
+            # alerta; sin estos campos llegaban undefined y nunca se mostraban.
+            'estado_decodificado',
+            'estado_decodificado_alerta',
             'cita_inicio',
             'cita_fin'
         ]
@@ -104,10 +108,17 @@ class RutVisitaExcelSerializador(serializers.ModelSerializer):
                   'estado_despacho']
         select_related_fields = ['despacho__vehiculo', 'ciudad']
 
-class RutVistaTraficoSerializador(serializers.ModelSerializer):    
+class RutVistaTraficoSerializador(serializers.ModelSerializer):
     class Meta:
         model = RutVisita
-        fields = ['id', 'fecha', 'numero', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_telefono', 'estado_entregado', 'estado_novedad', 'unidades']
+        # estado_decodificado(_alerta) y cita_* son necesarios para que el front
+        # clasifique bien el badge de estado. Sin ellos llegaban undefined y
+        # '!estado_decodificado' marcaba como 'alerta' a TODA visita pendiente.
+        # cita_tipo evita marcar como 'cita-vencida' (bloqueante) a una cita
+        # preferente vencida, que el front trata distinto a la obligatoria.
+        fields = ['id', 'fecha', 'numero', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_telefono',
+                  'estado_entregado', 'estado_novedad', 'unidades',
+                  'estado_decodificado', 'estado_decodificado_alerta', 'cita_inicio', 'cita_fin', 'cita_tipo', 'fecha_entrega']
 
 class RutVistaEstadoSerializador(serializers.ModelSerializer):    
     class Meta:
