@@ -1,6 +1,7 @@
 from general.models.empresa import GenEmpresa
 from openpyxl import Workbook
 from openpyxl.styles import Font, NamedStyle, PatternFill, Alignment, Font
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from django.utils.encoding import smart_str
 from django.http import HttpResponse
 from decimal import Decimal
@@ -49,7 +50,17 @@ class ExcelExportar:
         self.titulo = titulo
         self.fill = PatternFill(start_color="9CDFEB", end_color="9CDFEB", fill_type="solid")
 
-    def _get_encabezados(self):        
+    @staticmethod
+    def _limpiar(value):
+        # openpyxl rechaza caracteres de control ilegales en el XML (p.ej. \x0b)
+        # y revienta la exportacion con IllegalCharacterError (500). Los datos
+        # importados/decodificados a veces traen estos caracteres en direccion,
+        # destinatario u observacion, asi que los removemos antes de escribir.
+        if isinstance(value, str):
+            return ILLEGAL_CHARACTERS_RE.sub('', value)
+        return value
+
+    def _get_encabezados(self):
         if not self.data:
             return []
         
@@ -100,8 +111,8 @@ class ExcelExportar:
                     value = row_data.get(col, '')
                     if value is None:
                         value = ''
-                    row.append(str(value))
-                ws.append(row)    
+                    row.append(self._limpiar(str(value)))
+                ws.append(row)
         virtual_workbook = BytesIO()
         wb.save(virtual_workbook)
         virtual_workbook.seek(0)        
@@ -133,8 +144,8 @@ class ExcelExportar:
                     if value is None:
                         value = ''                               
                     if not isinstance(value, (int, float, Decimal)):
-                        value = smart_str(value)
-                    row.append(value)                
+                        value = self._limpiar(smart_str(value))
+                    row.append(value)
                 ws.append(row)                
                 
                 for cell in ws[ws.max_row]:
@@ -182,7 +193,9 @@ class ExcelExportar:
                     if value is None:
                         value = ''
                     elif isinstance(value, bool):
-                        value = 'SI' if value else 'NO'                        
+                        value = 'SI' if value else 'NO'
+                    else:
+                        value = self._limpiar(value)
                     cell = ws.cell(row=row_idx, column=col_idx, value=value)
                     cell.font = estilo_normal
 
