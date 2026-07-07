@@ -66,6 +66,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'retrieve',
         'entrega_action',
     ]
+    # Imprimir rótulos no muta nada: basta permiso de VER en visita para que
+    # los roles de tráfico puedan imprimir desde su módulo.
+    acciones_lectura = [
+        'imprimir_rotulo',
+    ]
     serializadores = {
         'lista': RutVistaListaSerializador,
         'lista_completa' : RutVistaListaSerializador,
@@ -312,9 +317,16 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         pendiente_despacho = raw.get('pendiente_despacho', None)
         codigo_contacto = raw.get('codigo_contacto', None)
         codigo_destino = raw.get('codigo_destino', None)
-        codigo_zona = raw.get('codigo_zona', None)
         codigo_despacho = raw.get('codigo_despacho', None)
-        respuesta = VisitaServicio.importar_complemento(limite=limite, guia_desde=guia_desde, guia_hasta=guia_hasta, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, pendiente_despacho=pendiente_despacho, codigo_contacto=codigo_contacto, codigo_destino=codigo_destino, codigo_zona=codigo_zona, codigo_despacho=codigo_despacho, despacho_id=None)
+        franjas = raw.get('franjas', None)
+        if franjas is not None:
+            if not isinstance(franjas, list):
+                return Response({'mensaje': 'El parametro franjas debe ser una lista de ids', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                franjas = [int(f) for f in franjas]
+            except (TypeError, ValueError):
+                return Response({'mensaje': 'El parametro franjas debe ser una lista de ids', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        respuesta = VisitaServicio.importar_complemento(limite=limite, guia_desde=guia_desde, guia_hasta=guia_hasta, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, pendiente_despacho=pendiente_despacho, codigo_contacto=codigo_contacto, codigo_destino=codigo_destino, codigo_despacho=codigo_despacho, despacho_id=None, franja_ids=franjas)
         if respuesta['error'] == False:
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
@@ -325,7 +337,14 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             visitas_a_ordenar = [v for v in visitas if v.estado_decodificado]
             if visitas_a_ordenar:
                 VisitaServicio.ordenar(visitas_a_ordenar)
-            return Response({'mensaje': f'Se importaron {cantidad} guias con exito'}, status=status.HTTP_200_OK)
+            mensaje = f'Se importaron {cantidad} guias con exito'
+            descartadas = respuesta.get('descartadas', 0)
+            sin_ubicar = respuesta.get('sin_ubicar', 0)
+            if descartadas:
+                mensaje += f', {descartadas} descartadas por estar fuera de las zonas seleccionadas'
+            if sin_ubicar:
+                mensaje += f', {sin_ubicar} sin geocodificar (revise la direccion para asignarles zona)'
+            return Response({'mensaje': mensaje}, status=status.HTTP_200_OK)
         else:
             return Response({'mensaje': respuesta['mensaje'], 'validaciones': respuesta.get('validaciones')}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -391,7 +410,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             respuesta = VisitaServicio.ordenar(visitas)
             if respuesta and respuesta.get('error') == True:
                 return Response({'mensaje': respuesta['mensaje']}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({'mensaje':'visitas ordenadas', 'debug': respuesta.get('debug')}, status=status.HTTP_200_OK)
+            mensaje = 'visitas ordenadas'
+            rechazos = (respuesta or {}).get('rechazos') or {}
+            if rechazos:
+                detalle = '; '.join(f'{referencia}: {motivo}' for referencia, motivo in rechazos.items())
+                mensaje = f'Visitas ordenadas. {len(rechazos)} no reordenada(s) y conservan su orden anterior: {detalle}'
+            return Response({'mensaje': mensaje, 'debug': respuesta.get('debug')}, status=status.HTTP_200_OK)
         return Response({'mensaje':'visitas ordenadas'}, status=status.HTTP_200_OK)
         
     @action(detail=False, methods=["post"], url_path=r'rutear')
@@ -1255,23 +1279,50 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         raw = request.data
         ids = raw.get('ids')
         single_id = raw.get('id')
+        despacho_id = raw.get('despacho_id')
+        por_unidad = raw.get('por_unidad')
+        if isinstance(por_unidad, str):
+            por_unidad = por_unidad.strip().lower() in ('true', '1', 'si', 'sí')
+        else:
+            por_unidad = bool(por_unidad)
         formato_pdf = (raw.get('formato') or 'termica').lower()
         if formato_pdf not in ('termica', 'a4'):
             formato_pdf = 'termica'
-        if ids and isinstance(ids, list):
-            visita_ids = [int(x) for x in ids if x is not None]
-        elif single_id:
-            visita_ids = [int(single_id)]
+        if despacho_id:
+            try:
+                despacho_id = int(despacho_id)
+            except (TypeError, ValueError):
+                return Response({'mensaje':'El despacho_id no es valido', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+            # Rótulos de todo el despacho en el orden que asignó el ruteo
+            # (desempate por id para que la impresión sea determinista).
+            existentes = list(
+                RutVisita.objects
+                .filter(despacho_id=despacho_id)
+                .order_by('orden', 'id')
+                .values_list('id', flat=True)
+            )
+            if not existentes:
+                return Response({'mensaje':'El despacho no tiene visitas', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+            if ids and isinstance(ids, list):
+                visita_ids = [int(x) for x in ids if x is not None]
+            elif single_id:
+                visita_ids = [int(single_id)]
+            else:
+                return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
-        existentes = list(RutVisita.objects.filter(id__in=visita_ids).values_list('id', flat=True))
-        if not existentes:
-            return Response({'mensaje':'Las visitas no existen', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+            existentes = list(RutVisita.objects.filter(id__in=visita_ids).values_list('id', flat=True))
+            if not existentes:
+                return Response({'mensaje':'Las visitas no existen', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
 
         formato = FormatoRotulo()
-        pdf = formato.generar_pdf_lote(existentes, formato=formato_pdf)
-        if len(existentes) == 1:
+        try:
+            pdf = formato.generar_pdf_lote(existentes, formato=formato_pdf, por_unidad=por_unidad)
+        except ValueError as e:
+            return Response({'mensaje': str(e), 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        if despacho_id:
+            nombre_archivo = f"rotulos_despacho_{despacho_id}.pdf"
+        elif len(existentes) == 1:
             nombre_archivo = f"rotulo_{existentes[0]}.pdf"
         else:
             nombre_archivo = f"rotulos_{len(existentes)}.pdf"

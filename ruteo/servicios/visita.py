@@ -189,7 +189,9 @@ class VisitaServicio():
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
-            visita.save()
+            # update_fields: el solver tarda segundos y un save() completo
+            # pisaría una entrega registrada por el conductor en ese intervalo.
+            visita.save(update_fields=['orden', 'distancia', 'tiempo_trayecto', 'tiempo'])
         return {'error': False}
 
     @staticmethod
@@ -387,7 +389,9 @@ class VisitaServicio():
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
-            visita.save()
+            # update_fields: el solver tarda segundos y un save() completo
+            # pisaría una entrega registrada por el conductor en ese intervalo.
+            visita.save(update_fields=['orden', 'distancia', 'tiempo_trayecto', 'tiempo'])
         return {
             'error': False,
             'debug': {
@@ -398,7 +402,7 @@ class VisitaServicio():
         }
 
     @staticmethod
-    def importar_complemento(limite=100, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=None, despacho_id=None):        
+    def importar_complemento(limite=100, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=None, despacho_id=None, franja_ids=None):
         parametros = {
             'limite': limite,
             'guia_desde': guia_desde,
@@ -412,14 +416,37 @@ class VisitaServicio():
             'codigo_despacho': codigo_despacho
         }
         holmio = Holmio()
-        respuesta = holmio.ruteo_pendiente(parametros)
-        if respuesta['error'] == False:
-            google = Google()
-            franjas = RutFranja.objects.all()
-            cantidad = 0                                                    
-            visitas_creadas = []
+        google = Google()
+        franjas = RutFranja.objects.all()
+        franja_ids = [int(f) for f in franja_ids] if franja_ids else None
+        cantidad = 0
+        descartadas = 0
+        sin_ubicar = 0
+        visitas_creadas = []
+        # Con filtro de zonas las guías descartadas siguen pendientes en el
+        # complemento y volverían a ocupar la ventana `limite` en cada intento
+        # (nunca se llegaría a las guías en zona más allá de la ventana). Se
+        # avanza el cursor guia_desde por lotes —asume que el complemento
+        # responde ordenado por número de guía— hasta completar `limite`
+        # guías importadas o agotar las pendientes.
+        max_lotes = 10 if franja_ids is not None else 1
+        lote = 0
+        while lote < max_lotes:
+            lote += 1
+            respuesta = holmio.ruteo_pendiente(parametros)
+            if respuesta['error'] != False:
+                if lote == 1:
+                    return {
+                        'error': True,
+                        'mensaje': f'Error en la conexion: {respuesta["mensaje"]}'
+                    }
+                break
             guias = respuesta['guias']
-            for guia in guias:                                                                        
+            if not guias:
+                break
+            for guia in guias:
+                if cantidad >= limite:
+                    break
                 direccion_destinatario = VisitaServicio.limpiar_direccion(guia['direccionDestinatario'])                                               
                 fecha = datetime.fromisoformat(guia['fechaIngreso'])  
                 nombre_remitente = (guia['nombreRemitente'][:150] if guia['nombreRemitente'] is not None and guia['nombreRemitente'] != "" else None)
@@ -479,6 +506,16 @@ class VisitaServicio():
                         data['estado_franja'] = True
                     else:
                         data['estado_franja'] = False
+                if franja_ids is not None:
+                    if not data['estado_decodificado']:
+                        # Sin coordenadas no hay forma de saber la zona: se
+                        # importa para corrección manual en vez de descartarla.
+                        sin_ubicar += 1
+                    elif data['franja'] not in franja_ids:
+                        # Filtro local por zona: la guía queda pendiente en el
+                        # complemento y puede importarse luego con otra zona.
+                        descartadas += 1
+                        continue
                 visitaSerializador = RutVisitaSerializador(data=data)
                 if visitaSerializador.is_valid():
                     visita = visitaSerializador.save()
@@ -486,12 +523,22 @@ class VisitaServicio():
                     cantidad += 1                                                                                    
                 else:
                     return {'error': True, 'mensaje': 'Errores de validación', 'validaciones': visitaSerializador.errors}
-            return {'error': False, 'cantidad': cantidad, 'visitas_creadas': visitas_creadas}
-        else:
-            return {
-                'error': True,
-                'mensaje': f'Error en la conexion: {respuesta["mensaje"]}'
-            }
+            if cantidad >= limite:
+                break
+            if len(guias) < limite:
+                # El complemento devolvió menos que la ventana: no hay más pendientes.
+                break
+            try:
+                maximo_numero = max(int(g['codigoGuiaPk']) for g in guias)
+            except (TypeError, ValueError):
+                # Números de guía no numéricos: no se puede avanzar el cursor.
+                break
+            nuevo_desde = maximo_numero + 1
+            guia_hasta_actual = parametros.get('guia_hasta')
+            if guia_hasta_actual and nuevo_desde > int(guia_hasta_actual):
+                break
+            parametros['guia_desde'] = nuevo_desde
+        return {'error': False, 'cantidad': cantidad, 'descartadas': descartadas, 'sin_ubicar': sin_ubicar, 'visitas_creadas': visitas_creadas}
 
     @staticmethod
     def entrega_complemento(visita: RutVisita, imagenes_b64, firmas_b64, datos_entrega):

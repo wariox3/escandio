@@ -1,3 +1,4 @@
+import math
 from io import BytesIO
 from datetime import datetime
 
@@ -25,6 +26,10 @@ from reportlab.lib.pagesizes import A4
 from general.models.empresa import GenEmpresa
 from ruteo.models.visita import RutVisita
 
+
+# Tope de etiquetas por PDF: el documento se arma completo en memoria y una
+# guía con unidades erradas (p. ej. 50000) tumbaría el worker.
+MAX_ETIQUETAS = 1500
 
 # Etiqueta térmica 5x3 pulgadas (127x76mm) en orientación horizontal
 PAGE_WIDTH = 127 * mm
@@ -67,7 +72,7 @@ class FormatoRotulo:
     def generar_pdf(self, visita_id):
         return self.generar_pdf_lote([visita_id])
 
-    def generar_pdf_lote(self, visita_ids, formato='termica'):
+    def generar_pdf_lote(self, visita_ids, formato='termica', por_unidad=False):
         visitas = list(
             RutVisita.objects
             .select_related('ciudad')
@@ -82,16 +87,34 @@ class FormatoRotulo:
         empresa = GenEmpresa.objects.first()
         nombre_empresa = (empresa.nombre_corto if empresa else '').upper()
 
-        if formato == 'a4' and len(visitas) > 1:
-            return self._render_a4_lote(visitas, nombre_empresa)
-        return self._render_thermal_lote(visitas, nombre_empresa)
+        # Cada item es (visita, pieza, total_piezas). Con por_unidad una guía
+        # de N unidades genera N etiquetas (1/N, 2/N, ...) para poder marcar
+        # cada paquete al cargar; sin por_unidad se conserva 1 etiqueta por guía.
+        # ceil: unidades es float y truncar dejaría un paquete sin etiqueta.
+        items = []
+        for visita in visitas:
+            total = max(math.ceil(visita.unidades) if visita.unidades else 1, 1)
+            if por_unidad:
+                items.extend((visita, pieza, total) for pieza in range(1, total + 1))
+            else:
+                items.append((visita, 1, total))
 
-    def _render_thermal_lote(self, visitas, nombre_empresa):
-        primera = visitas[0]
+        if len(items) > MAX_ETIQUETAS:
+            raise ValueError(
+                f'La impresión genera {len(items)} etiquetas y el máximo es '
+                f'{MAX_ETIQUETAS}; revise las unidades de las guías'
+            )
+
+        if formato == 'a4':
+            return self._render_a4_lote(items, nombre_empresa)
+        return self._render_thermal_lote(items, nombre_empresa)
+
+    def _render_thermal_lote(self, items, nombre_empresa):
+        primera = items[0][0]
         primera_guia = primera.numero if primera.numero is not None else primera.id
         title = (
-            f'Rotulo {primera_guia}' if len(visitas) == 1
-            else f'Rotulos termicos ({len(visitas)})'
+            f'Rotulo {primera_guia}' if len(items) == 1
+            else f'Rotulos termicos ({len(items)})'
         )
 
         buffer = BytesIO()
@@ -110,9 +133,9 @@ class FormatoRotulo:
 
         from reportlab.platypus import PageBreak
         elementos = []
-        for idx, visita in enumerate(visitas):
-            elementos.extend(self._construir_elementos(visita, nombre_empresa))
-            if idx < len(visitas) - 1:
+        for idx, (visita, pieza, total_piezas) in enumerate(items):
+            elementos.extend(self._construir_elementos(visita, nombre_empresa, pieza, total_piezas))
+            if idx < len(items) - 1:
                 elementos.append(PageBreak())
 
         doc.build(elementos)
@@ -120,8 +143,8 @@ class FormatoRotulo:
         buffer.close()
         return pdf_bytes
 
-    def _render_a4_lote(self, visitas, nombre_empresa):
-        title = f'Rotulos ({len(visitas)})'
+    def _render_a4_lote(self, items, nombre_empresa):
+        title = f'Rotulos ({len(items)})'
         page_w, page_h = A4
         margen = 5 * mm
         gutter = 3 * mm
@@ -177,10 +200,10 @@ class FormatoRotulo:
         doc.addPageTemplates([page_template])
 
         story = []
-        for i, visita in enumerate(visitas):
-            elementos = self._construir_elementos(visita, nombre_empresa)
+        for i, (visita, pieza, total_piezas) in enumerate(items):
+            elementos = self._construir_elementos(visita, nombre_empresa, pieza, total_piezas)
             story.append(KeepInFrame(cell_w, cell_h, elementos, mode='shrink'))
-            if i < len(visitas) - 1:
+            if i < len(items) - 1:
                 story.append(FrameBreak())
 
         doc.build(story)
@@ -188,8 +211,12 @@ class FormatoRotulo:
         buffer.close()
         return pdf_bytes
 
-    def _construir_elementos(self, visita, nombre_empresa):
-        """Layout para etiqueta horizontal 127×76mm (5×3 pulgadas)."""
+    def _construir_elementos(self, visita, nombre_empresa, pieza, total_piezas):
+        """Layout para etiqueta horizontal 127×76mm (5×3 pulgadas).
+
+        pieza/total_piezas los calcula únicamente generar_pdf_lote (la regla
+        de expansión por unidades vive en un solo lugar).
+        """
         guia_numero = visita.numero if visita.numero is not None else visita.id
         zona = (visita.franja_codigo or '—').upper()
         destino = (visita.ciudad.nombre if visita.ciudad else 'SIN CIUDAD').upper()
@@ -198,7 +225,8 @@ class FormatoRotulo:
         direccion = _truncar(visita.destinatario_direccion or '', 60)
         complemento = _truncar(visita.destinatario_direccion_complemento or '', 50)
         documento = visita.documento or '—'
-        unidades_int = int(visita.unidades) if visita.unidades else 1
+        unidades_int = total_piezas
+        orden_ruteo = int(visita.orden) if visita.orden else 0
         cobro_int = int(visita.cobro) if visita.cobro else 0
         cobro_texto = f'$ {cobro_int:,}'.replace(',', '.') if cobro_int else 'NO'
         peso_texto = f'{int(visita.peso)} kg' if visita.peso else '—'
@@ -262,7 +290,7 @@ class FormatoRotulo:
 
         elementos = []
 
-        # === Header oscuro: DESTINO + ZONA ===
+        # === Header oscuro: DESTINO + ZONA (+ ORDEN cuando la visita ya fue ruteada) ===
         header_left = [
             Paragraph('DESTINO', st_label_dark),
             Paragraph(destino, st_destino),
@@ -271,11 +299,38 @@ class FormatoRotulo:
             Paragraph('ZONA', st_label_dark),
             Paragraph(zona, st_zona),
         ]
-        header_table = Table(
-            [[header_left, header_right]],
-            colWidths=[CONTENIDO_ANCHO * 0.7, CONTENIDO_ANCHO * 0.3],
-            rowHeights=[12 * mm],
-        )
+        if orden_ruteo:
+            st_orden = ParagraphStyle(
+                'orden', fontName='Helvetica-Bold', fontSize=22, leading=23,
+                textColor=ACCENT_TEXT, alignment=TA_RIGHT,
+            )
+            st_zona_compacta = ParagraphStyle(
+                'zona_compacta', fontName='Helvetica-Bold', fontSize=13, leading=14,
+                textColor=ACCENT_TEXT, alignment=TA_RIGHT,
+            )
+            header_right = [
+                Paragraph('ZONA', st_label_dark),
+                Paragraph(zona, st_zona_compacta),
+            ]
+            header_orden = [
+                Paragraph('ORDEN', st_label_dark),
+                Paragraph(str(orden_ruteo), st_orden),
+            ]
+            header_table = Table(
+                [[header_left, header_right, header_orden]],
+                colWidths=[
+                    CONTENIDO_ANCHO * 0.5,
+                    CONTENIDO_ANCHO * 0.24,
+                    CONTENIDO_ANCHO * 0.26,
+                ],
+                rowHeights=[12 * mm],
+            )
+        else:
+            header_table = Table(
+                [[header_left, header_right]],
+                colWidths=[CONTENIDO_ANCHO * 0.7, CONTENIDO_ANCHO * 0.3],
+                rowHeights=[12 * mm],
+            )
         header_table.setStyle(
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), ACCENT),
@@ -345,7 +400,7 @@ class FormatoRotulo:
                     Paragraph('COBRO', st_info_label),
                 ],
                 [
-                    Paragraph(f'1 / {unidades_int}', st_info_value),
+                    Paragraph(f'{pieza} / {unidades_int}', st_info_value),
                     Paragraph(peso_texto, st_info_value),
                     Paragraph(cobro_texto, st_cobro),
                 ],
