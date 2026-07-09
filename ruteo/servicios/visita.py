@@ -86,7 +86,10 @@ class VisitaServicio():
 
     @staticmethod
     def ordenar(visitas: RutVisita):
-        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud', 'rut_hora_inicio', 'rut_estrategia_ruteo')[0]
+        # .first() en vez de [0]: si no existe la fila de configuracion, [0]
+        # lanzaba IndexError (500) ANTES de que el guard de abajo pudiera
+        # devolver el error 13 controlado.
+        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_latitud', 'rut_longitud', 'rut_hora_inicio', 'rut_estrategia_ruteo').first()
         if not configuracion or configuracion['rut_latitud'] is None or configuracion['rut_longitud'] is None:
             return {'error': True, 'mensaje': 'Configuración de ruteo no encontrada o incompleta, verifique la dirección de origen en configuración', "codigo": 13}
 
