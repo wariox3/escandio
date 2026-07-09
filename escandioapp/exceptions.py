@@ -3,6 +3,9 @@ from decouple import config
 import requests
 import django
 import traceback
+import logging
+
+logger = logging.getLogger('escandioapp.exceptions')
 
 def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
@@ -56,5 +59,19 @@ def custom_exception_handler(exc, context):
             'contenedor_objeto': [],
             'data': request.data
         }
-        # TODO: hacer logs de la excepcion usando `datos` en vez de reportar a niquel.
+        # Excepcion NO manejada (DRF devolvio response=None -> Django respondera
+        # 500, que el movil muestra como "Servidor fuera de linea"). Antes el
+        # traceback se construia y se DESCARTABA, dejando el 500 sin rastro y
+        # sin forma de saber la causa. Lo logueamos con exc_info para que quede
+        # en los logs del servidor (stderr/gunicorn) y se pueda diagnosticar.
+        logger.error(
+            "Excepcion no manejada [%s] en %s %s (view=%s, usuario=%s): %s",
+            exc.__class__.__name__,
+            request.method,
+            request.path,
+            traza.get('raised_during'),
+            usuario,
+            mensaje,
+            exc_info=exc,
+        )
     return response

@@ -38,6 +38,9 @@ import re
 import gc
 import base64
 import openpyxl
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     modulo = 'visita'
@@ -1007,6 +1010,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     return Response({'mensaje':'La fecha de entrega no puede ser mayor a la fecha actual', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             except ValueError:
                 return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+            # Se resuelven despues del commit (fuera del lock): si el complemento
+            # esta habilitado y los datos que necesita.
+            sincronizar_complemento = False
+            datos_entrega = None
             try:
                 with transaction.atomic():
                     # Lock de fila (select_for_update): serializa los reenvios
@@ -1089,32 +1096,54 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                                 archivo.modelo = "RutVisita"
                                 archivo.url = url
                                 archivo.save()
-                        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_sincronizar_complemento')[0]
-                        if configuracion['rut_sincronizar_complemento']:
-                            imagenes_b64 = []
-                            if imagenes:
-                                for imagen in imagenes:
-                                    imagen.seek(0)
-                                    file_content = imagen.read()
-                                    base64_encoded = base64.b64encode(file_content).decode('utf-8')
-                                    imagenes_b64.append({
-                                        'base64': base64_encoded,
-                                    })
-                            firmas_b64 = []
-                            if firmas:
-                                for firma in firmas:
-                                    firma.seek(0)
-                                    file_content = firma.read()
-                                    base64_encoded = base64.b64encode(file_content).decode('utf-8')
-                                    firmas_b64.append({
-                                        'base64': base64_encoded,
-                                    })
-                            VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
+                        # Solo LEEMOS aqui si el complemento esta habilitado. La
+                        # sincronizacion real (POST HTTP externo de hasta 30s) se
+                        # hace DESPUES del commit, fuera del lock de fila. Antes
+                        # vivia aqui dentro: sostener el lock + la transaccion
+                        # durante esa llamada externa hacia que, si el complemento
+                        # estaba lento/caido, el gateway cortara la peticion ->
+                        # rollback -> el movil reintentaba en bucle y la entrega
+                        # (ya lista) nunca se confirmaba ("Servidor fuera de linea").
+                        # .first() en vez de [0] para no reventar con IndexError si
+                        # no existe la fila de configuracion.
+                        configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_sincronizar_complemento').first()
+                        sincronizar_complemento = bool(configuracion and configuracion['rut_sincronizar_complemento'])
             except RutVisita.DoesNotExist:
                 return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
 
             if not entrega_nueva:
                 return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
+
+            # --- Fuera de la transaccion (ya hubo commit): la entrega quedo
+            # registrada de forma durable. Lo de abajo es best-effort y su fallo
+            # NO debe tumbar (500) la entrega ni sostener el lock. ---
+            # Sincronizacion con el complemento externo. Aislada en try/except:
+            # un complemento lento/caido se registra en el log y no afecta la
+            # confirmacion al conductor.
+            if sincronizar_complemento:
+                try:
+                    imagenes_b64 = []
+                    if imagenes:
+                        for imagen in imagenes:
+                            imagen.seek(0)
+                            file_content = imagen.read()
+                            base64_encoded = base64.b64encode(file_content).decode('utf-8')
+                            imagenes_b64.append({
+                                'base64': base64_encoded,
+                            })
+                    firmas_b64 = []
+                    if firmas:
+                        for firma in firmas:
+                            firma.seek(0)
+                            file_content = firma.read()
+                            base64_encoded = base64.b64encode(file_content).decode('utf-8')
+                            firmas_b64.append({
+                                'base64': base64_encoded,
+                            })
+                    VisitaServicio.entrega_complemento(visita, imagenes_b64, firmas_b64, datos_entrega)
+                except Exception:
+                    logger.exception('Fallo la sincronizacion con el complemento para la visita %s', id)
+
             # Tras commit, notificar al cliente con la plantilla 'entregado'.
             # Falla silenciosa: si Whatsapp esta caido o el tenant no lo tiene
             # habilitado, NO bloqueamos la confirmacion de la entrega.

@@ -91,6 +91,26 @@ class EntregaIdempotenteTests(TenantTestCase):
             0,
         )
 
+    @patch('ruteo.views.visita.VisitaServicio.entrega_complemento',
+           side_effect=Exception('complemento caido'))
+    @patch('ruteo.views.visita.NotificacionServicio.notificar_visita_entregada')
+    def test_fallo_del_complemento_no_tumba_la_entrega(self, mock_notif, mock_compl):
+        # Con el complemento habilitado y CAIDO, la entrega ya quedo registrada
+        # (commit hecho): su sincronizacion externa es best-effort y NO debe
+        # devolver 500 ("Servidor fuera de linea") ni revertir la entrega. Antes
+        # esta llamada vivia dentro de la transaccion + lock de fila.
+        GenConfiguracion.objects.filter(pk=1).update(rut_sincronizar_complemento=True)
+
+        r = self._entregar()
+
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['mensaje'], 'Entrega con exito')
+        self.assertTrue(mock_compl.called)  # se intento sincronizar
+        self.visita.refresh_from_db()
+        self.assertTrue(self.visita.estado_entregado)  # la entrega quedo firme
+        self.despacho.refresh_from_db()
+        self.assertEqual(self.despacho.visitas_entregadas, 1)
+
     @patch('ruteo.views.visita.NotificacionServicio.notificar_visita_entregada')
     def test_entrega_de_visita_ya_entregada_responde_200(self, mock_notif):
         # Visita marcada como entregada por fuera (p.ej. otra ruta/sync previo).
