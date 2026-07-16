@@ -405,7 +405,7 @@ class VisitaServicio():
         }
 
     @staticmethod
-    def importar_complemento(limite=100, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=None, despacho_id=None, franja_ids=None):
+    def importar_complemento(limite=100, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=None, despacho_id=None, franja_ids=None, zona_destino=None):
         parametros = {
             'limite': limite,
             'guia_desde': guia_desde,
@@ -416,7 +416,11 @@ class VisitaServicio():
             'codigo_contacto': codigo_contacto,
             'codigo_destino' : codigo_destino,
             'codigo_zona': codigo_zona,
-            'codigo_despacho': codigo_despacho
+            'codigo_despacho': codigo_despacho,
+            # Filtro de ZONA de Semantica (en el origen): elegir una zona trae
+            # todas las guias de esa zona. Si el nombre real del parametro en
+            # Semantica resulta distinto, cambiar SOLO esta clave.
+            'zona_destino': zona_destino,
         }
         holmio = Holmio()
         google = Google()

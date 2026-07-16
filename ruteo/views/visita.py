@@ -321,6 +321,9 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         codigo_contacto = raw.get('codigo_contacto', None)
         codigo_destino = raw.get('codigo_destino', None)
         codigo_despacho = raw.get('codigo_despacho', None)
+        # Zona de Semantica: filtra en el origen (elegir una zona trae todas sus
+        # guias). Es distinto de 'franjas' (zona de ruteo local, geocodificada).
+        zona_destino = raw.get('zona_destino', None)
         franjas = raw.get('franjas', None)
         if franjas is not None:
             if not isinstance(franjas, list):
@@ -329,7 +332,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 franjas = [int(f) for f in franjas]
             except (TypeError, ValueError):
                 return Response({'mensaje': 'El parametro franjas debe ser una lista de ids', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
-        respuesta = VisitaServicio.importar_complemento(limite=limite, guia_desde=guia_desde, guia_hasta=guia_hasta, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, pendiente_despacho=pendiente_despacho, codigo_contacto=codigo_contacto, codigo_destino=codigo_destino, codigo_despacho=codigo_despacho, despacho_id=None, franja_ids=franjas)
+        respuesta = VisitaServicio.importar_complemento(limite=limite, guia_desde=guia_desde, guia_hasta=guia_hasta, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, pendiente_despacho=pendiente_despacho, codigo_contacto=codigo_contacto, codigo_destino=codigo_destino, codigo_despacho=codigo_despacho, despacho_id=None, franja_ids=franjas, zona_destino=zona_destino)
         if respuesta['error'] == False:
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
