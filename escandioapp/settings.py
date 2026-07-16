@@ -1,6 +1,14 @@
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+except ImportError:
+    # Defensivo: si el server aun no instalo sentry-sdk (deploy sin pip install),
+    # el backend NO debe caerse — Sentry simplemente queda desactivado.
+    sentry_sdk = None
+    DjangoIntegration = None
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -16,6 +24,26 @@ SECRET_KEY = 'django-insecure-x)e8ci34g3_w6y6&p-=4lcnn2z@jnic9#4h(s8&8bhq_jz9mj!
 # True en dev/test. Con DEBUG=True Django acumula connection.queries por la
 # vida del worker -> fue la causa del OOM del backend el 2026-06-01.
 DEBUG = config('ENV', default='dev') != 'prod'
+
+# === Sentry (observabilidad de errores) ===
+# DORMIDO si no hay SENTRY_DSN en el .env: en dev/local no envia nada. En el
+# server basta poner SENTRY_DSN=... para prenderlo. Captura los 500 NO manejados
+# (via DjangoIntegration; el EXCEPTION_HANDLER devuelve None y Django los
+# re-lanza) con traceback + tag de `tenant` (ver escandioapp.middleware).
+# PII: send_default_pii=False (no manda usuario/cookies/auth) y NO se manda el
+# body del request (trae datos de clientes). OJO: Sentry SI incluye variables
+# locales en el traceback, que pueden traer datos de clientes; si su politica lo
+# exige, agregar include_local_variables=False (pierde poder de diagnostico).
+SENTRY_DSN = config('SENTRY_DSN', default='')
+if SENTRY_DSN and sentry_sdk is not None:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        environment=config('ENV', default='dev'),
+        traces_sample_rate=0.0,          # solo errores, sin performance (sin costo extra)
+        send_default_pii=False,
+        max_request_body_size='never',
+    )
 
 ALLOWED_HOSTS = ['*']
 
@@ -64,6 +92,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     'django_tenants.middleware.main.TenantMainMiddleware',
+    # Etiqueta los eventos de Sentry con el tenant (no-op sin SENTRY_DSN).
+    'escandioapp.middleware.SentryTenantMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',    
     'django.middleware.common.CommonMiddleware',
