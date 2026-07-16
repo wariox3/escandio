@@ -2,9 +2,43 @@ from rest_framework import serializers
 from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
 from general.models.ciudad import GenCiudad
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+# Precision del campo latitud/longitud (DecimalField decimal_places=15).
+_COORD_QUANTIZE = Decimal(1).scaleb(-15)  # 1e-15
+
+
+def _redondear_coordenada(valor):
+    """Redondea una coordenada a 15 decimales (la precision del campo).
+
+    La geocodificacion (Google) puede entregar floats que, al pasar a Decimal,
+    traen MAS de 15 decimales por el redondeo binario (p.ej.
+    -75.12345678901234567). DecimalField(decimal_places=15) rechaza eso
+    ("Asegurese de que no haya mas de 15 decimales") y rompe la fila del import.
+    Lo recortamos a 15 decimales (precision sub-milimetrica, sobra para cualquier
+    coordenada) ANTES de validar. None/'' pasan igual; un valor no numerico se
+    deja para que el serializador reporte el error real.
+    """
+    if valor is None or valor == '':
+        return valor
+    try:
+        return Decimal(str(valor)).quantize(_COORD_QUANTIZE, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError, TypeError):
+        return valor
+
 
 class RutVisitaSerializador(serializers.ModelSerializer):
     ciudad__nombre = serializers.CharField(source='ciudad.nombre', read_only=True, allow_null=True, default=None)
+
+    def to_internal_value(self, data):
+        # Redondear lat/long a la precision del campo ANTES de validar, para que
+        # una coordenada geocodificada con >15 decimales no rompa el import.
+        if isinstance(data, dict):
+            data = data.copy()
+            for campo in ('latitud', 'longitud'):
+                if campo in data:
+                    data[campo] = _redondear_coordenada(data[campo])
+        return super().to_internal_value(data)
 
     def validate(self, data):
         cita_inicio = data.get('cita_inicio', getattr(self.instance, 'cita_inicio', None) if self.instance else None)
