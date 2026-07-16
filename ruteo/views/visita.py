@@ -24,7 +24,7 @@ from utilidades.imagen import Imagen
 from utilidades.utilidades import UtilidadGeneral
 from django.db.models import Sum, Count, F
 from django.db.models.functions import Coalesce
-from django.db import transaction
+from django.db import transaction, connection
 from io import BytesIO
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
@@ -39,6 +39,7 @@ import gc
 import base64
 import openpyxl
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -336,13 +337,30 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if respuesta['error'] == False:
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
-            VisitaServicio.ubicar(visitas)
-            # Solo se ordena lo decodificado: ordenar() construye una matriz de
-            # distancias y una visita sin lat/lng (estado_decodificado=False)
-            # hace fallar haversine() y deja sin 'orden' a todo el lote.
-            visitas_a_ordenar = [v for v in visitas if v.estado_decodificado]
-            if visitas_a_ordenar:
-                VisitaServicio.ordenar(visitas_a_ordenar)
+            # ubicar (franja por visita) + ordenar (solver OR-tools) pueden tardar
+            # segundos con muchas visitas -> riesgo de timeout del gateway (504).
+            # Se corren en un hilo daemon (mismo patron que NotificacionServicio),
+            # con el schema del tenant seteado DENTRO del hilo. El import responde
+            # ya; el orden aparece en el siguiente refresh. Falla aislada+logueada.
+            _schema = connection.schema_name
+            _ids = [v.id for v in visitas]
+
+            def _ubicar_y_ordenar():
+                try:
+                    connection.set_schema(_schema)
+                    vs = list(RutVisita.objects.filter(id__in=_ids))
+                    VisitaServicio.ubicar(vs)
+                    # Solo lo decodificado: ordenar() arma una matriz de distancias
+                    # y una visita sin lat/lng haria fallar haversine().
+                    a_ordenar = [v for v in vs if v.estado_decodificado]
+                    if a_ordenar:
+                        VisitaServicio.ordenar(a_ordenar)
+                except Exception:
+                    logger.exception('import-complemento: fallo ubicar/ordenar en background (schema=%s)', _schema)
+                finally:
+                    connection.close()
+
+            threading.Thread(target=_ubicar_y_ordenar, daemon=True).start()
             descartadas = respuesta.get('descartadas', 0)
             sin_ubicar = respuesta.get('sin_ubicar', 0)
             errores_guia = respuesta.get('errores_guia', 0)
