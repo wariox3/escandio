@@ -455,7 +455,9 @@ class VisitaServicio():
             if lote == 1 and isinstance(guias[0], dict):
                 _g = guias[0]
                 _zona = {k: v for k, v in _g.items() if 'zona' in k.lower()}
-                logger.info(
+                # warning (no info): sin config de LOGGING el umbral efectivo es
+                # WARNING, un info no se veria en los logs del server.
+                logger.warning(
                     '[DEBUG-ZONA] claves_guia=%s | campos_zona=%s',
                     sorted(_g.keys()), _zona,
                 )
