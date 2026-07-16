@@ -343,14 +343,25 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             visitas_a_ordenar = [v for v in visitas if v.estado_decodificado]
             if visitas_a_ordenar:
                 VisitaServicio.ordenar(visitas_a_ordenar)
-            mensaje = f'Se importaron {cantidad} guias con exito'
             descartadas = respuesta.get('descartadas', 0)
             sin_ubicar = respuesta.get('sin_ubicar', 0)
+            errores_guia = respuesta.get('errores_guia', 0)
+            mensaje = f'Se importaron {cantidad} guias con exito'
             if descartadas:
                 mensaje += f', {descartadas} descartadas por estar fuera de las zonas seleccionadas'
             if sin_ubicar:
                 mensaje += f', {sin_ubicar} sin geocodificar (revise la direccion para asignarles zona)'
-            return Response({'mensaje': mensaje}, status=status.HTTP_200_OK)
+            if errores_guia:
+                mensaje += f', {errores_guia} omitidas por datos invalidos'
+            # Devolvemos los conteos para que el front distinga exito TOTAL de
+            # parcial (mostrar warning si hubo descartes/omitidas).
+            return Response({
+                'mensaje': mensaje,
+                'cantidad': cantidad,
+                'descartadas': descartadas,
+                'sin_ubicar': sin_ubicar,
+                'errores_guia': errores_guia,
+            }, status=status.HTTP_200_OK)
         else:
             return Response({'mensaje': respuesta['mensaje'], 'validaciones': respuesta.get('validaciones')}, status=status.HTTP_400_BAD_REQUEST)
 

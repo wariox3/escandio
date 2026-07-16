@@ -444,6 +444,7 @@ class VisitaServicio():
         cantidad = 0
         descartadas = 0
         sin_ubicar = 0
+        errores_guia = 0
         visitas_creadas = []
         # Con filtro de zonas las guías descartadas siguen pendientes en el
         # complemento y volverían a ocupar la ventana `limite` en cada intento
@@ -563,9 +564,17 @@ class VisitaServicio():
                 if visitaSerializador.is_valid():
                     visita = visitaSerializador.save()
                     visitas_creadas.append(visita)
-                    cantidad += 1                                                                                    
+                    cantidad += 1
                 else:
-                    return {'error': True, 'mensaje': 'Errores de validación', 'validaciones': visitaSerializador.errors}
+                    # Una guia invalida NO debe tumbar todo el import: se salta y
+                    # se cuenta (antes hacia `return` y se caia todo el lote).
+                    errores_guia += 1
+                    logger.warning(
+                        'importar_complemento: guia %s omitida por validacion: %s',
+                        guia.get('codigoGuiaPk') if isinstance(guia, dict) else '?',
+                        dict(visitaSerializador.errors),
+                    )
+                    continue
             if cantidad >= limite:
                 break
             if len(guias) < limite:
@@ -581,7 +590,7 @@ class VisitaServicio():
             if guia_hasta_actual and nuevo_desde > int(guia_hasta_actual):
                 break
             parametros['guia_desde'] = nuevo_desde
-        return {'error': False, 'cantidad': cantidad, 'descartadas': descartadas, 'sin_ubicar': sin_ubicar, 'visitas_creadas': visitas_creadas}
+        return {'error': False, 'cantidad': cantidad, 'descartadas': descartadas, 'sin_ubicar': sin_ubicar, 'errores_guia': errores_guia, 'visitas_creadas': visitas_creadas}
 
     @staticmethod
     def entrega_complemento(visita: RutVisita, imagenes_b64, firmas_b64, datos_entrega):
