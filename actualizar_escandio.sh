@@ -42,6 +42,15 @@ git fetch origin "$RAMA"
 git reset --hard "origin/$RAMA"
 echo "Descarga de actualizaciones ($(git log --oneline -1))"
 
+# Instala/actualiza dependencias del requirements (el venv ya esta activado
+# arriba). Sin esto, una lib nueva (p.ej. sentry-sdk) nunca queda instalada en
+# el server aunque este en requirements.txt. Si falla, el trap ERR corta el
+# deploy (no deja el server a medias).
+pip install -r requirements.txt
+echo "Dependencias actualizadas"
+
+# django_tenants aliasa `migrate` -> MigrateSchemasCommand, asi que esto migra
+# el schema public Y todos los schemas de tenants (no hace falta migrate_schemas).
 python manage.py migrate
 echo "Base de datos actualizada"
 
