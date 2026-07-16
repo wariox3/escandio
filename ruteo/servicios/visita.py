@@ -447,6 +447,18 @@ class VisitaServicio():
             guias = respuesta['guias']
             if not guias:
                 break
+            # LOG TEMPORAL (QUITAR tras diagnosticar): descubrir si la guia de
+            # Semantica trae su "zona" y con que nombre de campo, para cablear el
+            # filtro por zona de Semantica en el import. Solo la 1a guia del 1er
+            # lote y SOLO nombres de campo (no valores) para no volcar PII; ademas
+            # los pares cuyo nombre menciona "zona" (ahi el valor es el codigo).
+            if lote == 1 and isinstance(guias[0], dict):
+                _g = guias[0]
+                _zona = {k: v for k, v in _g.items() if 'zona' in k.lower()}
+                logger.info(
+                    '[DEBUG-ZONA] claves_guia=%s | campos_zona=%s',
+                    sorted(_g.keys()), _zona,
+                )
             for guia in guias:
                 if cantidad >= limite:
                     break
