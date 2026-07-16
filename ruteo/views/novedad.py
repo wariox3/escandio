@@ -66,9 +66,10 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
         solucion = raw.get('solucion')  
         if id:
             try:
-                novedad = RutNovedad.objects.get(pk=id)                            
-            except RutNovedad.DoesNotExist:
-                return Response({'mensaje':'La novedad no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)            
+                novedad = RutNovedad.objects.get(pk=id)
+            except (RutNovedad.DoesNotExist, ValueError):
+                # ValueError: id no numerico -> get(pk=...) lo lanza (no DoesNotExist).
+                return Response({'mensaje':'La novedad no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
             
             if novedad.estado_solucion == False:                
                 with transaction.atomic():

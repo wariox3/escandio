@@ -1006,6 +1006,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         fecha_entrega_parametro = request.POST.get('fecha_entrega')
         datos_adicionales = request.POST.get('datos_adicionales')
         if id and fecha_entrega_parametro:
+            # id no numerico -> misma respuesta que "no existe" (evita que
+            # RutVisita.objects.get(pk=id) lance ValueError -> 500 mas adelante).
+            try:
+                int(id)
+            except (TypeError, ValueError):
+                return Response({'mensaje': 'La visita no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 fecha_entrega_nativa = datetime.strptime(fecha_entrega_parametro, '%Y-%m-%d %H:%M')
                 fecha_entrega = timezone.make_aware(fecha_entrega_nativa)
