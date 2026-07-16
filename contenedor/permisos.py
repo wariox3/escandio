@@ -161,9 +161,14 @@ def puede_ver(user, contenedor, modulo):
     if es_super_admin(user) or es_admin_del_contenedor(user, contenedor):
         return True
     permisos = _permisos_membresia(user, contenedor)
-    if not permisos:
+    # Robusto ante JSON de permisos mal formado: si `permisos` no es dict o el
+    # valor del modulo es null/no-dict, se niega el acceso en vez de reventar.
+    # `permisos.get(modulo, {})` solo cubria la clave AUSENTE, no un modulo con
+    # valor null (ej. {'franja': null}) -> None.get('ver') era AttributeError (500).
+    if not isinstance(permisos, dict):
         return False
-    return bool(permisos.get(modulo, {}).get('ver'))
+    modulo_perms = permisos.get(modulo)
+    return bool(isinstance(modulo_perms, dict) and modulo_perms.get('ver'))
 
 
 def puede_editar_modulo(user, contenedor, modulo):
@@ -172,9 +177,10 @@ def puede_editar_modulo(user, contenedor, modulo):
     if es_super_admin(user) or es_admin_del_contenedor(user, contenedor):
         return True
     permisos = _permisos_membresia(user, contenedor)
-    if not permisos:
+    if not isinstance(permisos, dict):
         return False
-    return bool(permisos.get(modulo, {}).get('editar'))
+    modulo_perms = permisos.get(modulo)
+    return bool(isinstance(modulo_perms, dict) and modulo_perms.get('editar'))
 
 
 def rol_en_contenedor(user, contenedor):

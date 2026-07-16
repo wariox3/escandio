@@ -57,14 +57,29 @@ class VisitaServicio():
         return direccion
     
     @staticmethod
-    def ubicar_punto(franjas, latitud, longitud):    
+    def ubicar_punto(franjas, latitud, longitud):
+        # Sin coordenadas del punto no se puede ubicar.
+        if latitud is None or longitud is None:
+            return {'encontrado': False}
+        punto = Point(longitud, latitud)
         for franja in franjas:
-            coordenadas = [(coord['lng'], coord['lat']) for coord in franja.coordenadas]
-            poligono = Polygon(coordenadas)                
-            punto = Point(longitud, latitud)
-            if poligono.contains(punto):
-                return {'encontrado': True, 'franja': {'id':franja.id, 'codigo':franja.codigo}}
-        return {'encontrado': False }
+            coords = franja.coordenadas
+            # Una franja creada pero NO dibujada tiene coordenadas=None (o una
+            # lista con menos de 3 puntos / malformada). Antes esto reventaba:
+            # `for coord in None` -> TypeError -> 500 en TODO lo que ubica
+            # (editar direccion, importar, rutear). Se ignora la franja invalida.
+            if not isinstance(coords, list) or len(coords) < 3:
+                continue
+            try:
+                coordenadas = [(coord['lng'], coord['lat']) for coord in coords]
+                poligono = Polygon(coordenadas)
+                if poligono.contains(punto):
+                    return {'encontrado': True, 'franja': {'id': franja.id, 'codigo': franja.codigo}}
+            except (KeyError, TypeError, ValueError):
+                # Coordenadas malformadas (falta lng/lat, tipos raros): se ignora
+                # la franja en vez de tumbar toda la operacion.
+                continue
+        return {'encontrado': False}
 
     @staticmethod
     def ubicar(visitas: RutVisita):    
