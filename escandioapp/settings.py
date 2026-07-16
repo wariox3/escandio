@@ -34,6 +34,23 @@ DEBUG = config('ENV', default='dev') != 'prod'
 # body del request (trae datos de clientes). OJO: Sentry SI incluye variables
 # locales en el traceback, que pueden traer datos de clientes; si su politica lo
 # exige, agregar include_local_variables=False (pierde poder de diagnostico).
+def _sentry_before_send(event, hint):
+    """Filtra ruido antes de mandar a Sentry.
+
+    Silencia el ValueError de arranque de uvicorn + Django ASGI: uvicorn envia
+    un scope 'lifespan' que el ASGIHandler de Django rechaza con
+    "Django can only handle ASGI/HTTP connections, not lifespan". No afecta las
+    peticiones, es puro ruido de startup. Se descarta SOLO ese error puntual
+    (por el mensaje exacto), sin perder ningun otro ValueError real.
+    """
+    exc_info = (hint or {}).get('exc_info')
+    if exc_info:
+        exc_value = exc_info[1]
+        if isinstance(exc_value, ValueError) and 'can only handle ASGI/HTTP connections' in str(exc_value):
+            return None
+    return event
+
+
 SENTRY_DSN = config('SENTRY_DSN', default='')
 if SENTRY_DSN and sentry_sdk is not None:
     sentry_sdk.init(
@@ -43,6 +60,7 @@ if SENTRY_DSN and sentry_sdk is not None:
         traces_sample_rate=0.0,          # solo errores, sin performance (sin costo extra)
         send_default_pii=False,
         max_request_body_size='never',
+        before_send=_sentry_before_send,
     )
 
 ALLOWED_HOSTS = ['*']
