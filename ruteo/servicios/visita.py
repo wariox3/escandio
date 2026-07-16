@@ -483,14 +483,21 @@ class VisitaServicio():
             for guia in guias:
                 if cantidad >= limite:
                     break
-                direccion_destinatario = VisitaServicio.limpiar_direccion(guia['direccionDestinatario'])                                               
-                fecha = datetime.fromisoformat(guia['fechaIngreso'])  
-                nombre_remitente = (guia['nombreRemitente'][:150] if guia['nombreRemitente'] is not None and guia['nombreRemitente'] != "" else None)
-                nombre_destinatario = (guia['nombreDestinatario'][:150] if guia['nombreDestinatario'] is not None and guia['nombreDestinatario'] != "" else None)
-                documentoCliente = (guia['documentoCliente'][:30] if guia['documentoCliente'] is not None and guia['documentoCliente'] != "" else None)
-                telefono_destinatario = (guia['telefonoDestinatario'][:50] if guia['telefonoDestinatario'] is not None and guia['telefonoDestinatario'] != "" else None)
+                direccion_destinatario = VisitaServicio.limpiar_direccion(guia.get('direccionDestinatario'))                                               
+                # fromisoformat revienta (TypeError si es None, ValueError si viene
+                # mal formada) -> tumbaba TODO el import por una sola guia. Se tolera
+                # como None (el campo fecha es null) en vez de reventar.
+                _fecha_raw = guia.get('fechaIngreso')
+                try:
+                    fecha = datetime.fromisoformat(_fecha_raw) if _fecha_raw else None
+                except (ValueError, TypeError):
+                    fecha = None
+                nombre_remitente = (guia.get('nombreRemitente')[:150] if guia.get('nombreRemitente') is not None and guia.get('nombreRemitente') != "" else None)
+                nombre_destinatario = (guia.get('nombreDestinatario')[:150] if guia.get('nombreDestinatario') is not None and guia.get('nombreDestinatario') != "" else None)
+                documentoCliente = (str(guia.get('documentoCliente'))[:30] if guia.get('documentoCliente') not in (None, '') else None)
+                telefono_destinatario = (str(guia.get('telefonoDestinatario'))[:50] if guia.get('telefonoDestinatario') not in (None, '') else None)
                 data = {
-                    'numero': guia['codigoGuiaPk'],
+                    'numero': guia.get('codigoGuiaPk'),
                     'fecha':fecha,
                     'documento': documentoCliente,
                     'remitente': nombre_remitente,
@@ -499,10 +506,10 @@ class VisitaServicio():
                     'ciudad': None,
                     'destinatario_telefono': telefono_destinatario,
                     'destinatario_correo': None,
-                    'unidades': guia['unidades'] or 0,
-                    'peso': guia['pesoReal'] or 0,
-                    'volumen': guia['pesoVolumen'] or 0,
-                    'cobro': guia['vrCobroEntrega'] or 0,
+                    'unidades': guia.get('unidades') or 0,
+                    'peso': guia.get('pesoReal') or 0,
+                    'volumen': guia.get('pesoVolumen') or 0,
+                    'cobro': guia.get('vrCobroEntrega') or 0,
                     'latitud': None,
                     'longitud': None,
                     'estado_decodificado': False,
