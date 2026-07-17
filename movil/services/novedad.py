@@ -4,17 +4,21 @@ Reimplementa ruteo.views.novedad.RutNovedadViewSet.nuevo_action sin tocar la
 view legacy congelada.
 """
 import base64
+import logging
 
 from django.db import transaction
 
 from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
+from movil.services.errores import EvidenciaNoGuardada
 from ruteo.models.novedad import RutNovedad
 from ruteo.models.novedad_tipo import RutNovedadTipo
 from ruteo.servicios.notificacion import NotificacionServicio
 from utilidades.backblaze import Backblaze
 from utilidades.holmio import Holmio
 from utilidades.imagen import Imagen
+
+logger = logging.getLogger(__name__)
 
 
 def _a_base64(imagenes):
@@ -26,22 +30,32 @@ def _a_base64(imagenes):
 
 
 def _guardar_imagenes(novedad_id, imagenes, schema_name):
-    backblaze = Backblaze()
-    for idx, imagen in enumerate(imagenes):
-        contenido = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
-        nombre = f'{novedad_id}_{idx}.jpg'
-        id_alm, tamano, tipo, uuid, url = backblaze.subir_data(contenido, schema_name, nombre)
-        GenArchivo.objects.create(
-            archivo_tipo_id=2,
-            almacenamiento_id=id_alm,
-            nombre=nombre,
-            tipo=tipo,
-            tamano=tamano,
-            uuid=uuid,
-            codigo=novedad_id,
-            modelo='RutNovedad',
-            url=url,
+    # Igual que en entrega: un fallo transitorio de Backblaze no debe volverse
+    # 500 opaco ("servidor fuera de linea" + bucle). Se convierte en
+    # EvidenciaNoGuardada -> revierte la novedad -> la vista responde limpio para
+    # reintentar. Se loguea (exc_info) para verlo en Sentry.
+    try:
+        backblaze = Backblaze()
+        for idx, imagen in enumerate(imagenes):
+            contenido = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
+            nombre = f'{novedad_id}_{idx}.jpg'
+            id_alm, tamano, tipo, uuid, url = backblaze.subir_data(contenido, schema_name, nombre)
+            GenArchivo.objects.create(
+                archivo_tipo_id=2,
+                almacenamiento_id=id_alm,
+                nombre=nombre,
+                tipo=tipo,
+                tamano=tamano,
+                uuid=uuid,
+                codigo=novedad_id,
+                modelo='RutNovedad',
+                url=url,
+            )
+    except Exception as e:
+        logger.exception(
+            'novedad v2: fallo al guardar imagenes (novedad=%s)', novedad_id,
         )
+        raise EvidenciaNoGuardada() from e
 
 
 def _sincronizar_complemento(novedad, imagenes_b64):

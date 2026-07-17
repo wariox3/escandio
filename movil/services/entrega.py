@@ -4,18 +4,22 @@ Reimplementa el cuerpo de ruteo.views.visita.RutVisitaViewSet.entrega_action
 sin tocar la view legacy congelada.
 """
 import base64
+import logging
 
 from django.db import transaction
 from django.db.models import F
 
 from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
+from movil.services.errores import EvidenciaNoGuardada
 from ruteo.models.despacho import RutDespacho
 from ruteo.servicios.notificacion import NotificacionServicio
 from ruteo.servicios.visita import VisitaServicio
 from utilidades.backblaze import Backblaze
 from utilidades.imagen import Imagen
 from utilidades.utilidades import UtilidadGeneral
+
+logger = logging.getLogger(__name__)
 
 
 def _revincular_despacho(visita):
@@ -40,26 +44,39 @@ def _a_base64(archivos):
 
 
 def _guardar_archivos(visita_id, archivos, schema_name, archivo_tipo_id, extension, comprimir):
-    backblaze = Backblaze()
-    for idx, subido in enumerate(archivos):
-        if comprimir:
-            contenido = Imagen.comprimir_imagen_jpg(subido, calidad=20, max_width=1920)
-        else:
-            # Las firmas no se comprimen: el JPG dana el PNG.
-            contenido = subido.read()
-        nombre = f'{visita_id}_{idx}.{extension}'
-        id_alm, tamano, tipo, uuid, url = backblaze.subir_data(contenido, schema_name, nombre)
-        GenArchivo.objects.create(
-            archivo_tipo_id=archivo_tipo_id,
-            almacenamiento_id=id_alm,
-            nombre=nombre,
-            tipo=tipo,
-            tamano=tamano,
-            uuid=uuid,
-            codigo=visita_id,
-            modelo='RutVisita',
-            url=url,
+    # Backblaze (auth + upload) hace red -> B2Error/timeout ante un fallo
+    # transitorio. Sin este try, la excepcion subia sin atrapar -> 500 opaco ->
+    # la app mostraba "servidor fuera de linea" y reintentaba en bucle. Ahora la
+    # convertimos en EvidenciaNoGuardada: la transaccion de la entrega revierte
+    # (no se da por entregada sin evidencia) y la vista responde un error LIMPIO
+    # para que el conductor reintente. Se loguea (exc_info) para verlo en Sentry.
+    try:
+        backblaze = Backblaze()
+        for idx, subido in enumerate(archivos):
+            if comprimir:
+                contenido = Imagen.comprimir_imagen_jpg(subido, calidad=20, max_width=1920)
+            else:
+                # Las firmas no se comprimen: el JPG dana el PNG.
+                contenido = subido.read()
+            nombre = f'{visita_id}_{idx}.{extension}'
+            id_alm, tamano, tipo, uuid, url = backblaze.subir_data(contenido, schema_name, nombre)
+            GenArchivo.objects.create(
+                archivo_tipo_id=archivo_tipo_id,
+                almacenamiento_id=id_alm,
+                nombre=nombre,
+                tipo=tipo,
+                tamano=tamano,
+                uuid=uuid,
+                codigo=visita_id,
+                modelo='RutVisita',
+                url=url,
+            )
+    except Exception as e:
+        logger.exception(
+            'entrega v2: fallo al guardar evidencias (visita=%s, tipo_archivo=%s)',
+            visita_id, archivo_tipo_id,
         )
+        raise EvidenciaNoGuardada() from e
 
 
 def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales, tenant):

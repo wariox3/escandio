@@ -22,10 +22,21 @@ class Google():
             "region": "co",
             #"components": "country:CO"
         }
-        response = requests.get(base_url, params=params)
-        
+        try:
+            response = requests.get(base_url, params=params, timeout=15)
+        except Exception as e:
+            # timeout: sin el, un Google lento colgaba el worker (uvicorn) hasta
+            # cortar la conexion. try/except: una red caida (Timeout/Connection)
+            # no debe tumbar la peticion con un 500 opaco -> devolvemos el mismo
+            # dict de error que ya se maneja aguas arriba (la visita se crea sin
+            # geocodificar, igual que cuando Google responde status != OK).
+            return {"error": True, "mensaje": f"No se pudo consultar Google Maps: {e}"}
+
         if response.status_code == 200:
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                return {"error": True, "mensaje": "Respuesta no-JSON de Google Maps"}
             if data['status'] == 'OK':                
                 resultados = data['results']
                 cantidad_resultados = len(resultados)

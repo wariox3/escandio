@@ -4,6 +4,11 @@ Normaliza cualquier error de DRF al envelope {codigo, titulo, mensaje} para que
 la app movil tenga un unico formato de error que parsear. Se activa por-vista
 via MovilApiMixin.get_exception_handler (no reemplaza el handler global).
 """
+from django.core.exceptions import (
+    ObjectDoesNotExist,
+    ValidationError as DjangoValidationError,
+    FieldError,
+)
 from rest_framework.views import exception_handler
 
 from movil import responses
@@ -36,6 +41,26 @@ def _mensaje_de(data):
 
 
 def movil_exception_handler(exc, context):
+    # Excepciones que DRF NO atrapa (exception_handler devuelve None): hoy se
+    # vuelven 500 opaco -> la app muestra "servidor fuera de linea" y entra en
+    # bucle de re-sincronizacion. Las normalizamos al envelope v2 ANTES de que
+    # se vuelvan 500:
+    #  - Model.objects.get(...)/related sin atrapar -> DoesNotExist -> 404.
+    #  - fecha/numero mal formado en un filtro (django ValidationError) o campo
+    #    inexistente en filter()/values() (FieldError) -> 400.
+    # (El pk no numerico -> ValueError se valida en cada vista, NO aca, para no
+    # enmascararle a Sentry otros ValueError que si serian bugs reales.)
+    if isinstance(exc, ObjectDoesNotExist):
+        return responses.error(
+            'No existe el registro solicitado', responses.COD_NO_ENCONTRADO, 404,
+            titulo='No encontrado',
+        )
+    if isinstance(exc, (DjangoValidationError, FieldError)):
+        return responses.error(
+            'Datos invalidos en la solicitud', responses.COD_PARAMETROS, 400,
+            titulo='Datos invalidos',
+        )
+
     response = exception_handler(exc, context)
     if response is None:
         return None

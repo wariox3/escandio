@@ -16,6 +16,7 @@ from movil.serializers.novedad import (
     NovedadTipoMovilSerializer,
     SolucionarNovedadSerializer,
 )
+from movil.services.errores import EvidenciaNoGuardada
 from movil.services.novedad import registrar_novedad
 from movil.views.base import MovilApiMixin
 from ruteo.models.novedad import RutNovedad
@@ -46,6 +47,18 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
                 'Faltan parametros (visita_id, novedad_tipo_id, fecha, movil_token)',
                 responses.COD_PARAMETROS, 400, titulo='Datos invalidos',
             )
+        # El movil (FormData de React Native) puede mandar "undefined", un UUID o
+        # "12.0"; sin esta coercion, filter(pk=...) revienta con ValueError -> 500
+        # -> "servidor fuera de linea" + bucle de re-sync. El guard de arriba solo
+        # verifica que existan, no que sean numericos.
+        try:
+            visita_id = int(visita_id)
+            novedad_tipo_id = int(novedad_tipo_id)
+        except (TypeError, ValueError):
+            return responses.error(
+                'visita_id y novedad_tipo_id deben ser numericos',
+                responses.COD_PARAMETROS, 400, titulo='Datos invalidos',
+            )
         visita = RutVisita.objects.filter(pk=visita_id).first()
         if visita is None:
             return responses.error(
@@ -64,20 +77,35 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
                 'Formato de fecha invalido. Use YYYY-MM-DD HH:MM',
                 responses.COD_PARAMETROS, 400, titulo='Datos invalidos',
             )
-        novedad = registrar_novedad(
-            visita=visita,
-            novedad_tipo_id=novedad_tipo_id,
-            fecha=fecha,
-            descripcion=request.data.get('descripcion'),
-            movil_token=movil_token,
-            imagenes=request.FILES.getlist('imagenes'),
-            tenant=request.tenant,
-        )
+        try:
+            novedad = registrar_novedad(
+                visita=visita,
+                novedad_tipo_id=novedad_tipo_id,
+                fecha=fecha,
+                descripcion=request.data.get('descripcion'),
+                movil_token=movil_token,
+                imagenes=request.FILES.getlist('imagenes'),
+                tenant=request.tenant,
+            )
+        except EvidenciaNoGuardada:
+            return responses.error(
+                'No se pudieron subir las imágenes (almacenamiento no '
+                'disponible). La novedad no se registró; reintenta en un momento.',
+                responses.COD_SERVIDOR, 503, titulo='Reintenta',
+            )
         return Response({'id': novedad.id}, status=201)
 
     @extend_schema(request=SolucionarNovedadSerializer, responses={200: MensajeSerializer}, tags=['novedades'])
     @action(detail=True, methods=['post'], url_path='solucionar')
     def solucionar(self, request, pk=None):
+        # pk no numerico en la URL (router regex [^/.]+) -> ValueError en el ORM.
+        try:
+            pk = int(pk)
+        except (TypeError, ValueError):
+            return responses.error(
+                'La novedad no existe', responses.COD_NO_ENCONTRADO, 404,
+                titulo='No encontrada',
+            )
         novedad = RutNovedad.objects.filter(pk=pk).first()
         if novedad is None:
             return responses.error(

@@ -2,6 +2,11 @@ from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import ProtectedError, RestrictedError
+from django.core.exceptions import (
+    ObjectDoesNotExist,
+    ValidationError as DjangoValidationError,
+    FieldError,
+)
 from decouple import config
 import requests
 import django
@@ -60,6 +65,29 @@ def custom_exception_handler(exc, context):
                     context['request'].method, context['request'].path, mensaje)
         return Response({'mensaje': mensaje, 'codigo': 16},
                         status=status.HTTP_409_CONFLICT)
+
+    # Registro inexistente que la vista NO atrapo (un `Model.objects.get(...)`
+    # crudo, o acceso a un related inexistente). ObjectDoesNotExist es la clase
+    # base de TODOS los `Modelo.DoesNotExist`. Sin manejar seria 500 opaco; lo
+    # volvemos un 404 limpio para toda la API. (El Http404/NotFound de DRF ya lo
+    # maneja exception_handler mas abajo; esto cubre el DoesNotExist crudo de
+    # Django, que DRF deja pasar como 500.)
+    if isinstance(exc, ObjectDoesNotExist):
+        logger.info('Registro inexistente no atrapado en %s %s: %s',
+                    context['request'].method, context['request'].path, exc)
+        return Response({'mensaje': 'No existe el registro solicitado', 'codigo': 15},
+                        status=status.HTTP_404_NOT_FOUND)
+
+    # Dato invalido a nivel ORM que NO es la ValidationError de DRF: una fecha o
+    # numero mal formado dentro de un filtro (django ValidationError), o un
+    # nombre de campo inexistente en filter()/values() (FieldError). Sin manejar
+    # seria 500 opaco; lo volvemos 400. (La ValidationError de DRF y la de los
+    # serializers ya las maneja exception_handler mas abajo, con su detalle.)
+    if isinstance(exc, (DjangoValidationError, FieldError)):
+        logger.info('Solicitud con datos invalidos en %s %s: %s',
+                    context['request'].method, context['request'].path, exc)
+        return Response({'mensaje': 'Datos inválidos en la solicitud', 'codigo': 14},
+                        status=status.HTTP_400_BAD_REQUEST)
 
     response = exception_handler(exc, context)
     if response is not None:

@@ -202,10 +202,17 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         raw = request.data
         archivo_base64 = raw.get('archivo_base64')
         if archivo_base64:
-            archivo_data = base64.b64decode(archivo_base64)
-            archivo = BytesIO(archivo_data)
-            wb = openpyxl.load_workbook(archivo)
-            sheet = wb.active    
+            # base64 corrupto -> binascii.Error; archivo que no es .xlsx (un
+            # .csv/.xls/pdf o zip dañado) -> BadZipFile/InvalidFileException.
+            # Sin este try, subir el archivo equivocado daba 500 opaco. Mismo
+            # manejo que vehiculo.importar y franja.importar.
+            try:
+                archivo_data = base64.b64decode(archivo_base64)
+                archivo = BytesIO(archivo_data)
+                wb = openpyxl.load_workbook(archivo)
+                sheet = wb.active
+            except Exception:
+                return Response({'mensaje': 'Error procesando el archivo, valide que es un archivo de excel .xlsx', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
             data_modelo = []
             errores = False
             errores_datos = []    

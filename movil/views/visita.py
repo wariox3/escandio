@@ -14,6 +14,7 @@ from movil.permissions import EsConductorMovil
 from movil.serializers.comunes import MensajeSerializer
 from movil.serializers.visita import EntregaRequestSerializer, VisitaMovilSerializer
 from movil.services.entrega import registrar_entrega
+from movil.services.errores import EvidenciaNoGuardada
 from movil.views.base import MovilApiMixin
 from ruteo.filters.visita import VisitaFilter
 from ruteo.models.visita import RutVisita
@@ -44,6 +45,14 @@ class VisitaMovilViewSet(MovilApiMixin, mixins.ListModelMixin, viewsets.GenericV
     )
     @action(detail=True, methods=['post'], url_path='entregar')
     def entregar(self, request, pk=None):
+        # pk no numerico en la URL (router regex [^/.]+) -> ValueError en el ORM.
+        try:
+            pk = int(pk)
+        except (TypeError, ValueError):
+            return responses.error(
+                'La visita no existe', responses.COD_NO_ENCONTRADO, 404,
+                titulo='No encontrada',
+            )
         visita = self.get_queryset().filter(pk=pk).first()
         if visita is None:
             return responses.error(
@@ -73,12 +82,19 @@ class VisitaMovilViewSet(MovilApiMixin, mixins.ListModelMixin, viewsets.GenericV
         if visita.estado_entregado:
             return Response({'mensaje': 'La visita ya estaba entregada'})
 
-        registrar_entrega(
-            visita=visita,
-            fecha_entrega=fecha_entrega,
-            imagenes=request.FILES.getlist('imagenes'),
-            firmas=request.FILES.getlist('firmas'),
-            datos_adicionales=request.data.get('datos_adicionales'),
-            tenant=request.tenant,
-        )
+        try:
+            registrar_entrega(
+                visita=visita,
+                fecha_entrega=fecha_entrega,
+                imagenes=request.FILES.getlist('imagenes'),
+                firmas=request.FILES.getlist('firmas'),
+                datos_adicionales=request.data.get('datos_adicionales'),
+                tenant=request.tenant,
+            )
+        except EvidenciaNoGuardada:
+            return responses.error(
+                'No se pudieron subir las fotos/firmas (almacenamiento no '
+                'disponible). La entrega no se registró; reintenta en un momento.',
+                responses.COD_SERVIDOR, 503, titulo='Reintenta',
+            )
         return Response({'mensaje': 'Entrega registrada'})
