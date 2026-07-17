@@ -1,4 +1,7 @@
 from rest_framework.views import exception_handler
+from rest_framework.response import Response
+from rest_framework import status
+from django.db.models import ProtectedError, RestrictedError
 from decouple import config
 import requests
 import django
@@ -7,7 +10,57 @@ import logging
 
 logger = logging.getLogger('escandioapp.exceptions')
 
+# Nombres amigables (dominio) para los modelos que suelen bloquear un borrado por
+# FK protegida. Si el modelo no esta aca, el mensaje cae a la version generica.
+_MODELOS_EN_USO = {
+    'RutDespacho': 'rutas',
+    'RutFlota': 'flotas',
+    'RutVisita': 'guías',
+    'RutFranja': 'zonas',
+    'RutVehiculo': 'vehículos',
+    'RutConductor': 'conductores',
+    'RutNovedad': 'novedades',
+}
+
+
+def _tipos_que_bloquean(exc):
+    """Tipos de registro (en palabras del dominio, sin repetir) que impiden el
+    borrado. Best-effort: los modelos no mapeados se omiten del detalle.
+
+    ProtectedError expone .protected_objects y RestrictedError .restricted_objects;
+    cubrimos ambos para no perder el detalle segun el tipo de FK."""
+    objetos = (getattr(exc, 'protected_objects', None)
+               or getattr(exc, 'restricted_objects', None) or [])
+    nombres = []
+    for obj in objetos:
+        amigable = _MODELOS_EN_USO.get(obj.__class__.__name__)
+        if amigable and amigable not in nombres:
+            nombres.append(amigable)
+    return nombres
+
+
 def custom_exception_handler(exc, context):
+    # Borrado bloqueado por FK protegida (on_delete=PROTECT/RESTRICT): p.ej.
+    # eliminar un vehiculo que sigue asignado a rutas o flotas. Sin manejar,
+    # Django responde 500 opaco ("Servidor fuera de linea") y ademas ensucia
+    # Sentry con un "bug" que en realidad es una accion invalida del usuario.
+    # Lo convertimos en un 409 con mensaje claro para TODA la API (vehiculo,
+    # conductor, franja, ...), no solo el endpoint donde se reporto.
+    if isinstance(exc, (ProtectedError, RestrictedError)):
+        tipos = _tipos_que_bloquean(exc)
+        if tipos:
+            mensaje = ('No se puede eliminar porque está en uso en: '
+                       f'{", ".join(tipos)}. Quítalo de ahí antes de eliminarlo.')
+        else:
+            mensaje = ('No se puede eliminar porque está siendo usado por otros '
+                       'registros. Quítalo de donde se usa antes de eliminarlo.')
+        # info (no error): es una accion invalida esperada, no un bug -> no debe
+        # generar issue en Sentry, pero deja rastro de cuanto ocurre.
+        logger.info('Borrado bloqueado por FK protegida en %s %s: %s',
+                    context['request'].method, context['request'].path, mensaje)
+        return Response({'mensaje': mensaje, 'codigo': 16},
+                        status=status.HTTP_409_CONFLICT)
+
     response = exception_handler(exc, context)
     if response is not None:
         if response.status_code == 404:
