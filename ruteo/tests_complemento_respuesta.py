@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
+from ruteo.views.despacho import RutDespachoViewSet
 from utilidades.holmio import Holmio
 
 
@@ -72,3 +73,46 @@ class RuteoPendienteTests(TestCase):
         resultado = self._llamar({'guias': [{'numero': 1}]})
         self.assertFalse(resultado['error'])
         self.assertEqual(len(resultado['guias']), 1)
+
+
+class _Peticion:
+    """Solo se necesita .data: el guard responde antes de tocar BD o Holmio."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class DespachoIdNumericoTests(TestCase):
+    """El usuario escribio la placa "WCQ399" en el campo "Despacho".
+
+    Semantica interpola el codigo sin comillas en su consulta, asi que un valor
+    no numerico le revienta la API con un DQL ininteligible. Se ataja antes.
+    """
+
+    def _llamar(self, despacho_id):
+        return RutDespachoViewSet().nuevo_complemento_action(
+            _Peticion({'despacho_id': despacho_id}),
+        )
+
+    def test_placa_se_rechaza_sin_llamar_al_complemento(self):
+        with patch.object(Holmio, 'consumirPost') as consumir:
+            respuesta = self._llamar('WCQ399')
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn('placa', respuesta.data['mensaje'])
+        consumir.assert_not_called()
+
+    def test_alfanumerico_se_rechaza(self):
+        self.assertEqual(self._llamar('12A34').status_code, 400)
+
+    def test_vacio_sigue_dando_faltan_parametros(self):
+        respuesta = self._llamar('')
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn('Faltan parametros', respuesta.data['mensaje'])
+
+    def test_numerico_con_espacios_pasa_el_guard(self):
+        """Se recorta y sigue: el fallo debe venir de Holmio, no del guard."""
+        with patch.object(Holmio, 'consumirPost', return_value={'status': 500, 'mensaje': 'x'}) as consumir:
+            respuesta = self._llamar('  12345  ')
+        self.assertEqual(consumir.call_args[0][0], {'codigo_despacho': '12345'})
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertNotIn('placa', respuesta.data['mensaje'])

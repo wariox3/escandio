@@ -425,12 +425,20 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path=r'nuevo-complemento',)
     def nuevo_complemento_action(self, request): 
         raw = request.data
-        despacho_id = raw.get('despacho_id')        
+        despacho_id = raw.get('despacho_id')
         if despacho_id:
+            # Semantica interpola el codigo sin comillas en su consulta, asi que
+            # un valor no numerico (p.ej. la placa "WCQ399" en lugar del numero
+            # del despacho) le revienta la API y devuelve un error de DQL
+            # ininteligible. Se valida aca para dar un mensaje util y no gastar
+            # la llamada. Se conserva como texto: es lo que ya se enviaba.
+            despacho_id = str(despacho_id).strip()
+            if not despacho_id.isdigit():
+                return Response({'mensaje':f'El despacho debe ser un numero, se recibio "{despacho_id}". Verifique que no este ingresando la placa del vehiculo.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             holmio = Holmio()
             parametros = {
                 'codigo_despacho': despacho_id
-            }            
+            }
             respuesta = holmio.despacho_detalle(parametros)
             if respuesta['error'] == False:
                 despacho_complemento = respuesta['despacho']
