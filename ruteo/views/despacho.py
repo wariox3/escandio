@@ -432,16 +432,22 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 'codigo_despacho': despacho_id
             }            
             respuesta = holmio.despacho_detalle(parametros)
-            if respuesta['error'] == False: 
-                despacho_complemento = respuesta['despacho']                
-                vehiculo = RutVehiculo.objects.filter(placa=despacho_complemento['vehiculoPlaca']).first() 
+            if respuesta['error'] == False:
+                despacho_complemento = respuesta['despacho']
+                # El complemento puede devolver el despacho sin estas claves; el
+                # acceso directo reventaba con KeyError -> 500 opaco.
+                placa = despacho_complemento.get('vehiculoPlaca')
+                codigo_complemento = despacho_complemento.get('codigoDespachoPk')
+                if not placa or not codigo_complemento:
+                    return Response({'mensaje':f'El complemento devolvio el despacho {despacho_id} sin placa de vehiculo o sin codigo', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                vehiculo = RutVehiculo.objects.filter(placa=placa).first()
                 if vehiculo:
                     with transaction.atomic():
                         data = {
                             'vehiculo':vehiculo.id,
                             'fecha': datetime.now(),
-                            'codigo_complemento': despacho_complemento['codigoDespachoPk']                         
-                        }                                                                        
+                            'codigo_complemento': codigo_complemento
+                        }
                         serializador = RutDespachoSerializador(data=data)
                         if serializador.is_valid():
                             despacho = serializador.save()
@@ -462,9 +468,11 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         else:
                             return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)                              
                 else:
-                    return Response({'mensaje':f'No existe el vehiculo {despacho_complemento["vehiculoPlaca"]}', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)            
+                    return Response({'mensaje':f'No existe el vehiculo {placa}', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             else:
-                return Response({'mensaje':'No se pudo consultar el despacho en el complemento', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
+                # Se propaga el motivo del complemento (p.ej. "el despacho no
+                # existe") en vez de un mensaje generico que no dice nada.
+                return Response({'mensaje':f'No se pudo consultar el despacho {despacho_id} en el complemento: {respuesta["mensaje"]}', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         
