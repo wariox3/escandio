@@ -302,10 +302,21 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
     def trasbordar(self, request):             
         raw = request.data
         id = raw.get('id')
-        despacho_origen_id = raw.get('despacho_origen_id')        
+        despacho_origen_id = raw.get('despacho_origen_id')
         if id and despacho_origen_id:
-            try:          
-                if id != despacho_origen_id:      
+            # El origen se digita a mano: llegaba texto libre ("17631." con punto)
+            # directo a .get(pk=...) -> ValueError -> 500 (el except de abajo solo
+            # atrapa DoesNotExist). Ademas 'id' venia int y el origen str, asi que
+            # 'id != despacho_origen_id' era siempre verdadero y no atajaba el
+            # trasbordo de un despacho hacia si mismo (le restaba y sumaba visitas
+            # al mismo registro).
+            try:
+                id = int(str(id).strip())
+                despacho_origen_id = int(str(despacho_origen_id).strip())
+            except (TypeError, ValueError):
+                return Response({'mensaje':'Los despachos deben ser numeros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                if id != despacho_origen_id:
                     despacho = RutDespacho.objects.get(pk=id)
                     despacho_origen = RutDespacho.objects.get(pk=despacho_origen_id)  
                     if despacho_origen.estado_terminado == False:
