@@ -21,6 +21,16 @@ def _nombres_conductor(conductor_ids):
     return nombres
 
 
+def _rango_texto(fecha_desde, fecha_hasta):
+    if fecha_desde and fecha_hasta:
+        return f'Del {fecha_desde} al {fecha_hasta}'
+    if fecha_desde:
+        return f'Desde {fecha_desde}'
+    if fecha_hasta:
+        return f'Hasta {fecha_hasta}'
+    return 'Todas las fechas'
+
+
 class ReporteMensajeroView(APIView):
     permission_classes = [IsAuthenticated, PermisoModuloVer('reporte')]
 
@@ -62,7 +72,106 @@ class ReporteMensajeroView(APIView):
             for r in registros
         ]
 
+        if request.query_params.get('excel'):
+            return self._exportar_excel(resultados, fecha_desde, fecha_hasta)
+
         return Response({'count': len(resultados), 'results': resultados}, status=status.HTTP_200_OK)
+
+    def _exportar_excel(self, resultados, fecha_desde, fecha_hasta):
+        # La agregacion (por mensajero/placa/dia + totales) tambien la hace el
+        # front para mostrarla en pantalla; aca se replica para el Excel. Ambos
+        # parten de las mismas filas por despacho, asi que dan el mismo numero.
+        # Consolidar en una sola fuente queda como mejora futura.
+        def dia(f):
+            return f.date().isoformat() if f else ''
+
+        def cumplimiento(entregadas, asignadas):
+            # Igual que el front: 1 decimal, medio hacia arriba.
+            return int(entregadas / asignadas * 1000 + 0.5) / 10 if asignadas else 0
+
+        detalle = {}
+        for r in resultados:
+            clave = (r['conductor_id'], r['vehiculo__placa'], dia(r['fecha']))
+            fila = detalle.get(clave)
+            if fila is None:
+                fila = {
+                    'mensajero': r['conductor_nombre'] or 'Sin asignar',
+                    'placa': r['vehiculo__placa'] or 'Sin placa',
+                    'fecha': dia(r['fecha']),
+                    'despachos': 0, 'asignadas': 0, 'entregadas': 0, 'novedades': 0,
+                }
+                detalle[clave] = fila
+            fila['despachos'] += 1
+            fila['asignadas'] += r['visitas'] or 0
+            fila['entregadas'] += r['visitas_entregadas'] or 0
+            fila['novedades'] += r['visitas_novedad'] or 0
+
+        filas = sorted(detalle.values(), key=lambda f: (f['mensajero'], f['placa']))
+        filas.sort(key=lambda f: f['fecha'], reverse=True)
+        for f in filas:
+            f['cumplimiento'] = cumplimiento(f['entregadas'], f['asignadas'])
+
+        def totales(campo):
+            grupos = {}
+            for f in filas:
+                g = grupos.get(f[campo])
+                if g is None:
+                    g = {campo: f[campo], '_dias': set(),
+                         'despachos': 0, 'asignadas': 0, 'entregadas': 0, 'novedades': 0}
+                    grupos[f[campo]] = g
+                g['_dias'].add(f['fecha'])
+                for c in ('despachos', 'asignadas', 'entregadas', 'novedades'):
+                    g[c] += f[c]
+            salida = []
+            for g in sorted(grupos.values(), key=lambda x: x[campo]):
+                g['dias'] = len(g.pop('_dias'))
+                g['cumplimiento'] = cumplimiento(g['entregadas'], g['asignadas'])
+                salida.append(g)
+            return salida
+
+        cols_num = [
+            {'clave': 'despachos', 'titulo': 'Despachos', 'tipo': 'entero'},
+            {'clave': 'asignadas', 'titulo': 'Asignadas', 'tipo': 'entero'},
+            {'clave': 'entregadas', 'titulo': 'Entregadas', 'tipo': 'entero'},
+            {'clave': 'novedades', 'titulo': 'Novedades', 'tipo': 'entero'},
+            {'clave': 'cumplimiento', 'titulo': '% Cumplimiento', 'tipo': 'numero'},
+        ]
+        sumables = ['despachos', 'asignadas', 'entregadas', 'novedades']
+
+        plantilla = ExcelPlantilla('Reporte por mensajero', _rango_texto(fecha_desde, fecha_hasta))
+        plantilla.agregar_hoja(
+            'Detalle diario',
+            columnas=[
+                {'clave': 'mensajero', 'titulo': 'Mensajero'},
+                {'clave': 'placa', 'titulo': 'Placa'},
+                {'clave': 'fecha', 'titulo': 'Fecha'},
+            ] + cols_num,
+            filas=filas,
+            totales=sumables,
+        )
+        plantilla.agregar_hoja(
+            'Totales por mensajero',
+            columnas=[
+                {'clave': 'mensajero', 'titulo': 'Mensajero'},
+                {'clave': 'dias', 'titulo': 'Días', 'tipo': 'entero'},
+            ] + cols_num,
+            filas=totales('mensajero'),
+            totales=sumables,
+        )
+        plantilla.agregar_hoja(
+            'Totales por placa',
+            columnas=[
+                {'clave': 'placa', 'titulo': 'Placa'},
+                {'clave': 'dias', 'titulo': 'Días', 'tipo': 'entero'},
+            ] + cols_num,
+            filas=totales('placa'),
+            totales=sumables,
+        )
+
+        nombre = 'reporte_mensajero'
+        if fecha_desde and fecha_hasta:
+            nombre = f'{nombre}_{fecha_desde}_{fecha_hasta}'
+        return plantilla.respuesta(f'{nombre}.xlsx')
 
 
 class ReporteMensajeroEntregasView(APIView):
@@ -195,16 +304,10 @@ class ReporteMensajeroEntregasView(APIView):
         )
 
     def _exportar_excel(self, resumen, relacion, fecha_desde, fecha_hasta):
-        if fecha_desde and fecha_hasta:
-            rango = f'Del {fecha_desde} al {fecha_hasta}'
-        elif fecha_desde:
-            rango = f'Desde {fecha_desde}'
-        elif fecha_hasta:
-            rango = f'Hasta {fecha_hasta}'
-        else:
-            rango = 'Todas las fechas'
-
-        plantilla = ExcelPlantilla('Entregas por zona (pago del mensajero)', rango)
+        plantilla = ExcelPlantilla(
+            'Entregas por zona (pago del mensajero)',
+            _rango_texto(fecha_desde, fecha_hasta),
+        )
 
         plantilla.agregar_hoja(
             'Resumen por zona',

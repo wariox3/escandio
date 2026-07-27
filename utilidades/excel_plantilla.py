@@ -97,6 +97,18 @@ class ExcelPlantilla:
             return timezone.localtime(valor).replace(tzinfo=None)
         return valor
 
+    @staticmethod
+    def _a_numero(valor):
+        """Coacciona a numero (los decimales de DRF llegan como texto)."""
+        if isinstance(valor, (int, float)):
+            return valor
+        if isinstance(valor, str):
+            try:
+                return float(valor)
+            except ValueError:
+                return 0
+        return 0
+
     def _valor(self, valor, tipo):
         if valor is None:
             return ''
@@ -105,6 +117,15 @@ class ExcelPlantilla:
         if tipo in ('fecha', 'fecha_hora'):
             return self._sin_tz(valor)
         if tipo in ('numero', 'entero'):
+            # DRF serializa los DecimalField como texto; se convierten a numero
+            # para que Excel los trate como tal (formato/suma), no como cadena.
+            if isinstance(valor, str):
+                try:
+                    valor = float(valor)
+                except ValueError:
+                    return valor
+            if tipo == 'entero' and isinstance(valor, float):
+                valor = int(valor)
             return valor
         limpio = ILLEGAL_CHARACTERS_RE.sub('', smart_str(valor))
         return limpio
@@ -115,6 +136,11 @@ class ExcelPlantilla:
         totales = set(totales or [])
         ws = self.wb.create_sheet(title=nombre[:31])
         ncols = len(columnas)
+        if ncols == 0:
+            # Sin columnas (p.ej. lista vacia): hoja con solo el titulo, sin reventar.
+            ws['A1'] = self.titulo
+            ws['A2'] = 'Sin datos'
+            return ws
         ultima = get_column_letter(ncols)
 
         self._pintar_banda(ws, ncols, ultima)
@@ -166,11 +192,7 @@ class ExcelPlantilla:
                 if idx == 1:
                     celda.value = 'TOTAL'
                 elif col['clave'] in totales:
-                    celda.value = sum(
-                        f.get(col['clave']) or 0
-                        for f in filas
-                        if isinstance(f.get(col['clave']), (int, float))
-                    )
+                    celda.value = sum(self._a_numero(f.get(col['clave'])) for f in filas)
                     celda.number_format = self.FORMATOS.get(col.get('tipo'), '#,##0')
                     celda.alignment = Alignment(horizontal='right')
 
@@ -220,6 +242,25 @@ class ExcelPlantilla:
                         largo = max(largo, len(str(valor)))
                 ancho = min(largo + 3, self.ANCHO_MAX)
             ws.column_dimensions[get_column_letter(idx)].width = ancho
+
+    def agregar_hoja_datos(self, nombre, datos, titulos=None, tipos=None, totales=None):
+        """Arma la hoja tomando las columnas del primer registro.
+
+        Pensado para migrar listas (p.ej. serializer.data) de una:
+          titulos: {clave: 'Titulo'} (fallback: la clave legible).
+          tipos: {clave: 'numero'|'entero'|'fecha'|'fecha_hora'|'bool'|'texto'}.
+        """
+        titulos = titulos or {}
+        tipos = tipos or {}
+        columnas = [
+            {
+                'clave': clave,
+                'titulo': titulos.get(clave) or str(clave).replace('__', ' ').replace('_', ' ').strip().capitalize(),
+                'tipo': tipos.get(clave, 'texto'),
+            }
+            for clave in (datos[0].keys() if datos else [])
+        ]
+        return self.agregar_hoja(nombre, columnas, datos, totales=totales)
 
     # -- salida -------------------------------------------------------------
     def respuesta(self, nombre_archivo):

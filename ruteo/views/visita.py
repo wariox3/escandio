@@ -30,6 +30,33 @@ from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from ruteo.filters.visita import VisitaFilter
 from utilidades.excel_exportar import ExcelExportar
+from utilidades.excel_plantilla import ExcelPlantilla
+
+# Nombres y tipos de columna para el Excel de visitas (con la plantilla). Lo no
+# listado cae a titulo legible y tipo texto. DRF serializa decimales como texto;
+# el tipo 'numero'/'entero' los reconvierte en la plantilla.
+VISITA_EXCEL_TITULOS = {
+    'id': 'ID',
+    'numero': 'Número',
+    'destinatario_direccion_formato': 'Dirección formateada',
+    'destinatario_telefono': 'Teléfono',
+    'destinatario_correo': 'Correo',
+    'ciudad__nombre': 'Ciudad',
+    'despacho__vehiculo__placa': 'Placa',
+    'franja_id': 'Zona ID',
+    'franja_codigo': 'Zona',
+}
+VISITA_EXCEL_TIPOS = {
+    'id': 'entero', 'numero': 'entero', 'orden': 'entero', 'ciudad': 'entero',
+    'despacho': 'entero', 'franja_id': 'entero',
+    'unidades': 'numero', 'peso': 'numero', 'volumen': 'numero', 'cobro': 'numero',
+    'tarifa': 'numero', 'tiempo': 'numero', 'tiempo_servicio': 'numero',
+    'tiempo_trayecto': 'numero', 'distancia': 'numero', 'latitud': 'numero',
+    'longitud': 'numero',
+    'estado_decodificado': 'bool', 'estado_novedad': 'bool', 'estado_devolucion': 'bool',
+    'estado_decodificado_alerta': 'bool', 'estado_entregado': 'bool',
+    'estado_entregado_complemento': 'bool', 'estado_despacho': 'bool',
+}
 from ruteo.formatos.rotulo import FormatoRotulo
 from contenedor.mixins import RolMixin
 from django.http import HttpResponse
@@ -109,11 +136,20 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if request.query_params.get('excel') or request.query_params.get('excel_masivo'):
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
-            exporter = ExcelExportar(serializer.data, nombre_hoja="visitas", nombre_archivo="visitas.xlsx", titulo="Visitas")
             if request.query_params.get('excel'):
-                return exporter.exportar_estilo()
+                # Export con la plantilla corporativa (encabezado, estilos, filtro).
+                plantilla = ExcelPlantilla('Visitas')
+                plantilla.agregar_hoja_datos(
+                    'Visitas', list(serializer.data),
+                    titulos=VISITA_EXCEL_TITULOS, tipos=VISITA_EXCEL_TIPOS,
+                )
+                return plantilla.respuesta('visitas.xlsx')
             if request.query_params.get('excel_masivo'):
-                return exporter.exportar()
+                # Volcado plano write_only para grandes volumenes (sin estilos).
+                return ExcelExportar(
+                    serializer.data, nombre_hoja="visitas",
+                    nombre_archivo="visitas.xlsx", titulo="Visitas",
+                ).exportar()
         return super().list(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):        
