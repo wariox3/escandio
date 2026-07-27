@@ -95,9 +95,16 @@ class ReporteMensajeroEntregasView(APIView):
         if fecha_hasta:
             visitas = visitas.filter(despacho__fecha__date__lte=fecha_hasta)
 
-        # Resumen por (mensajero x zona) -> pago. Agregado en BD, completo.
+        # Resumen por (mensajero x placa x zona) -> pago. Agregado en BD, completo.
+        # Se incluye la placa porque un despacho puede no tener mensajero asignado
+        # (conductor_id nulo) pero si vehiculo: sin la placa esas guias caerian en
+        # "Sin asignar" sin forma de saber quien las hizo. Con la placa queda el
+        # rastro del vehiculo para atribuir el pago o corregir la asignacion.
         resumen_bruto = list(
-            visitas.values('despacho__conductor_id', 'franja_id', 'franja_codigo').annotate(
+            visitas.values(
+                'despacho__conductor_id', 'despacho__vehiculo__placa',
+                'franja_id', 'franja_codigo',
+            ).annotate(
                 asignadas=Count('id'),
                 entregadas=Count('id', filter=Q(estado_entregado=True)),
                 novedades=Count('id', filter=Q(estado_novedad=True)),
@@ -162,6 +169,7 @@ class ReporteMensajeroEntregasView(APIView):
             {
                 'conductor_id': r['despacho__conductor_id'],
                 'conductor_nombre': nombres.get(r['despacho__conductor_id']),
+                'placa': r['despacho__vehiculo__placa'],
                 'zona_id': r['franja_id'],
                 'zona_codigo': r['franja_codigo'],
                 'zona_nombre': zonas.get(r['franja_id'], {}).get('nombre'),

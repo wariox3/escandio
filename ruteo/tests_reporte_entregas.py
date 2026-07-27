@@ -16,6 +16,7 @@ from django_tenants.test.cases import TenantTestCase
 from contenedor.models import User
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.franja import RutFranja
+from ruteo.models.vehiculo import RutVehiculo
 from ruteo.models.visita import RutVisita
 from ruteo.views.reporte import ReporteMensajeroEntregasView
 
@@ -96,6 +97,19 @@ class ReporteEntregasZonaTests(TenantTestCase):
         self.assertEqual(fila['zona_nombre'], 'Norte')
         self.assertEqual(fila['zona_codigo'], 'Z1')
         self.assertEqual(fila['conductor_nombre'], 'Ana Ruiz')
+
+    def test_sin_mensajero_pero_con_placa_conserva_la_placa(self):
+        """Despacho sin conductor pero con vehiculo: la placa no se pierde en el
+        resumen, para poder atribuir el pago o corregir la asignacion."""
+        vehiculo = RutVehiculo.objects.create(placa='XYZ789')
+        despacho = RutDespacho.objects.create(conductor_id=None, vehiculo=vehiculo)
+        self._visita(self.z1, entregado=True, despacho=despacho)
+
+        resumen = self._get()['resumen']
+        self.assertEqual(len(resumen), 1)
+        self.assertIsNone(resumen[0]['conductor_id'])
+        self.assertEqual(resumen[0]['placa'], 'XYZ789')
+        self.assertEqual(resumen[0]['asignadas'], 1)
 
     def test_despacho_anulado_se_excluye(self):
         anulado = RutDespacho.objects.create(conductor_id=self.mensajero.id, estado_anulado=True)
