@@ -12,11 +12,13 @@ from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
 
 
-# --- Canvas personalizado para numeración "Página X de Y" ---
+# --- Canvas personalizado para pie de página (marca + "Página X de Y") ---
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
         super(NumberedCanvas, self).__init__(*args, **kwargs)
         self._saved_page_states = []
+        # Se fija una sola vez para que la fecha sea la misma en todas las paginas.
+        self._generado = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     def showPage(self):
         self._saved_page_states.append(dict(self.__dict__))
@@ -33,9 +35,16 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_number(self, page_count):
         page = self.getPageNumber()
-        text = f"Página {page} de {page_count}"
-        self.setFont("Helvetica", 8)
-        self.drawRightString(letter[0] - 0.5*inch, 0.4*inch, text)
+        # Linea separadora sobre el pie.
+        self.setStrokeColor(colors.lightgrey)
+        self.setLineWidth(0.5)
+        self.line(0.5*inch, 0.47*inch, letter[0] - 0.5*inch, 0.47*inch)
+        # Fecha de generacion a la izquierda, paginacion a la derecha.
+        self.setFont("Helvetica", 7)
+        self.setFillColor(colors.grey)
+        self.drawString(0.5*inch, 0.33*inch, f"Generado: {self._generado}")
+        self.drawRightString(letter[0] - 0.5*inch, 0.33*inch, f"Página {page} de {page_count}")
+        self.setFillColor(colors.black)
 
 
 class FormatoOrdenEntrega:
