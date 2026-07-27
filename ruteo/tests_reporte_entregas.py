@@ -119,6 +119,28 @@ class ReporteEntregasZonaTests(TenantTestCase):
         self.assertEqual(len(data['relacion']), 0)
         self.assertEqual(len(data['resumen']), 0)
 
+    def test_exportacion_excel_se_genera_y_abre(self):
+        """El export a Excel responde un xlsx valido con las dos hojas."""
+        from io import BytesIO
+        from openpyxl import load_workbook
+
+        self._visita(self.z1, entregado=True)
+        respuesta = ReporteMensajeroEntregasView().get(_Req({'excel': '1'}))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn('spreadsheetml', respuesta['Content-Type'])
+        self.assertIn('attachment', respuesta['Content-Disposition'])
+        wb = load_workbook(BytesIO(respuesta.content))
+        self.assertEqual(wb.sheetnames, ['Resumen por zona', 'Relación'])
+
+        hoja = wb['Resumen por zona']
+        self.assertIn('Entregas por zona', str(hoja['A1'].value))  # banda de titulo
+        self.assertEqual(hoja['A6'].value, 'Mensajero')            # encabezado de columna
+        self.assertEqual(hoja['A7'].value, 'Ana Ruiz')             # dato
+        # Fila de totales al final con la suma de asignadas.
+        self.assertEqual(hoja['A8'].value, 'TOTAL')
+        self.assertEqual(hoja['E8'].value, 1)
+
     def test_resumen_no_se_trunca_aunque_la_relacion_si(self):
         """Propiedad de pago: el detalle se acota, los totales van completos."""
         for _ in range(5):

@@ -8,6 +8,7 @@ from ruteo.models.visita import RutVisita
 from ruteo.models.franja import RutFranja
 from contenedor.models import User
 from contenedor.permisos import PermisoModuloVer
+from utilidades.excel_plantilla import ExcelPlantilla
 
 
 def _nombres_conductor(conductor_ids):
@@ -180,6 +181,9 @@ class ReporteMensajeroEntregasView(APIView):
             for r in resumen_bruto
         ]
 
+        if request.query_params.get('excel'):
+            return self._exportar_excel(resumen, relacion, fecha_desde, fecha_hasta)
+
         return Response(
             {
                 'relacion': relacion,
@@ -189,3 +193,81 @@ class ReporteMensajeroEntregasView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+    def _exportar_excel(self, resumen, relacion, fecha_desde, fecha_hasta):
+        if fecha_desde and fecha_hasta:
+            rango = f'Del {fecha_desde} al {fecha_hasta}'
+        elif fecha_desde:
+            rango = f'Desde {fecha_desde}'
+        elif fecha_hasta:
+            rango = f'Hasta {fecha_hasta}'
+        else:
+            rango = 'Todas las fechas'
+
+        plantilla = ExcelPlantilla('Entregas por zona (pago del mensajero)', rango)
+
+        plantilla.agregar_hoja(
+            'Resumen por zona',
+            columnas=[
+                {'clave': 'mensajero', 'titulo': 'Mensajero'},
+                {'clave': 'placa', 'titulo': 'Placa'},
+                {'clave': 'zona', 'titulo': 'Zona'},
+                {'clave': 'zona_codigo', 'titulo': 'Código zona'},
+                {'clave': 'asignadas', 'titulo': 'Asignadas', 'tipo': 'entero'},
+                {'clave': 'entregadas', 'titulo': 'Entregadas', 'tipo': 'entero'},
+                {'clave': 'novedades', 'titulo': 'Novedades', 'tipo': 'entero'},
+            ],
+            filas=[
+                {
+                    'mensajero': r['conductor_nombre'] or 'Sin asignar',
+                    'placa': r['placa'] or 'Sin placa',
+                    'zona': r['zona_nombre'] or 'Sin zona',
+                    'zona_codigo': r['zona_codigo'] or '',
+                    'asignadas': r['asignadas'],
+                    'entregadas': r['entregadas'],
+                    'novedades': r['novedades'],
+                }
+                for r in resumen
+            ],
+            totales=['asignadas', 'entregadas', 'novedades'],
+        )
+
+        plantilla.agregar_hoja(
+            'Relación',
+            columnas=[
+                {'clave': 'fecha', 'titulo': 'Fecha', 'tipo': 'fecha'},
+                {'clave': 'fecha_entrega', 'titulo': 'Fecha entrega', 'tipo': 'fecha'},
+                {'clave': 'mensajero', 'titulo': 'Mensajero'},
+                {'clave': 'placa', 'titulo': 'Placa'},
+                {'clave': 'despacho_id', 'titulo': 'Despacho', 'tipo': 'entero'},
+                {'clave': 'numero', 'titulo': 'Guía', 'tipo': 'entero'},
+                {'clave': 'documento', 'titulo': 'Documento'},
+                {'clave': 'destinatario', 'titulo': 'Destinatario'},
+                {'clave': 'direccion', 'titulo': 'Dirección'},
+                {'clave': 'zona', 'titulo': 'Zona'},
+                {'clave': 'zona_codigo', 'titulo': 'Código zona'},
+                {'clave': 'estado', 'titulo': 'Estado'},
+            ],
+            filas=[
+                {
+                    'fecha': e['fecha'],
+                    'fecha_entrega': e['fecha_entrega'],
+                    'mensajero': e['conductor_nombre'] or 'Sin asignar',
+                    'placa': e['placa'] or 'Sin placa',
+                    'despacho_id': e['despacho_id'],
+                    'numero': e['numero'],
+                    'documento': e['documento'],
+                    'destinatario': e['destinatario'],
+                    'direccion': e['destinatario_direccion'],
+                    'zona': e['zona_nombre'] or 'Sin zona',
+                    'zona_codigo': e['zona_codigo'] or '',
+                    'estado': e['estado'],
+                }
+                for e in relacion
+            ],
+        )
+
+        nombre = 'entregas_por_zona'
+        if fecha_desde and fecha_hasta:
+            nombre = f'{nombre}_{fecha_desde}_{fecha_hasta}'
+        return plantilla.respuesta(f'{nombre}.xlsx')
