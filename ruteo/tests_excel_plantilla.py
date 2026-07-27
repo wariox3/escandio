@@ -44,6 +44,13 @@ class ExcelPlantillaTests(TenantTestCase):
         self.assertEqual(hoja['B6'].value, 'Placa')             # titulo explicito
         self.assertEqual(hoja['A7'].value, 'SI')
 
+    def test_logo_ruteo_va_incrustado(self):
+        """El logo de Ruteo (asset local) debe quedar en la banda."""
+        plantilla = ExcelPlantilla('T')
+        plantilla.agregar_hoja_datos('H', [{'a': 1}])
+        # Sin empresa/red no hay logo de cliente, pero el de Ruteo (local) si.
+        self.assertGreaterEqual(len(plantilla.wb['H']._images), 1)
+
     def test_datos_vacios_no_revienta(self):
         plantilla = ExcelPlantilla('T')
         plantilla.agregar_hoja_datos('H', [])

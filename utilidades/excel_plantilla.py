@@ -18,6 +18,7 @@ Uso:
     )
     return plantilla.respuesta('entregas_por_zona.xlsx')
 """
+import os
 from datetime import datetime, date
 from io import BytesIO
 
@@ -79,11 +80,25 @@ class ExcelPlantilla:
         datos = self._obtener_logo_bytes()
         if not datos:
             return None
+        return self._dimensionar(BytesIO(datos), alto)
+
+    def _imagen_ruteo(self, alto=30):
+        """Logo de Ruteo (la app). Es un asset local blanco -> luce sobre la banda."""
+        ruta = os.path.join(os.path.dirname(__file__), 'assets', 'logo_ruteo.png')
+        if not os.path.exists(ruta):
+            return None
+        return self._dimensionar(ruta, alto)
+
+    @staticmethod
+    def _dimensionar(origen, alto):
+        """Devuelve un XLImage escalado a 'alto' conservando proporcion."""
         try:
             from PIL import Image as PILImage
-            with PILImage.open(BytesIO(datos)) as im:
+            with PILImage.open(origen) as im:
                 ancho, altura = im.size
-            img = XLImage(BytesIO(datos))
+            if hasattr(origen, 'seek'):
+                origen.seek(0)
+            img = XLImage(origen)
             img.height = alto
             img.width = int(ancho * (alto / altura)) if altura else alto
             return img
@@ -209,10 +224,12 @@ class ExcelPlantilla:
         linea_empresa = empresa + (f'  ·  NIT: {nit}' if nit else '')
         generado = f"Generado: {self._sin_tz(timezone.now()).strftime('%Y-%m-%d %H:%M')}"
 
+        # Texto centrado: queda entre el logo de Ruteo (izquierda) y el del
+        # cliente (derecha), sin chocar con ninguno.
         textos = [
-            (self.titulo, Font(name='Arial', size=14, bold=True, color='FFFFFF'), 'left'),
-            (linea_empresa, Font(name='Arial', size=10, bold=True, color='FFFFFF'), 'left'),
-            (self.subtitulo or '', Font(name='Arial', size=9, italic=True, color='D6E2EF'), 'left'),
+            (self.titulo, Font(name='Arial', size=14, bold=True, color='FFFFFF'), 'center'),
+            (linea_empresa, Font(name='Arial', size=10, bold=True, color='FFFFFF'), 'center'),
+            (self.subtitulo or '', Font(name='Arial', size=9, italic=True, color='D6E2EF'), 'center'),
             (generado, Font(name='Arial', size=8, color='D6E2EF'), 'right'),
         ]
         for i, (texto, fuente, alineacion) in enumerate(textos, start=1):
@@ -226,6 +243,11 @@ class ExcelPlantilla:
             celda.font = fuente
             celda.alignment = Alignment(horizontal=alineacion, vertical='center', indent=1)
             ws.row_dimensions[i].height = 20 if i == 1 else 15
+
+        # Logo de Ruteo (la app) a la izquierda; logo del cliente a la derecha.
+        ruteo = self._imagen_ruteo()
+        if ruteo is not None:
+            ws.add_image(ruteo, 'A1')
 
         logo = self._imagen_logo()
         if logo is not None:
