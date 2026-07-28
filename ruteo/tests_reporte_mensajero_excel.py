@@ -11,6 +11,8 @@ from io import BytesIO
 from django_tenants.test.cases import TenantTestCase
 from openpyxl import load_workbook
 
+from ruteo.models.despacho import RutDespacho
+from ruteo.models.visita import RutVisita
 from ruteo.views.reporte import ReporteMensajeroView
 
 
@@ -48,6 +50,29 @@ class ReporteMensajeroExcelTests(TenantTestCase):
         # Fila de totales suma asignadas.
         self.assertEqual(hoja['A8'].value, 'TOTAL')
         self.assertEqual(hoja['E8'].value, 15)
+
+    def test_cuenta_visitas_reales_no_los_contadores(self):
+        """Los contadores denormalizados se desincronizan; el informe cuenta lo real.
+
+        Asi el informe de conteos cuadra con el de zonas y nunca da
+        asignadas < entregadas.
+        """
+        # Contadores MAL a proposito: asignadas(1) < entregadas(9).
+        despacho = RutDespacho.objects.create(
+            conductor_id=1, visitas=1, visitas_entregadas=9, visitas_novedad=5,
+        )
+        # 3 visitas reales: 2 entregadas, 1 con novedad.
+        for i in range(3):
+            RutVisita.objects.create(
+                despacho=despacho, ciudad_id=None,
+                estado_entregado=(i < 2), estado_novedad=(i == 2),
+            )
+        respuesta = ReporteMensajeroView().get(_Req({}))
+        fila = respuesta.data['results'][0]
+        self.assertEqual(fila['visitas'], 3)              # real, no el contador (1)
+        self.assertEqual(fila['visitas_entregadas'], 2)
+        self.assertEqual(fila['visitas_novedad'], 1)
+        self.assertGreaterEqual(fila['visitas'], fila['visitas_entregadas'])
 
     def test_sin_asignar_y_sin_placa(self):
         resultados = [

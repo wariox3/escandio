@@ -44,14 +44,25 @@ class ReporteMensajeroView(APIView):
         if fecha_hasta:
             despachos = despachos.filter(fecha__date__lte=fecha_hasta)
 
+        # Se cuentan las visitas REALES, no los contadores denormalizados del
+        # despacho (visitas / visitas_entregadas / visitas_novedad): esos se
+        # desincronizan (llegaban a dar asignadas < entregadas y no cuadraban con
+        # el informe de zonas). Contando aca ambos informes salen de la misma
+        # fuente y las asignadas nunca son menores que las entregadas (subconjunto).
+        despachos = despachos.annotate(
+            _asignadas=Count('visitas_despacho_rel'),
+            _entregadas=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_entregado=True)),
+            _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True)),
+        )
+
         registros = list(
             despachos.values(
                 'id',
                 'fecha',
                 'conductor_id',
-                'visitas',
-                'visitas_entregadas',
-                'visitas_novedad',
+                '_asignadas',
+                '_entregadas',
+                '_novedades',
                 'vehiculo__placa',
             ).order_by('-fecha')
         )
@@ -65,9 +76,9 @@ class ReporteMensajeroView(APIView):
                 'conductor_id': r['conductor_id'],
                 'conductor_nombre': nombres.get(r['conductor_id']),
                 'vehiculo__placa': r['vehiculo__placa'],
-                'visitas': r['visitas'],
-                'visitas_entregadas': r['visitas_entregadas'],
-                'visitas_novedad': r['visitas_novedad'],
+                'visitas': r['_asignadas'],
+                'visitas_entregadas': r['_entregadas'],
+                'visitas_novedad': r['_novedades'],
             }
             for r in registros
         ]
