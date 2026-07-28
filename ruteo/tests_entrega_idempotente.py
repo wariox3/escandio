@@ -120,7 +120,8 @@ class EntregaIdempotenteTests(TenantTestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.data['mensaje'], 'La visita ya estaba entregada')
         self.despacho.refresh_from_db()
-        self.assertEqual(self.despacho.visitas_entregadas, 0)  # no se toco el contador
+        # El contador refleja la realidad (1 entregada) y el reenvio no lo duplica.
+        self.assertEqual(self.despacho.visitas_entregadas, 1)
         mock_notif.assert_not_called()
 
 

@@ -82,11 +82,8 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
                     visita = RutVisita.objects.filter(pk=novedad.visita_id).first()
                     if visita:
                         visita.estado_novedad = False
+                        # El contador visitas_novedad lo repone la señal de RutVisita.
                         visita.save(update_fields=['estado_novedad'])
-                        if visita.despacho:
-                            despacho = visita.despacho
-                            despacho.visitas_novedad = despacho.visitas_novedad - 1
-                            despacho.save(update_fields=['visitas_novedad'])
                     return Response({'mensaje': f'Se soluciono la novedad'}, status=status.HTTP_200_OK)
             else:
                 return Response({'mensaje':'La novedad ya esta solucionada', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)    
@@ -136,11 +133,8 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
                     return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
                 novedad = serializer.save()
                 visita.estado_novedad = True
+                # El contador visitas_novedad lo repone la señal de RutVisita.
                 visita.save(update_fields=['estado_novedad'])
-                if visita.despacho:
-                    despacho = visita.despacho
-                    despacho.visitas_novedad = despacho.visitas_novedad + 1
-                    despacho.save(update_fields=['visitas_novedad'])
 
                 if imagenes:
                     backblaze = Backblaze()

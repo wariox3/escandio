@@ -164,8 +164,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho.tiempo = despacho.tiempo - visita.tiempo
                     despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
                     despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
-                    despacho.visitas -= 1
                     despacho.save()
+        # El contador de visitas lo repone la señal de RutVisita (post_delete).
         self.perform_destroy(visita)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1013,11 +1013,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho.tiempo = despacho.tiempo - visita.tiempo
                         despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
                         despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
-                        despacho.visitas -= 1
                         despacho.save()
                         visita.despacho_anterior_id = visita.despacho_id
                         visita.despacho = None
                         visita.estado_despacho = False
+                        # El contador de visitas lo repone la señal de RutVisita.
                         visita.save()
                         return Response({'mensaje': 'Se retiro la visita del despacho'}, status=status.HTTP_200_OK)
             except RutVisita.DoesNotExist:
@@ -1045,7 +1045,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                             despacho_actual.tiempo = despacho_actual.tiempo - visita.tiempo
                             despacho_actual.tiempo_servicio = despacho_actual.tiempo_servicio - visita.tiempo_servicio
                             despacho_actual.tiempo_trayecto = despacho_actual.tiempo_trayecto - visita.tiempo_trayecto
-                            despacho_actual.visitas -= 1
                             despacho_actual.save()
 
                             despacho_nuevo.peso = despacho_nuevo.peso + visita.peso
@@ -1053,10 +1052,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                             despacho_nuevo.tiempo = despacho_nuevo.tiempo + visita.tiempo
                             despacho_nuevo.tiempo_servicio = despacho_nuevo.tiempo_servicio + visita.tiempo_servicio
                             despacho_nuevo.tiempo_trayecto = despacho_nuevo.tiempo_trayecto + visita.tiempo_trayecto
-                            despacho_nuevo.visitas += 1
                             despacho_nuevo.save()
 
                             visita.despacho = despacho_nuevo
+                            # Los contadores de ambos despachos los repone la señal.
                             visita.save()
                             return Response({'mensaje': 'Se cambio la visita de despacho'}, status=status.HTTP_200_OK)
                         else:
@@ -1135,8 +1134,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         visita.estado_entregado = True
                         visita.fecha_entrega = fecha_entrega
                         visita.datos_entrega = datos_entrega
+                        # El contador visitas_entregadas lo repone la señal de RutVisita.
                         visita.save()
-                        RutDespacho.objects.filter(pk=visita.despacho_id).update(visitas_entregadas=F('visitas_entregadas') + 1)
                         backblaze = Backblaze()
                         tenant = request.tenant.schema_name
                         if imagenes:
@@ -1370,13 +1369,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 despacho.tiempo = despacho.tiempo - visita.tiempo
                 despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
                 despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
-                despacho.visitas = despacho.visitas - 1    
-                if visita.estado_novedad:
-                    despacho.visitas_novedad = despacho.visitas_novedad - 1              
                 despacho.save()
                 visita.despacho_anterior_id = visita.despacho_id
                 visita.estado_despacho = False
                 visita.despacho = None
+                # visitas y visitas_novedad los repone la señal de RutVisita.
                 visita.save()
                 return Response({'mensaje': f'Se libero con exito'}, status=status.HTTP_200_OK)
             else:

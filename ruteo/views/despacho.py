@@ -238,6 +238,9 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho.estado_anulado = True
                         despacho.estado_terminado = True
                         despacho.save()
+                        # La desvinculacion de arriba es masiva (no dispara la señal)
+                        # y el despacho sobrevive: se recomputan sus contadores.
+                        DespachoServicio.recalcular_contadores([id])
                         if despacho.vehiculo_id:
                             vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
                             vehiculo.estado_asignado = False
@@ -263,28 +266,32 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     return Response({'mensaje':'No se puede adicionar visitas a un despacho aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                 if despacho.estado_terminado == False:
                     visita = RutVisita.objects.get(pk=visita_id)
-                    if visita.estado_despacho == True: 
+                    despacho_origen_id = None
+                    if visita.estado_despacho == True:
                         if trafico == False:
                             return Response({'mensaje':'La visita esta en otro despacho', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                         else:
                             despacho_origen = RutDespacho.objects.get(pk=visita.despacho_id)
+                            despacho_origen_id = despacho_origen.id
                             despacho_origen.peso = despacho_origen.peso - visita.peso
                             despacho_origen.volumen = despacho_origen.volumen - visita.volumen
                             despacho_origen.tiempo = despacho_origen.tiempo - visita.tiempo
                             despacho_origen.tiempo_servicio = despacho_origen.tiempo_servicio - visita.tiempo_servicio
                             despacho_origen.tiempo_trayecto = despacho_origen.tiempo_trayecto - visita.tiempo_trayecto
-                            despacho_origen.visitas = despacho_origen.visitas - 1                                   
-                            despacho_origen.save()                                
+                            despacho_origen.save()
                     visita.despacho = despacho
                     visita.estado_despacho = True
-                    visita.save()                            
+                    visita.save()
                     despacho.peso = despacho.peso + visita.peso
                     despacho.volumen = despacho.volumen + visita.volumen
                     despacho.tiempo = despacho.tiempo + visita.tiempo
                     despacho.tiempo_servicio = despacho.tiempo_servicio + visita.tiempo_servicio
                     despacho.tiempo_trayecto = despacho.tiempo_trayecto + visita.tiempo_trayecto
-                    despacho.visitas = despacho.visitas + 1
                     despacho.save()
+                    # Este save del despacho es POSTERIOR al de la visita, asi que
+                    # pisaria el contador recomputado por la señal. Se recomputa
+                    # aca, al final, para ambos despachos.
+                    DespachoServicio.recalcular_contadores([despacho.id, despacho_origen_id])
                     visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id, estado_decodificado=True)
                     if visitas_despacho.count() > 1:
                         VisitaServicio.ordenar(visitas_despacho)
@@ -327,18 +334,17 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                             despacho_origen.tiempo = despacho_origen.tiempo - visita.tiempo
                             despacho_origen.tiempo_servicio = despacho_origen.tiempo_servicio - visita.tiempo_servicio
                             despacho_origen.tiempo_trayecto = despacho_origen.tiempo_trayecto - visita.tiempo_trayecto
-                            despacho_origen.visitas = despacho_origen.visitas - 1                                   
-                            despacho_origen.save()                                
+                            despacho_origen.save()
 
                             despacho.peso = despacho.peso + visita.peso
                             despacho.volumen = despacho.volumen + visita.volumen
                             despacho.tiempo = despacho.tiempo + visita.tiempo
                             despacho.tiempo_servicio = despacho.tiempo_servicio + visita.tiempo_servicio
                             despacho.tiempo_trayecto = despacho.tiempo_trayecto + visita.tiempo_trayecto
-                            despacho.visitas = despacho.visitas + 1                                   
-                            despacho.save()               
+                            despacho.save()
 
                             visita.despacho = despacho
+                            # Los contadores de ambos despachos los repone la señal.
                             visita.save()
                         visitas_destino = RutVisita.objects.filter(despacho_id=despacho.id, estado_decodificado=True)
                         if visitas_destino.count() > 1:

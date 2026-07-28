@@ -1,8 +1,41 @@
 from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
 from django.db import transaction
+from django.db.models import Count, Q
 
 class DespachoServicio():
+
+    @staticmethod
+    def recalcular_contadores(despacho_ids):
+        """Repone visitas/visitas_entregadas/visitas_novedad contando las visitas
+        reales de los despachos dados. Es la fuente unica de estos contadores:
+        la llaman las señales de RutVisita (guardado/borrado) y, donde las señales
+        no alcanzan (operaciones masivas o un save del despacho posterior al de la
+        visita), se invoca explicito. Idempotente: solo escribe si algo cambia.
+        NO toca visitas_liberadas (historico) ni los sumatorios (peso/volumen)."""
+        if isinstance(despacho_ids, int):
+            despacho_ids = [despacho_ids]
+        ids = {i for i in despacho_ids if i}
+        if not ids:
+            return
+        despachos = RutDespacho.objects.filter(pk__in=ids).annotate(
+            _asignadas=Count('visitas_despacho_rel'),
+            _entregadas=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_entregado=True)),
+            _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True)),
+        ).only('id', 'visitas', 'visitas_entregadas', 'visitas_novedad')
+        actualizar = []
+        for d in despachos:
+            if (d.visitas != d._asignadas
+                    or d.visitas_entregadas != d._entregadas
+                    or d.visitas_novedad != d._novedades):
+                d.visitas = d._asignadas
+                d.visitas_entregadas = d._entregadas
+                d.visitas_novedad = d._novedades
+                actualizar.append(d)
+        if actualizar:
+            RutDespacho.objects.bulk_update(
+                actualizar, ['visitas', 'visitas_entregadas', 'visitas_novedad']
+            )
 
     @staticmethod
     def regenerar_valores(despacho: RutDespacho):    

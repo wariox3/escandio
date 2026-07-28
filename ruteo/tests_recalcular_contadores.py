@@ -18,11 +18,14 @@ class RecalcularContadoresTests(TenantTestCase):
         )
 
     def test_corrige_contadores_drifteados(self):
-        # Contadores MAL: asignadas(1) < entregadas(9).
-        despacho = RutDespacho.objects.create(visitas=1, visitas_entregadas=9, visitas_novedad=5)
+        despacho = RutDespacho.objects.create()
         self._visita(despacho, entregado=True)
         self._visita(despacho, entregado=True)
         self._visita(despacho, novedad=True)  # 3 reales: 2 entregadas, 1 novedad
+        # Forzar drift saltando la señal (update masivo): asignadas(1) < entregadas(9).
+        RutDespacho.objects.filter(pk=despacho.id).update(
+            visitas=1, visitas_entregadas=9, visitas_novedad=5,
+        )
 
         resultado = recalcular_contadores()
 
@@ -33,8 +36,9 @@ class RecalcularContadoresTests(TenantTestCase):
         self.assertEqual(despacho.visitas_novedad, 1)
 
     def test_dry_run_detecta_pero_no_escribe(self):
-        despacho = RutDespacho.objects.create(visitas=5, visitas_entregadas=0, visitas_novedad=0)
-        self._visita(despacho)  # 1 real, 0 entregada
+        despacho = RutDespacho.objects.create()
+        self._visita(despacho)  # 1 real; la señal deja visitas=1
+        RutDespacho.objects.filter(pk=despacho.id).update(visitas=5)  # drift forzado
 
         resultado = recalcular_contadores(dry_run=True)
 
