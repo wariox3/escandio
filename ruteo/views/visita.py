@@ -1136,46 +1136,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         visita.datos_entrega = datos_entrega
                         # El contador visitas_entregadas lo repone la señal de RutVisita.
                         visita.save()
-                        backblaze = Backblaze()
-                        tenant = request.tenant.schema_name
-                        if imagenes:
-                            for idx, imagen in enumerate(imagenes):
-                                #file_content = imagen.read()
-                                file_content = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
-                                # Sufijo de indice para que cada foto tenga nombre
-                                # unico (antes todas se llamaban {id}.jpg y colisionaban).
-                                nombre_archivo = f'{id}_{idx}.jpg'
-                                id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
-                                archivo = GenArchivo()
-                                archivo.archivo_tipo_id = 2
-                                archivo.almacenamiento_id = id_almacenamiento
-                                archivo.nombre = nombre_archivo
-                                archivo.tipo = tipo
-                                archivo.tamano = tamano
-                                archivo.uuid = uuid
-                                archivo.codigo = id
-                                archivo.modelo = "RutVisita"
-                                archivo.url = url
-                                archivo.save()
-                        if firmas:
-                            for idx, firma in enumerate(firmas):
-                                # No comprimir porque daña el png
-                                file_content = firma.read()
-                                # Sufijo de indice por el mismo motivo que las
-                                # imagenes: evitar colision de nombres.
-                                nombre_archivo = f'{id}_{idx}.png'
-                                id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
-                                archivo = GenArchivo()
-                                archivo.archivo_tipo_id = 3
-                                archivo.almacenamiento_id = id_almacenamiento
-                                archivo.nombre = nombre_archivo
-                                archivo.tipo = tipo
-                                archivo.tamano = tamano
-                                archivo.uuid = uuid
-                                archivo.codigo = id
-                                archivo.modelo = "RutVisita"
-                                archivo.url = url
-                                archivo.save()
+                        # Las evidencias (fotos/firmas) se suben a Backblaze DESPUES
+                        # del commit (fuera del lock). Sostener esa subida externa
+                        # dentro de la transaccion dejaba la conexion idle-in-
+                        # transaction hasta que se cerraba -> InterfaceError
+                        # "connection already closed" al INSERT del gen_archivo;
+                        # ademas, un fallo de subida tumbaba la entrega entera.
                         # Solo LEEMOS aqui si el complemento esta habilitado. La
                         # sincronizacion real (POST HTTP externo de hasta 30s) se
                         # hace DESPUES del commit, fuera del lock de fila. Antes
@@ -1197,6 +1163,52 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             # --- Fuera de la transaccion (ya hubo commit): la entrega quedo
             # registrada de forma durable. Lo de abajo es best-effort y su fallo
             # NO debe tumbar (500) la entrega ni sostener el lock. ---
+            # Subida de evidencias (fotos/firmas) a Backblaze. Best-effort: si la
+            # subida o el INSERT fallan, la entrega ya quedo confirmada; se registra
+            # en el log y no se responde 500.
+            try:
+                backblaze = Backblaze()
+                tenant = request.tenant.schema_name
+                if imagenes:
+                    for idx, imagen in enumerate(imagenes):
+                        imagen.seek(0)
+                        file_content = Imagen.comprimir_imagen_jpg(imagen, calidad=20, max_width=1920)
+                        # Sufijo de indice para que cada foto tenga nombre unico
+                        # (antes todas se llamaban {id}.jpg y colisionaban).
+                        nombre_archivo = f'{id}_{idx}.jpg'
+                        id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
+                        archivo = GenArchivo()
+                        archivo.archivo_tipo_id = 2
+                        archivo.almacenamiento_id = id_almacenamiento
+                        archivo.nombre = nombre_archivo
+                        archivo.tipo = tipo
+                        archivo.tamano = tamano
+                        archivo.uuid = uuid
+                        archivo.codigo = id
+                        archivo.modelo = "RutVisita"
+                        archivo.url = url
+                        archivo.save()
+                if firmas:
+                    for idx, firma in enumerate(firmas):
+                        # No comprimir porque daña el png.
+                        firma.seek(0)
+                        file_content = firma.read()
+                        nombre_archivo = f'{id}_{idx}.png'
+                        id_almacenamiento, tamano, tipo, uuid, url = backblaze.subir_data(file_content, tenant, nombre_archivo)
+                        archivo = GenArchivo()
+                        archivo.archivo_tipo_id = 3
+                        archivo.almacenamiento_id = id_almacenamiento
+                        archivo.nombre = nombre_archivo
+                        archivo.tipo = tipo
+                        archivo.tamano = tamano
+                        archivo.uuid = uuid
+                        archivo.codigo = id
+                        archivo.modelo = "RutVisita"
+                        archivo.url = url
+                        archivo.save()
+            except Exception:
+                logger.exception('Fallo la subida de evidencias a Backblaze para la visita %s', id)
+
             # Sincronizacion con el complemento externo. Aislada en try/except:
             # un complemento lento/caido se registra en el log y no afecta la
             # confirmacion al conductor.
