@@ -73,15 +73,30 @@ class NotificacionServicio():
     }
 
     @staticmethod
-    def _formatear_tarifa(tarifa):
+    def _formatear_monto(monto):
         """Formatea un Decimal/float a texto con separador de miles estilo CO.
         Ejemplos: 15000 -> '15.000', 1500.5 -> '1.501', 0 -> '0'."""
         try:
-            entero = int(round(float(tarifa)))
+            entero = int(round(float(monto)))
         except (TypeError, ValueError):
-            return str(tarifa)
+            return str(monto)
         # Formato 1234567 -> '1.234.567'
         return f'{entero:,}'.replace(',', '.')
+
+    @staticmethod
+    def _plantilla_variables_despacho(datos, nombre_empresa, documentos_texto, plantilla_config):
+        """Elige plantilla y variables para la notificacion de despacho aprobado.
+
+        Si el destinatario tiene contra-entrega (cobro > 0) usa 'entrega_tarifa'
+        con el MONTO A PAGAR AL RECIBIR, que es `cobro` (= vrCobroEntrega), NO el
+        flete `tarifa`. Si no hay cobro, usa la plantilla configurada del tenant.
+        """
+        if datos['cobro_total'] > 0:
+            monto = NotificacionServicio._formatear_monto(datos['cobro_total'])
+            return 'entrega_tarifa', [datos['nombre'], nombre_empresa, documentos_texto, monto]
+        if plantilla_config in NotificacionServicio.PLANTILLAS_SIN_VARIABLES:
+            return plantilla_config, []
+        return plantilla_config, [datos['nombre'], nombre_empresa, documentos_texto]
 
     @staticmethod
     def normalizar_telefono(telefono):
@@ -207,7 +222,7 @@ class NotificacionServicio():
 
                 visitas = RutVisita.objects.filter(
                     despacho_id=despacho_id
-                ).values('id', 'destinatario', 'destinatario_telefono', 'documento', 'tarifa')
+                ).values('id', 'destinatario', 'destinatario_telefono', 'documento', 'cobro')
 
                 destinatarios = {}
                 for visita in visitas:
@@ -219,13 +234,16 @@ class NotificacionServicio():
                         destinatarios[telefono] = {
                             'nombre': visita['destinatario'] or 'Cliente',
                             'documentos': [],
-                            'tarifa_total': Decimal('0'),
+                            'cobro_total': Decimal('0'),
                         }
                     documento = visita['documento'] or ''
                     if documento:
                         destinatarios[telefono]['documentos'].append(documento)
-                    tarifa_visita = visita.get('tarifa') or 0
-                    destinatarios[telefono]['tarifa_total'] += Decimal(str(tarifa_visita))
+                    # cobro = vrCobroEntrega = monto de contra-entrega (lo que paga
+                    # el cliente al recibir). NO usar 'tarifa' (flete): mostraria un
+                    # monto equivocado y en el import de Semantica ni se setea.
+                    cobro_visita = visita.get('cobro') or 0
+                    destinatarios[telefono]['cobro_total'] += Decimal(str(cobro_visita))
 
                 cliente = WhatsappCliente(conexion)
                 enviados = 0
@@ -233,20 +251,9 @@ class NotificacionServicio():
 
                 for telefono, datos in destinatarios.items():
                     documentos_texto = ', '.join(datos['documentos']) if datos['documentos'] else 'N/A'
-
-                    # Si el destinatario tiene visitas con tarifa > 0, usamos la
-                    # plantilla 'entrega_tarifa' que incluye el monto a pagar.
-                    # Si no, respetamos la plantilla configurada en el tenant.
-                    if datos['tarifa_total'] > 0:
-                        plantilla_efectiva = 'entrega_tarifa'
-                        tarifa_fmt = NotificacionServicio._formatear_tarifa(datos['tarifa_total'])
-                        variables = [datos['nombre'], nombre_empresa_final, documentos_texto, tarifa_fmt]
-                    elif plantilla_nombre in NotificacionServicio.PLANTILLAS_SIN_VARIABLES:
-                        plantilla_efectiva = plantilla_nombre
-                        variables = []
-                    else:
-                        plantilla_efectiva = plantilla_nombre
-                        variables = [datos['nombre'], nombre_empresa_final, documentos_texto]
+                    plantilla_efectiva, variables = NotificacionServicio._plantilla_variables_despacho(
+                        datos, nombre_empresa_final, documentos_texto, plantilla_nombre
+                    )
 
                     resultado = cliente.enviar_plantilla(
                         telefono=telefono,
@@ -289,6 +296,12 @@ class NotificacionServicio():
                 )
             except Exception as e:
                 logger.exception(f'Despacho {despacho_id}: error general en notificaciones WhatsApp: {e}')
+            finally:
+                # El thread abre su propia conexion (thread-local) al hacer
+                # set_schema. Django solo cierra conexiones por señales de request,
+                # NO en threads que uno crea a mano: si no se cierra aca, se fuga
+                # una conexion por notificacion y termina agotando la BD.
+                connection.close()
 
         hilo = threading.Thread(target=enviar_mensajes, daemon=True)
         hilo.start()
@@ -507,6 +520,10 @@ class NotificacionServicio():
                 )
             except Exception as e:
                 logger.exception(f'Visita {visita_id}: error en notificacion [{plantilla}]: {e}')
+            finally:
+                # Cerrar la conexion thread-local que abrio set_schema; si no, se
+                # fuga una conexion por notificacion (ver enviar_mensajes).
+                connection.close()
 
         hilo = threading.Thread(target=enviar, daemon=True)
         hilo.start()
