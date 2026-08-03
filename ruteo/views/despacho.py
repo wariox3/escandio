@@ -10,6 +10,7 @@ from ruteo.servicios.visita import VisitaServicio
 from ruteo.servicios.despacho import DespachoServicio
 from ruteo.serializers.despacho import RutDespachoSerializador, RutDespachoTraficoSerializador
 from ruteo.formatos.orden_entrega import FormatoOrdenEntrega
+from ruteo.formatos.terminacion_viaje import FormatoTerminacionViaje
 from ruteo.filters.despacho import DespachoFilter
 from rest_framework.filters import OrderingFilter
 from rest_framework.pagination import PageNumberPagination
@@ -29,7 +30,7 @@ from contenedor.mixins import RolMixin
 class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
     modulo = 'despacho'
     # Acciones de solo lectura: no requieren editor.
-    acciones_lectura = ['plano_semantica', 'tablero_trafico', 'ruta_action', 'imprimir_orden_entrega']
+    acciones_lectura = ['plano_semantica', 'tablero_trafico', 'ruta_action', 'imprimir_orden_entrega', 'terminacion_pdf']
     queryset = RutDespacho.objects.all()
     serializer_class = RutDespachoSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -178,49 +179,53 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
             },
         }, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=["post"], url_path=r'terminar-preview',)
+    def terminar_preview(self, request):
+        """Vista previa del Documento de Terminacion, SIN cerrar el viaje.
+
+        Corre las MISMAS validaciones que terminar; si pasan, devuelve el
+        consolidado (encabezado + resumen + detalle de novedades). No cambia
+        estado (el cierre solo ocurre al confirmar con `terminar`).
+        """
+        id = request.data.get('id')
+        if not id:
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            despacho = RutDespacho.objects.get(pk=id)
+        except RutDespacho.DoesNotExist:
+            return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+        ok, mensaje = DespachoServicio.validar_terminacion(despacho)
+        if not ok:
+            return Response({'mensaje': mensaje, 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(DespachoServicio.consolidado_viaje(despacho), status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path=r'terminar',)
     def terminar(self, request):
-        raw = request.data
-        id = raw.get('id')
-        if id:
-            try:
-                with transaction.atomic():
-                    despacho = RutDespacho.objects.get(pk=id)
-                    if despacho.estado_aprobado == True:
-                        if despacho.estado_terminado == False:
-                            pendientes = list(
-                                RutVisita.objects.filter(
-                                    despacho_id=id, estado_entregado=False, estado_novedad=False
-                                ).values_list('numero', 'destinatario')
-                            )
-                            if pendientes:
-                                # Nombra las bloqueantes (num + destinatario) para que el
-                                # operador sepa cual liberar o resolver, sin adivinar.
-                                detalle = ', '.join(
-                                    f'#{numero or "s/n"} {(destinatario or "").strip()}'.strip()
-                                    for numero, destinatario in pendientes[:5]
-                                )
-                                if len(pendientes) > 5:
-                                    detalle += f' y {len(pendientes) - 5} mas'
-                                return Response(
-                                    {'mensaje': f'El despacho tiene {len(pendientes)} visita(s) sin entregar ni novedad: {detalle}', 'codigo': 1},
-                                    status=status.HTTP_400_BAD_REQUEST,
-                                )
-                            despacho.estado_terminado = True
-                            despacho.save()
-                            if despacho.vehiculo_id:
-                                vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
-                                vehiculo.estado_asignado = False
-                                vehiculo.save()
-                            return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)
-                        else:
-                            return Response({'mensaje':'El despacho ya esta terminado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                    else:
-                        return Response({'mensaje':'El despacho no esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-            except RutDespacho.DoesNotExist:
-                return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST) 
+        id = request.data.get('id')
+        if not id:
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            with transaction.atomic():
+                despacho = RutDespacho.objects.get(pk=id)
+                ok, mensaje = DespachoServicio.validar_terminacion(despacho)
+                if not ok:
+                    return Response({'mensaje': mensaje, 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+                # Foto real del viaje ANTES de cerrar (los conteos cuentan visitas
+                # reales, no dependen del flag de terminado).
+                consolidado = DespachoServicio.consolidado_viaje(despacho)
+                despacho.estado_terminado = True
+                despacho.save()
+                if despacho.vehiculo_id:
+                    vehiculo = RutVehiculo.objects.get(pk=despacho.vehiculo_id)
+                    vehiculo.estado_asignado = False
+                    vehiculo.save()
+                # Documento de Terminacion de Viaje (snapshot inmutable).
+                DespachoServicio.guardar_terminacion(
+                    despacho, consolidado, usuario_id=getattr(request.user, 'id', None)
+                )
+                return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)
+        except RutDespacho.DoesNotExist:
+            return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=["post"], url_path=r'anular',)
     def anular(self, request):
@@ -519,4 +524,18 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
             except RutDespacho.DoesNotExist:
                 return Response({'mensaje':'La programacion no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST) 
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["post"], url_path=r'terminacion-pdf',)
+    def terminacion_pdf(self, request):
+        """PDF del Documento de Terminacion (desde el snapshot inmutable)."""
+        id = request.data.get('id') or request.data.get('despacho_id')
+        if not id:
+            return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        pdf = FormatoTerminacionViaje().generar_pdf(id)
+        if pdf is None:
+            return Response({'mensaje':'El viaje no tiene documento de terminacion', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+        response['Content-Disposition'] = f'attachment; filename="terminacion_viaje_{id}.pdf"'
+        return response
