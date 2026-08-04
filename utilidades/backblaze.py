@@ -3,6 +3,7 @@ from b2sdk.v2.exception import B2Error
 from decouple import config
 from datetime import datetime
 import base64
+import time
 import uuid
 
 class Backblaze():
@@ -28,16 +29,28 @@ class Backblaze():
         )                
         return response.id_, response.size, response.content_type, uuid_referencia   
     
-    def subir_data(self, file_data, tenant, nombre_archivo):
+    def subir_data(self, file_data, tenant, nombre_archivo, intentos=4):
         bucket_nombre = config('B2_BUCKET_NAME')
         bucket = self.b2_api.get_bucket_by_name(bucket_nombre)
         if bucket is None:
-            raise ValueError(f"El bucket '{bucket_nombre}' no existe.")                               
+            raise ValueError(f"El bucket '{bucket_nombre}' no existe.")
         uuid_referencia = uuid.uuid4()
-        anio_mes_actual = datetime.now().strftime("%Y/%m")        
-        url = f"{tenant}/{anio_mes_actual}/{uuid_referencia}_{nombre_archivo}"        
-        response = bucket.upload_bytes(file_data, url)                
-        return response.id_, response.size, response.content_type, uuid_referencia, url
+        anio_mes_actual = datetime.now().strftime("%Y/%m")
+        url = f"{tenant}/{anio_mes_actual}/{uuid_referencia}_{nombre_archivo}"
+        # B2 rechaza con UploadTokenUsedConcurrently cuando el mismo upload URL se
+        # usa en dos subidas casi simultaneas (p.ej. varias fotos de una entrega
+        # reusando el token cacheado). Se reintenta: cada upload_bytes toma un
+        # upload URL nuevo del pool, y el backoff da tiempo a que B2 lo libere.
+        # Antes esto se reintentaba solo porque la entrega hacia rollback; al
+        # mover la subida fuera de la transaccion ese reintento se perdio.
+        for intento in range(intentos):
+            try:
+                response = bucket.upload_bytes(file_data, url)
+                return response.id_, response.size, response.content_type, uuid_referencia, url
+            except B2Error:
+                if intento == intentos - 1:
+                    raise
+                time.sleep(0.4 * (intento + 1))
 
     def descargar(self, archivo_id):
         bucket_nombre = config('B2_BUCKET_NAME')
