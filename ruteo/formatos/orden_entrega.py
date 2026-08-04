@@ -7,6 +7,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from datetime import datetime
 
+from django.utils import timezone
+
 from general.formatos.encabezado import FormatoEncabezado
 from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
@@ -90,7 +92,7 @@ class FormatoOrdenEntrega:
         estilo_fecha.fontSize = 8
         estilo_fecha.leading = 11
 
-        fecha_formateada = despacho.fecha.strftime("%Y-%m-%d") if despacho.fecha else "N/A"
+        fecha_formateada = timezone.localtime(despacho.fecha).strftime("%Y-%m-%d") if despacho.fecha else "N/A"
 
         # Fila 1 - Agregar "Orden entrega:" antes de "Vehículo:"
         fila1_data = [
@@ -186,7 +188,7 @@ class FormatoOrdenEntrega:
 
                 cita_texto = ""
                 if visita.cita_inicio and visita.cita_fin:
-                    cita_texto = f"{visita.cita_inicio.strftime('%H:%M')} - {visita.cita_fin.strftime('%H:%M')}"
+                    cita_texto = f"{timezone.localtime(visita.cita_inicio).strftime('%H:%M')} - {timezone.localtime(visita.cita_fin).strftime('%H:%M')}"
                 cita = Paragraph(cita_texto, estilo_normal)
 
                 peso_formateado = str(int(visita.peso)) if visita.peso else "0"

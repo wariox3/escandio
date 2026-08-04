@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from utilidades.utilidades import Utilidades
 from datetime import datetime, time
+from django.utils import timezone
 from shapely.geometry import Point, Polygon
 from math import radians, cos, sin, asin, sqrt, atan2
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -126,8 +127,8 @@ class VisitaServicio():
                     ref = v.numero or v.documento or f'#{v.id}'
                     rechazos[ref] = (
                         f'Cita obligatoria ya pasó '
-                        f'({v.cita_inicio.strftime("%Y-%m-%d %H:%M")}-'
-                        f'{v.cita_fin.strftime("%H:%M")})'
+                        f'({timezone.localtime(v.cita_inicio).strftime("%Y-%m-%d %H:%M")}-'
+                        f'{timezone.localtime(v.cita_fin).strftime("%H:%M")})'
                     )
                     rechazos_ids.append(v.id)
                     continue
@@ -263,8 +264,8 @@ class VisitaServicio():
                             'error': True,
                             'mensaje': (
                                 f'La cita obligatoria de la visita {ref} ya pasó '
-                                f'({v.cita_inicio.strftime("%Y-%m-%d %H:%M")}-'
-                                f'{v.cita_fin.strftime("%H:%M")}). '
+                                f'({timezone.localtime(v.cita_inicio).strftime("%Y-%m-%d %H:%M")}-'
+                                f'{timezone.localtime(v.cita_fin).strftime("%H:%M")}). '
                                 f'Cambia la cita o pásala a "preferente".'
                             ),
                             'codigo': 14,
@@ -277,7 +278,7 @@ class VisitaServicio():
                             'error': True,
                             'mensaje': (
                                 f'Imposible cumplir la cita obligatoria de la visita {ref}. '
-                                f'Cita: {v.cita_inicio.strftime("%H:%M")}-{v.cita_fin.strftime("%H:%M")}. '
+                                f'Cita: {timezone.localtime(v.cita_inicio).strftime("%H:%M")}-{timezone.localtime(v.cita_fin).strftime("%H:%M")}. '
                                 f'Tiempo mínimo de traslado: {tiempo_minimo_desde_origen} min. '
                                 f'Tiempo disponible: {max(0, tw_fin)} min.'
                             ),
