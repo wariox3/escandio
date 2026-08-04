@@ -9,11 +9,15 @@ Cubre:
 
 Correr: python manage.py test ruteo.tests_terminacion
 """
+from datetime import datetime, timezone as dt_timezone
+
 from django.db import connection
+from django.test import SimpleTestCase
 from django.utils import timezone
 from django_tenants.test.cases import TenantTestCase
 
 from contenedor.models import User
+from ruteo.formatos.terminacion_viaje import FormatoTerminacionViaje
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.novedad import RutNovedad
 from ruteo.models.novedad_tipo import RutNovedadTipo
@@ -211,3 +215,22 @@ class TerminacionPdfTests(_Base):
         respuesta = RutDespachoViewSet().terminacion_pdf(_Req({'id': self.despacho.id}))
         self.assertEqual(respuesta.status_code, 200)
         self.assertTrue(respuesta.content.startswith(b'%PDF'))
+
+
+class FormatoFechaLocalTests(SimpleTestCase):
+    """El PDF muestra hora local (America/Bogota), no UTC del servidor.
+
+    La BD guarda en UTC (USE_TZ=True); _fmt debe convertir antes de formatear.
+    """
+
+    def test_datetime_utc_se_convierte_a_bogota(self):
+        # 04:25 UTC == 23:25 del dia anterior en Bogota (UTC-5).
+        utc = datetime(2026, 8, 4, 4, 25, tzinfo=dt_timezone.utc)
+        self.assertEqual(FormatoTerminacionViaje._fmt(utc), '2026-08-03 23:25')
+
+    def test_solo_fecha_convierte_antes_de_cortar_hora(self):
+        utc = datetime(2026, 8, 4, 4, 25, tzinfo=dt_timezone.utc)
+        self.assertEqual(FormatoTerminacionViaje._fmt(utc, con_hora=False), '2026-08-03')
+
+    def test_none_devuelve_na(self):
+        self.assertEqual(FormatoTerminacionViaje._fmt(None), 'N/A')

@@ -5,8 +5,10 @@ no desde los datos vivos: asi el documento no cambia si luego se edita el viaje.
 Reutiliza el encabezado corporativo (FormatoEncabezado) y la numeracion de
 paginas (NumberedCanvas) de orden_entrega.
 """
+from datetime import datetime
 from io import BytesIO
 
+from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
@@ -73,6 +75,10 @@ class FormatoTerminacionViaje:
     def _fmt(dt, con_hora=True):
         if not dt:
             return 'N/A'
+        # La BD guarda en UTC (USE_TZ=True); convertir a la hora local (America/Bogota)
+        # antes de formatear, si es un datetime con zona.
+        if isinstance(dt, datetime) and timezone.is_aware(dt):
+            dt = timezone.localtime(dt)
         return dt.strftime('%Y-%m-%d %H:%M' if con_hora else '%Y-%m-%d')
 
     @staticmethod
