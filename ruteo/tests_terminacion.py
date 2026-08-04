@@ -9,6 +9,7 @@ Cubre:
 
 Correr: python manage.py test ruteo.tests_terminacion
 """
+from django.db import connection
 from django.utils import timezone
 from django_tenants.test.cases import TenantTestCase
 
@@ -42,6 +43,7 @@ class _Base(TenantTestCase):
         self.vehiculo = RutVehiculo.objects.create(placa='ABC123', estado_asignado=True)
         self.despacho = RutDespacho.objects.create(
             estado_aprobado=True, vehiculo=self.vehiculo, conductor_id=None,
+            entrega_id=999,  # nº de Orden de Entrega -> consecutivo del documento
             fecha=timezone.now(), fecha_salida=timezone.now(),
         )
 
@@ -164,6 +166,8 @@ class TerminarTests(_Base):
         self.assertEqual((term.total_guias, term.entregadas, term.con_novedad), (2, 1, 1))
         self.assertEqual(term.usuario_id, 42)
         self.assertEqual(term.placa, 'ABC123')
+        self.assertEqual(term.consecutivo, 999)                    # OE
+        self.assertEqual(term.agencia, connection.tenant.nombre)   # contenedor
         self.assertEqual(RutTerminacionNovedad.objects.filter(terminacion=term).count(), 1)
 
     def test_snapshot_es_inmutable(self):

@@ -3,7 +3,7 @@ from ruteo.models.despacho import RutDespacho
 from ruteo.models.novedad import RutNovedad
 from ruteo.models.terminacion import RutTerminacion, RutTerminacionNovedad
 from contenedor.models import User
-from django.db import transaction
+from django.db import transaction, connection
 from django.db.models import Count, Q
 from django.utils import timezone
 
@@ -81,8 +81,13 @@ class DespachoServicio():
             if u:
                 conductor_nombre = f"{u['nombre'] or ''} {u['apellido'] or ''}".strip() or None
 
+        # Agencia = contenedor (tenant actual). Consecutivo = nº de Orden de Entrega.
+        agencia = getattr(getattr(connection, 'tenant', None), 'nombre', None)
+
         return {
             'despacho_id': despacho.id,
+            'consecutivo': despacho.entrega_id,
+            'agencia': agencia,
             'placa': despacho.vehiculo.placa if despacho.vehiculo_id else None,
             'conductor_id': despacho.conductor_id,
             'conductor_nombre': conductor_nombre,
@@ -100,8 +105,10 @@ class DespachoServicio():
         """Crea el snapshot inmutable del cierre desde el consolidado."""
         terminacion = RutTerminacion.objects.create(
             despacho=despacho,
+            consecutivo=consolidado.get('consecutivo'),
             fecha_cierre=timezone.now(),
             usuario_id=usuario_id,
+            agencia=consolidado.get('agencia'),
             placa=consolidado['placa'],
             conductor_nombre=consolidado['conductor_nombre'],
             fecha_viaje=consolidado['fecha_viaje'],

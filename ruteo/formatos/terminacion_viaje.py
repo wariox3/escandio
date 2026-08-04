@@ -71,6 +71,8 @@ class FormatoTerminacionViaje:
         etiqueta = estilos['Normal'].clone('etq'); etiqueta.fontName = 'Helvetica-Bold'; etiqueta.fontSize = 8
         dato = estilos['Normal'].clone('dat'); dato.fontName = 'Helvetica'; dato.fontSize = 8
         filas = [
+            [Paragraph('Agencia:', etiqueta), Paragraph(t.agencia or 'N/A', dato),
+             Paragraph('OE:', etiqueta), Paragraph(str(t.consecutivo) if t.consecutivo else 'N/A', dato)],
             [Paragraph('Viaje:', etiqueta), Paragraph(f'#{t.despacho_id}', dato),
              Paragraph('Placa:', etiqueta), Paragraph(t.placa or 'N/A', dato)],
             [Paragraph('Conductor:', etiqueta), Paragraph(t.conductor_nombre or 'N/A', dato),

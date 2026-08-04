@@ -11,12 +11,12 @@ class RutTerminacion(models.Model):
     determinísticamente desde estas filas (no se almacenan bytes del PDF).
     """
     despacho = models.ForeignKey(RutDespacho, on_delete=models.PROTECT, related_name='terminaciones')
-    # Numeracion propia del documento. Politica pendiente de definir (funcional):
-    # queda opcional para no bloquear el desarrollo.
+    # Consecutivo del documento = el nº de Orden de Entrega (despacho.entrega_id).
     consecutivo = models.IntegerField(null=True, blank=True)
     fecha_cierre = models.DateTimeField()
     usuario_id = models.IntegerField(null=True)
     # --- encabezado congelado ---
+    agencia = models.CharField(max_length=255, null=True)  # = contenedor (tenant)
     placa = models.CharField(max_length=20, null=True)
     conductor_nombre = models.CharField(max_length=255, null=True)
     fecha_viaje = models.DateTimeField(null=True)
