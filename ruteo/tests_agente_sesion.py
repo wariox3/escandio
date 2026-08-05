@@ -122,6 +122,63 @@ class OrquestadorSesionTests(TenantTestCase):
         self.assertIsNone(respuesta)
         WC.return_value.enviar_texto.assert_not_called()
 
+    # -- arranque self-service por placa (conductor sin sesión escribe su placa) --
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_arranca_sesion_y_saluda(self, WC):
+        tel = '573007654321'
+        respuesta = procesar_entrante_conductor(tel, 'ABC123', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertTrue(respuesta)  # devolvió el saludo
+        ses = RutAgenteSesion.objects.filter(
+            despacho=self.despacho, telefono=tel, estado=RutAgenteSesion.ESTADO_ACTIVA)
+        self.assertEqual(ses.count(), 1)
+        WC.return_value.enviar_botones.assert_called_once()
+        _tel, _texto, opciones = WC.return_value.enviar_botones.call_args.args
+        self.assertEqual([o['titulo'] for o in opciones], ['Reportar novedad', 'Sin novedades'])
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_mensaje_sin_placa_no_arranca(self, WC):
+        respuesta = procesar_entrante_conductor('573007654321', 'hola buenas', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertIsNone(respuesta)
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+        WC.return_value.enviar_botones.assert_not_called()
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_inexistente_no_arranca(self, WC):
+        respuesta = procesar_entrante_conductor('573007654321', 'ZZZ999', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertIsNone(respuesta)
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_de_despacho_anulado_no_arranca(self, WC):
+        self.despacho.estado_anulado = True
+        self.despacho.save(update_fields=['estado_anulado'])
+        respuesta = procesar_entrante_conductor('573007654321', 'ABC123', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertIsNone(respuesta)
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_mensaje_largo_con_placa_no_secuestra(self, WC):
+        # Cliente que casualmente menciona una placa en un mensaje largo: NO arranca.
+        largo = 'hola necesito ayuda con mi pedido de la placa ABC123 que no llegó gracias'
+        respuesta = procesar_entrante_conductor('573007654321', largo, _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertIsNone(respuesta)
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_arranca_y_luego_conversa(self, WC):
+        # 1) la placa arranca la sesión; 2) el siguiente mensaje ya corre el agente.
+        tel = '573007654321'
+        procesar_entrante_conductor(tel, 'ABC123', _Conexion(), cliente_llm=LLMFalso([]))
+        procesar_entrante_conductor(
+            tel, 'Sin novedades', _Conexion(),
+            cliente_llm=LLMFalso([{'texto': 'Perfecto, gracias. Buen camino 🚚', 'tool_calls': []}]),
+        )
+        ses = RutAgenteSesion.objects.get(telefono=tel)
+        # saludo + usuario('Sin novedades') + agente = 3
+        self.assertGreaterEqual(len(ses.historial), 3)
+        self.assertEqual(ses.historial[-1]['rol'], 'agente')
+
     @patch('movil.services.novedad._notificar')
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_retoma_historial_previo(self, WC, _notif):

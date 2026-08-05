@@ -14,6 +14,8 @@ El agente esta ACOTADO a un despacho: la tool nunca recibe despacho_id del
 modelo, lo inyecta el contexto -> el LLM no puede tocar otro viaje.
 """
 import logging
+import re
+from datetime import timedelta
 
 from django.utils import timezone
 
@@ -32,6 +34,11 @@ MAX_OPCIONES = 10         # tope de opciones tocables (limite de Meta para lista
 # rondas, o respuesta vacia del modelo): no dejamos al conductor sin respuesta ni
 # mandamos un body vacio (Meta lo rechaza). Incluye 'compañero' a proposito.
 MSJ_ERROR_TECNICO = 'Perdón, tuve un problema y no pude seguir. Un compañero te va a contactar. 🙏'
+
+# Arranque self-service: el conductor manda su placa al terminar el viaje.
+MAX_PALABRAS_PLACA = 6     # mensajes más largos NO se tratan como inicio por placa
+DIAS_VENTANA_PLACA = 7     # antigüedad máxima del despacho que resolvemos por placa
+_PLACA_RE = re.compile(r'[A-Z]{3}\s*-?\s*\d{2,3}[A-Z]?')
 
 SYSTEM = """\
 Sos un asistente de {empresa} que le escribe por WhatsApp al conductor {conductor} \
@@ -243,12 +250,15 @@ class AgenteConductor:
 def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
     """Orquesta un mensaje entrante del conductor.
 
-    Si hay una sesion de agente ACTIVA para este telefono, corre el agente con
-    el historial guardado, responde por WhatsApp y persiste. Devuelve la
-    respuesta de texto, o None si NO hay sesion (el webhook sigue su curso
-    normal, sin agente).
+    - Si hay una sesion ACTIVA para este telefono, corre el agente con el historial
+      guardado, responde por WhatsApp y persiste.
+    - Si NO hay sesion, intenta ARRANCAR por placa: si el texto trae la placa de un
+      despacho activo reciente, crea la sesion y saluda (arranque self-service).
+    - Si no matchea nada, devuelve None y el webhook sigue su curso normal (inbox),
+      sin secuestrar mensajes de clientes.
 
-    El schema del tenant ya viene seteado por el webhook antes de llamar aca.
+    Devuelve el texto de la respuesta/saludo, o None. El schema del tenant ya viene
+    seteado por el webhook antes de llamar aca.
     """
     # Imports locales: evita ciclos al cargar apps (mensajeria <-> ruteo).
     from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
@@ -260,7 +270,16 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
         .order_by('-id').first()
     )
     if not sesion:
-        return None
+        # No hay conversación en curso: ¿el conductor mandó su placa para arrancar?
+        # Arranque self-service. No secuestra mensajes ajenos: exige la placa de un
+        # despacho activo reciente y un mensaje corto.
+        despacho = _resolver_despacho_por_placa(texto)
+        if not despacho:
+            return None   # no es para el agente -> sigue al inbox normal
+        nueva, _envio = _saludar_y_crear_sesion(conexion, despacho.id, telefono, _nombre_conductor(despacho))
+        if not nueva:
+            return None   # Meta rechazó el saludo (raro: el conductor acaba de escribir)
+        return nueva.historial[-1]['texto'] if nueva.historial else ''
 
     contenedor = getattr(conexion, 'contenedor', None)
     agente = AgenteConductor(
@@ -313,6 +332,85 @@ def _enviar_respuesta(cliente, telefono, resultado):
     return cliente.enviar_texto(telefono, texto or MSJ_ERROR_TECNICO)
 
 
+def _extraer_placas(texto):
+    """Candidatos a placa dentro del texto, normalizados (sin separadores)."""
+    placas = []
+    for m in _PLACA_RE.finditer((texto or '').upper()):
+        norm = re.sub(r'[^A-Z0-9]', '', m.group())
+        if norm and norm not in placas:
+            placas.append(norm)
+    return placas
+
+
+def _resolver_despacho_por_placa(texto):
+    """Si el texto trae la placa de un despacho activo reciente, lo devuelve.
+
+    Arranque self-service: el conductor manda su placa al terminar. Solo matchea
+    mensajes cortos (para no secuestrar mensajes largos de clientes) contra
+    despachos aprobados, no anulados, de los últimos días.
+    """
+    from django.db.models import Q
+    from ruteo.models.despacho import RutDespacho
+
+    if len((texto or '').split()) > MAX_PALABRAS_PLACA:
+        return None
+    placas = _extraer_placas(texto)
+    if not placas:
+        return None
+    limite = timezone.now() - timedelta(days=DIAS_VENTANA_PLACA)
+    for placa in placas:
+        despacho = (
+            RutDespacho.objects
+            .filter(Q(fecha__gte=limite) | Q(fecha__isnull=True),
+                    vehiculo__placa__iexact=placa,
+                    estado_aprobado=True, estado_anulado=False)
+            .order_by('-id').first()
+        )
+        if despacho:
+            return despacho
+    return None
+
+
+def _nombre_conductor(despacho):
+    """Nombre del conductor asignado al despacho (si hay); si no, 'conductor'."""
+    from contenedor.models import User
+    user = User.objects.filter(pk=despacho.conductor_id).first() if despacho.conductor_id else None
+    nombre = f"{(user.nombre or '')} {(user.apellido or '')}".strip() if user else ''
+    return nombre or 'conductor'
+
+
+def _saludar_y_crear_sesion(conexion, despacho_id, telefono, conductor_nombre):
+    """Manda el saludo con botones y, si Meta lo acepta, crea la sesión ACTIVA.
+
+    Compartido por el arranque manual (Tráfico) y el automático (placa). Devuelve
+    (sesion, envio); sesion=None si el envío falló, para no dejar sesión fantasma.
+    """
+    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+    from ruteo.models.agente_sesion import RutAgenteSesion
+
+    empresa = getattr(getattr(conexion, 'contenedor', None), 'nombre', None) or 'la empresa'
+    saludo = (
+        f'¡Hola {conductor_nombre}! 👋 Soy el asistente de {empresa}. '
+        f'Cerremos el viaje #{despacho_id}. ¿Tuviste alguna guía con novedad?'
+    )
+    opciones = [{'titulo': 'Reportar novedad'}, {'titulo': 'Sin novedades'}]
+    try:
+        envio = WhatsappCliente(conexion).enviar_botones(telefono, saludo, opciones)
+    except Exception:
+        logger.exception('Agente: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
+        return None, {'error': True, 'mensaje': 'Excepción enviando el saludo por WhatsApp'}
+    if isinstance(envio, dict) and envio.get('error'):
+        logger.error('Agente: Meta rechazó el saludo a %s (despacho %s): %s',
+                     telefono, despacho_id, envio.get('mensaje'))
+        return None, envio
+    sesion = RutAgenteSesion.objects.create(
+        despacho_id=despacho_id, telefono=telefono, conductor_nombre=conductor_nombre,
+        estado=RutAgenteSesion.ESTADO_ACTIVA,
+        historial=[{'rol': 'agente', 'texto': saludo}],
+    )
+    return sesion, envio
+
+
 def iniciar_sesion_conductor(despacho_id, telefono=None):
     """Arranque MANUAL desde Tráfico: crea (o reusa) la sesión del agente y le
     manda el saludo por WhatsApp.
@@ -327,7 +425,6 @@ def iniciar_sesion_conductor(despacho_id, telefono=None):
     """
     from contenedor.models import CtnWhatsappConexion, User
     from django.db import connection
-    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
     from ruteo.models.agente_sesion import RutAgenteSesion
     from ruteo.models.despacho import RutDespacho
     from ruteo.servicios.notificacion import NotificacionServicio
@@ -360,29 +457,12 @@ def iniciar_sesion_conductor(despacho_id, telefono=None):
                 'sesion_id': sesion.id, 'telefono': telefono}
 
     conductor = (f"{(user.nombre or '')} {(user.apellido or '')}".strip() if user else '') or 'conductor'
-    empresa = getattr(conexion.contenedor, 'nombre', None) or 'la empresa'
-    saludo = (
-        f'¡Hola {conductor}! 👋 Soy el asistente de {empresa}. '
-        f'Cerremos el viaje #{despacho_id}. ¿Tuviste alguna guía con novedad?'
-    )
-    opciones_saludo = [{'titulo': 'Reportar novedad'}, {'titulo': 'Sin novedades'}]
 
-    # Mandamos el saludo ANTES de crear la sesión: si WhatsApp lo rechaza (caso
-    # típico: el conductor no escribió en las últimas 24h y Meta exige plantilla),
-    # no dejamos una sesión "activa" fantasma y el despachador puede reintentar.
-    try:
-        envio = WhatsappCliente(conexion).enviar_botones(telefono, saludo, opciones_saludo)
-    except Exception:
-        logger.exception('Agente: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
-        return {'ok': False, 'mensaje': 'No se pudo enviar el saludo por WhatsApp'}
-    if isinstance(envio, dict) and envio.get('error'):
-        detalle = envio.get('mensaje') or 'WhatsApp rechazó el mensaje'
-        logger.error('Agente: Meta rechazó el saludo a %s (despacho %s): %s', telefono, despacho_id, detalle)
+    # El saludo se manda ANTES de crear la sesión (dentro del helper): si WhatsApp
+    # lo rechaza (típico: el conductor no escribió en 24h y Meta exige plantilla),
+    # no queda sesión "activa" fantasma y el despachador puede reintentar.
+    sesion, envio = _saludar_y_crear_sesion(conexion, despacho_id, telefono, conductor)
+    if not sesion:
+        detalle = (envio or {}).get('mensaje') or 'WhatsApp rechazó el mensaje'
         return {'ok': False, 'mensaje': f'No se pudo enviar el saludo: {detalle}'}
-
-    sesion = RutAgenteSesion.objects.create(
-        despacho_id=despacho_id, telefono=telefono, conductor_nombre=conductor,
-        estado=RutAgenteSesion.ESTADO_ACTIVA,
-        historial=[{'rol': 'agente', 'texto': saludo}],
-    )
     return {'ok': True, 'mensaje': 'Conversación iniciada', 'sesion_id': sesion.id, 'telefono': telefono}

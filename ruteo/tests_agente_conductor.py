@@ -100,6 +100,15 @@ class AgenteConductorTests(TenantTestCase):
         self.assertEqual(r['tipo'], 'lista')
         self.assertEqual(len(r['opciones']), 5)
 
+    def test_extraer_placas(self):
+        from ruteo.servicios.agente_conductor import _extraer_placas
+        self.assertEqual(_extraer_placas('ABC123'), ['ABC123'])
+        self.assertEqual(_extraer_placas('hola ABC123'), ['ABC123'])
+        self.assertEqual(_extraer_placas('abc-123'), ['ABC123'])         # minúsculas + guión
+        self.assertEqual(_extraer_placas('ABC 123 listo'), ['ABC123'])   # espacio, sin comer 'listo'
+        self.assertEqual(_extraer_placas('moto ABC12D'), ['ABC12D'])     # placa de moto
+        self.assertEqual(_extraer_placas('hola buenas'), [])             # sin placa
+
     def test_ofrecer_opciones_tolera_strings_y_basura(self):
         # El modelo a veces manda opciones como strings sueltos, ints, o dicts sin
         # titulo. No debe crashear: se normaliza y se descarta lo inválido.
