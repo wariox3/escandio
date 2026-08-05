@@ -202,3 +202,68 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
     except Exception:
         logger.exception('Agente: fallo enviando respuesta a %s (despacho %s)', telefono, sesion.despacho_id)
     return respuesta
+
+
+def iniciar_sesion_conductor(despacho_id):
+    """Arranque MANUAL desde Tráfico: crea (o reusa) la sesión del agente para el
+    conductor del despacho y le manda el saludo por WhatsApp.
+
+    Corre en el schema del tenant (lo setea la request). Devuelve
+    {'ok', 'mensaje', 'sesion_id'?, 'telefono'?}.
+
+    El teléfono se normaliza igual que el webhook (mismo algoritmo) para que el
+    entrante del conductor matchee la sesión.
+    """
+    from contenedor.models import CtnWhatsappConexion, User
+    from django.db import connection
+    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+    from ruteo.models.agente_sesion import RutAgenteSesion
+    from ruteo.models.despacho import RutDespacho
+    from ruteo.servicios.notificacion import NotificacionServicio
+
+    despacho = RutDespacho.objects.filter(pk=despacho_id).first()
+    if not despacho:
+        return {'ok': False, 'mensaje': 'El despacho no existe'}
+    if not despacho.conductor_id:
+        return {'ok': False, 'mensaje': 'El despacho no tiene conductor asignado'}
+
+    user = User.objects.filter(pk=despacho.conductor_id).first()
+    telefono = NotificacionServicio.normalizar_telefono(getattr(user, 'telefono', None)) if user else None
+    if not telefono:
+        return {'ok': False, 'mensaje': 'El conductor no tiene un teléfono válido'}
+
+    conexion = (
+        CtnWhatsappConexion.objects
+        .filter(contenedor__schema_name=connection.schema_name, estado=CtnWhatsappConexion.ESTADO_ACTIVO)
+        .select_related('contenedor').first()
+    )
+    if not conexion:
+        return {'ok': False, 'mensaje': 'No hay conexión de WhatsApp activa para el contenedor'}
+
+    # Reusar una conversación activa en vez de duplicarla / re-saludar.
+    sesion = RutAgenteSesion.objects.filter(
+        despacho_id=despacho_id, telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA,
+    ).first()
+    if sesion:
+        return {'ok': True, 'mensaje': 'Ya había una conversación activa',
+                'sesion_id': sesion.id, 'telefono': telefono}
+
+    conductor = f"{(user.nombre or '')} {(user.apellido or '')}".strip() or 'conductor'
+    empresa = getattr(conexion.contenedor, 'nombre', None) or 'la empresa'
+    saludo = (
+        f'¡Hola {conductor}! 👋 Soy el asistente de {empresa}. '
+        f'Cerremos el viaje #{despacho_id}: contame qué guías NO pudiste entregar y por qué. '
+        f'Si entregaste todo, respondé "todo entregado".'
+    )
+    sesion = RutAgenteSesion.objects.create(
+        despacho_id=despacho_id, telefono=telefono, conductor_nombre=conductor,
+        estado=RutAgenteSesion.ESTADO_ACTIVA,
+        historial=[{'rol': 'agente', 'texto': saludo}],
+    )
+    try:
+        WhatsappCliente(conexion).enviar_texto(telefono, saludo)
+    except Exception:
+        logger.exception('Agente: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
+        return {'ok': False, 'mensaje': 'No se pudo enviar el saludo por WhatsApp', 'sesion_id': sesion.id}
+
+    return {'ok': True, 'mensaje': 'Conversación iniciada', 'sesion_id': sesion.id, 'telefono': telefono}
