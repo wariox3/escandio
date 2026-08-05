@@ -14,6 +14,24 @@ from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
 
 
+def _numero_whatsapp_contenedor():
+    """Número visible de WhatsApp del contenedor actual, o None si no hay conexión
+    activa. Se usa para decirle al conductor a qué número escribir su placa y así
+    reportar novedades con el asistente."""
+    try:
+        from django.db import connection
+        from contenedor.models import CtnWhatsappConexion
+        conexion = (
+            CtnWhatsappConexion.objects
+            .filter(contenedor__schema_name=connection.schema_name,
+                    estado=CtnWhatsappConexion.ESTADO_ACTIVO)
+            .first()
+        )
+        return ((conexion.display_phone_number or '').strip() or None) if conexion else None
+    except Exception:
+        return None
+
+
 # --- Canvas personalizado para pie de página (marca + "Página X de Y") ---
 class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
@@ -158,6 +176,31 @@ class FormatoOrdenEntrega:
         elementos.append(tabla_fila1)
         elementos.append(tabla_fila2)
         elementos.append(Spacer(1, 12))
+
+        # Aviso al conductor: cómo reportar novedades por WhatsApp escribiendo la
+        # placa. Solo si el contenedor tiene conexión activa (si no, no hay número).
+        numero_wsp = _numero_whatsapp_contenedor()
+        if numero_wsp and despacho.vehiculo:
+            estilo_wsp = estilos["Normal"].clone('wsp')
+            estilo_wsp.fontName = "Helvetica"
+            estilo_wsp.fontSize = 9
+            estilo_wsp.leading = 12
+            texto_wsp = (
+                f'<b>¿Novedades en la entrega?</b> Al terminar el viaje, escribí la placa '
+                f'<b>{despacho.vehiculo.placa}</b> al WhatsApp <b>{numero_wsp}</b> y el '
+                f'asistente te guía para reportarlas.'
+            )
+            banner = Table([[Paragraph(texto_wsp, estilo_wsp)]], colWidths=[ancho_total])
+            banner.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor('#E8F5E9')),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor('#66BB6A')),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]))
+            elementos.append(banner)
+            elementos.append(Spacer(1, 10))
 
         if not visitas.exists():
             elementos.append(Paragraph("No hay visitas registradas.", estilos["Normal"]))
