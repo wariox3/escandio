@@ -41,6 +41,9 @@ Reglas:
 `tipos_novedad` y registrala con `registrar_novedad`. Si el motivo no encaja claro en \
 un tipo, o no sabés a qué guía se refiere, PREGUNTÁ antes de registrar.
 - No registres nada que el conductor no haya confirmado.
+- El conductor suele estar MANEJANDO: preferí que TOQUE opciones en vez de escribir. Usá \
+`ofrecer_opciones` para que elija la guía (de guias_pendientes) y el tipo de novedad (de \
+tipos_novedad). Pedí texto libre solo para el motivo, y corto.
 - Al terminar, resumí en una línea qué novedades quedaron registradas.
 - Un mensaje corto por vez. No inventes datos que no tengas."""
 
@@ -78,6 +81,29 @@ class AgenteConductor:
                 'required': ['guia_numero', 'novedad_tipo_id', 'motivo'],
             },
         },
+        {
+            'nombre': 'ofrecer_opciones',
+            'descripcion': 'Muestra opciones para que el conductor las TOQUE en WhatsApp (en vez de escribir). Usalo para preguntar qué guía (con guias_pendientes) o qué tipo de novedad (con tipos_novedad). Con esto TERMINA tu turno: el conductor toca una y su elección llega como su próximo mensaje.',
+            'parametros': {
+                'type': 'object',
+                'properties': {
+                    'texto': {'type': 'string', 'description': 'Pregunta corta arriba de las opciones.'},
+                    'opciones': {
+                        'type': 'array',
+                        'description': '2 a 10 opciones para tocar.',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'titulo': {'type': 'string', 'description': 'Texto corto que toca el conductor (guía o tipo).'},
+                                'descripcion': {'type': 'string', 'description': 'Detalle opcional (ej. destinatario o dirección).'},
+                            },
+                            'required': ['titulo'],
+                        },
+                    },
+                },
+                'required': ['texto', 'opciones'],
+            },
+        },
     ]
 
     def system_prompt(self):
@@ -85,10 +111,11 @@ class AgenteConductor:
 
     def paso(self, mensajes):
         """Procesa el historial (que termina en un mensaje del conductor) y devuelve
-        la respuesta de texto del agente. Corre el loop de tool-use hasta que el
-        modelo responde texto (o se agota el tope de rondas).
+        la respuesta del agente. Corre el loop de tool-use hasta que el modelo
+        responde texto, ofrece opciones, o se agota el tope de rondas.
 
-        Devuelve {'texto': str, 'mensajes': historial_actualizado}.
+        Devuelve {'tipo': 'texto'|'botones'|'lista', 'texto': str,
+                  'opciones'?: [...], 'mensajes': historial_actualizado}.
         """
         mensajes = list(mensajes)
         system = self.system_prompt()
@@ -96,19 +123,40 @@ class AgenteConductor:
             r = self.llm.generar(system, mensajes, self.HERRAMIENTAS)
             if r.get('tool_calls'):
                 mensajes.append({'rol': 'agente', 'texto': r.get('texto'), 'tool_calls': r['tool_calls']})
+                interactivo = None
                 for tc in r['tool_calls']:
-                    resultado = self._ejecutar_tool(tc.get('nombre'), tc.get('args') or {})
-                    mensajes.append({'rol': 'tool', 'nombre': tc.get('nombre'),
+                    nombre = tc.get('nombre')
+                    if nombre == 'ofrecer_opciones':
+                        interactivo = self._construir_interactivo(tc.get('args') or {})
+                        resultado = {'ok': True, 'enviado': True}
+                    else:
+                        resultado = self._ejecutar_tool(nombre, tc.get('args') or {})
+                    mensajes.append({'rol': 'tool', 'nombre': nombre,
                                      'resultado': resultado, '_id': tc.get('_id')})
+                if interactivo:
+                    # Ofrecer opciones cierra el turno: se manda el interactivo y se
+                    # espera el toque del conductor.
+                    return {**interactivo, 'mensajes': mensajes}
                 continue
             texto = r.get('texto') or ''
             mensajes.append({'rol': 'agente', 'texto': texto})
-            return {'texto': texto, 'mensajes': mensajes}
-        # Se agotaron las rondas sin respuesta de texto: cierre seguro.
+            return {'tipo': 'texto', 'texto': texto, 'mensajes': mensajes}
+        # Se agotaron las rondas sin respuesta final: cierre seguro.
         cierre = 'Disculpá, tuve un problema procesando. Un compañero te va a contactar.'
         mensajes.append({'rol': 'agente', 'texto': cierre})
-        logger.warning('Agente despacho %s: tope de rondas de tools sin texto final', self.despacho_id)
-        return {'texto': cierre, 'mensajes': mensajes}
+        logger.warning('Agente despacho %s: tope de rondas de tools sin respuesta final', self.despacho_id)
+        return {'tipo': 'texto', 'texto': cierre, 'mensajes': mensajes}
+
+    def _construir_interactivo(self, args):
+        """Normaliza los args de ofrecer_opciones -> botones (<=3) o lista (>3)."""
+        texto = (args.get('texto') or '¿Qué querés hacer?')[:1024]
+        ops = [
+            {'titulo': (o.get('titulo') or '').strip(), 'descripcion': (o.get('descripcion') or '').strip()}
+            for o in (args.get('opciones') or []) if (o.get('titulo') or '').strip()
+        ][:10]
+        if not ops:
+            return {'tipo': 'texto', 'texto': texto}
+        return {'tipo': 'botones' if len(ops) <= 3 else 'lista', 'texto': texto, 'opciones': ops}
 
     # -- tools (reusan logica de ruteo; acotadas al despacho del contexto) --
     def _ejecutar_tool(self, nombre, args):
@@ -197,12 +245,23 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
     sesion.historial = resultado['mensajes']
     sesion.save(update_fields=['historial', 'fecha_actualizacion'])
 
-    respuesta = resultado['texto']
     try:
-        WhatsappCliente(conexion).enviar_texto(telefono, respuesta)
+        _enviar_respuesta(WhatsappCliente(conexion), telefono, resultado)
     except Exception:
         logger.exception('Agente: fallo enviando respuesta a %s (despacho %s)', telefono, sesion.despacho_id)
-    return respuesta
+    return resultado.get('texto', '')
+
+
+def _enviar_respuesta(cliente, telefono, resultado):
+    """Manda la respuesta del agente por el canal correcto segun su tipo."""
+    tipo = resultado.get('tipo', 'texto')
+    texto = resultado.get('texto', '')
+    opciones = resultado.get('opciones') or []
+    if tipo == 'botones':
+        return cliente.enviar_botones(telefono, texto, opciones)
+    if tipo == 'lista':
+        return cliente.enviar_lista(telefono, texto, 'Elegir', opciones)
+    return cliente.enviar_texto(telefono, texto)
 
 
 def iniciar_sesion_conductor(despacho_id, telefono=None):
@@ -255,16 +314,16 @@ def iniciar_sesion_conductor(despacho_id, telefono=None):
     empresa = getattr(conexion.contenedor, 'nombre', None) or 'la empresa'
     saludo = (
         f'¡Hola {conductor}! 👋 Soy el asistente de {empresa}. '
-        f'Cerremos el viaje #{despacho_id}: contame qué guías NO pudiste entregar y por qué. '
-        f'Si entregaste todo, respondé "todo entregado".'
+        f'Cerremos el viaje #{despacho_id}. ¿Tuviste alguna guía con novedad?'
     )
+    opciones_saludo = [{'titulo': 'Reportar novedad'}, {'titulo': 'Sin novedades'}]
     sesion = RutAgenteSesion.objects.create(
         despacho_id=despacho_id, telefono=telefono, conductor_nombre=conductor,
         estado=RutAgenteSesion.ESTADO_ACTIVA,
         historial=[{'rol': 'agente', 'texto': saludo}],
     )
     try:
-        WhatsappCliente(conexion).enviar_texto(telefono, saludo)
+        WhatsappCliente(conexion).enviar_botones(telefono, saludo, opciones_saludo)
     except Exception:
         logger.exception('Agente: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
         return {'ok': False, 'mensaje': 'No se pudo enviar el saludo por WhatsApp', 'sesion_id': sesion.id}

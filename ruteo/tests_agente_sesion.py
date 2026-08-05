@@ -72,6 +72,21 @@ class OrquestadorSesionTests(TenantTestCase):
         self.assertGreater(len(sesion.historial), 1)  # historial persistido para retomar
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_respuesta_interactiva_manda_botones(self, WC):
+        # Si el agente ofrece opciones, el orquestador manda botones (no texto plano).
+        self._sesion()
+        guion = [{'texto': None, 'tool_calls': [{'nombre': 'ofrecer_opciones', 'args': {
+            'texto': '¿Qué querés hacer?',
+            'opciones': [{'titulo': 'Reportar novedad'}, {'titulo': 'Sin novedades'}],
+        }}]}]
+        procesar_entrante_conductor(TEL, 'hola', _Conexion(), cliente_llm=LLMFalso(guion))
+        WC.return_value.enviar_botones.assert_called_once()
+        WC.return_value.enviar_texto.assert_not_called()
+        tel_arg, texto_arg, ops_arg = WC.return_value.enviar_botones.call_args.args
+        self.assertEqual(tel_arg, TEL)
+        self.assertEqual([o['titulo'] for o in ops_arg], ['Reportar novedad', 'Sin novedades'])
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_sin_sesion_devuelve_none(self, WC):
         respuesta = procesar_entrante_conductor('599999999', 'hola', _Conexion(), cliente_llm=LLMFalso([]))
         self.assertIsNone(respuesta)

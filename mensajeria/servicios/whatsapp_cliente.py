@@ -139,6 +139,57 @@ class WhatsappCliente:
         }
         return self._post(payload)
 
+    def enviar_botones(self, telefono, texto, opciones):
+        """Mensaje interactivo con botones de respuesta (hasta 3).
+
+        `opciones`: lista de dicts con 'titulo' (lo que toca el conductor, max 20
+        chars por limite de Meta). El id lo genera aca (op_0, op_1, ...); lo que
+        vuelve util al webhook es el titulo.
+        """
+        botones = [
+            {'type': 'reply', 'reply': {'id': f'op_{i}', 'title': (op.get('titulo') or '')[:20]}}
+            for i, op in enumerate(opciones[:3])
+        ]
+        payload = {
+            'messaging_product': 'whatsapp',
+            'to': telefono,
+            'type': 'interactive',
+            'interactive': {
+                'type': 'button',
+                'body': {'text': (texto or '')[:1024]},
+                'action': {'buttons': botones},
+            },
+        }
+        return self._post(payload)
+
+    def enviar_lista(self, telefono, texto, boton, opciones, seccion='Opciones'):
+        """Mensaje interactivo tipo lista/menu (hasta 10 filas).
+
+        `opciones`: lista de dicts con 'titulo' (max 24) y opcional 'descripcion'
+        (max 72). `boton` es el texto del boton que abre la lista (max 20).
+        """
+        filas = []
+        for i, op in enumerate(opciones[:10]):
+            fila = {'id': f'op_{i}', 'title': (op.get('titulo') or '')[:24]}
+            desc = (op.get('descripcion') or '').strip()
+            if desc:
+                fila['description'] = desc[:72]
+            filas.append(fila)
+        payload = {
+            'messaging_product': 'whatsapp',
+            'to': telefono,
+            'type': 'interactive',
+            'interactive': {
+                'type': 'list',
+                'body': {'text': (texto or '')[:1024]},
+                'action': {
+                    'button': (boton or 'Ver')[:20],
+                    'sections': [{'title': (seccion or 'Opciones')[:24], 'rows': filas}],
+                },
+            },
+        }
+        return self._post(payload)
+
     def marcar_leido(self, whatsapp_message_id):
         payload = {
             'messaging_product': 'whatsapp',

@@ -109,6 +109,16 @@ class WebhookServicio:
             loc = mensaje.get('location') or {}
             contenido = f'{loc.get("latitude")},{loc.get("longitude")}'
             tipo_modelo = MsjMensaje.TIPO_UBICACION
+        elif tipo_mensaje == 'interactive':
+            # Respuesta a botones/lista: el conductor toco una opcion. Tomamos el
+            # titulo (texto legible) como contenido -> el agente lo procesa igual
+            # que un mensaje escrito.
+            inter = mensaje.get('interactive') or {}
+            if inter.get('type') == 'button_reply':
+                contenido = (inter.get('button_reply') or {}).get('title')
+            elif inter.get('type') == 'list_reply':
+                contenido = (inter.get('list_reply') or {}).get('title')
+            tipo_modelo = MsjMensaje.TIPO_TEXTO
         else:
             tipo_modelo = MsjMensaje.TIPO_TEXTO
             contenido = f'[tipo no soportado: {tipo_mensaje}]'

@@ -75,6 +75,31 @@ class AgenteConductorTests(TenantTestCase):
         self.assertEqual(novedades.first().descripcion, 'no estaba')
         self.assertEqual(len(agente.novedades_registradas), 1)
 
+    def test_ofrecer_opciones_botones_cierra_turno(self):
+        # <=3 opciones -> botones. Un solo item en el guion prueba que NO vuelve a
+        # llamar al LLM: ofrecer_opciones cierra el turno esperando el toque.
+        guion = [{'texto': None, 'tool_calls': [{'nombre': 'ofrecer_opciones', 'args': {
+            'texto': '¿Qué guía tuvo novedad?',
+            'opciones': [{'titulo': '200002 - Ana'}, {'titulo': '200003 - Juan'}],
+        }}]}]
+        agente = self._agente(guion)
+        r = agente.paso([{'rol': 'usuario', 'texto': 'reportar novedad'}])
+        self.assertEqual(r['tipo'], 'botones')
+        self.assertEqual([o['titulo'] for o in r['opciones']], ['200002 - Ana', '200003 - Juan'])
+        self.assertEqual(r['texto'], '¿Qué guía tuvo novedad?')
+        # el tool_result quedó en el historial (para el siguiente turno)
+        self.assertEqual(r['mensajes'][-1]['rol'], 'tool')
+
+    def test_ofrecer_opciones_lista_cuando_muchas(self):
+        # >3 opciones -> lista.
+        opciones = [{'titulo': f'op {i}'} for i in range(5)]
+        guion = [{'texto': None, 'tool_calls': [{'nombre': 'ofrecer_opciones',
+            'args': {'texto': 'Elegí', 'opciones': opciones}}]}]
+        agente = self._agente(guion)
+        r = agente.paso([{'rol': 'usuario', 'texto': 'hola'}])
+        self.assertEqual(r['tipo'], 'lista')
+        self.assertEqual(len(r['opciones']), 5)
+
     @patch('movil.services.novedad._notificar')
     def test_guias_pendientes_solo_no_resueltas(self, _notif):
         self.v1.estado_entregado = True

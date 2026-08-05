@@ -63,7 +63,7 @@ class KickoffTests(TenantTestCase):
         ses = RutAgenteSesion.objects.filter(despacho=d, estado=RutAgenteSesion.ESTADO_ACTIVA)
         self.assertEqual(ses.count(), 1)
         self.assertEqual(ses.first().conductor_nombre, 'conductor')  # sin user -> genérico
-        WC.return_value.enviar_texto.assert_called_once()
+        WC.return_value.enviar_botones.assert_called_once()
 
     @patch('contenedor.models.User')
     def test_conductor_sin_telefono_ni_param(self, MockUser):
@@ -86,10 +86,11 @@ class KickoffTests(TenantTestCase):
         self.assertEqual(ses.count(), 1)
         self.assertEqual(ses.first().conductor_nombre, 'Pedro Gómez')
         self.assertEqual(ses.first().historial[0]['rol'], 'agente')  # arranca con el saludo
-        WC.return_value.enviar_texto.assert_called_once()
-        tel, texto = WC.return_value.enviar_texto.call_args.args
+        WC.return_value.enviar_botones.assert_called_once()
+        tel, texto, opciones = WC.return_value.enviar_botones.call_args.args
         self.assertEqual(tel, '573001112233')
         self.assertIn(f'#{self.despacho.id}', texto)
+        self.assertEqual([o['titulo'] for o in opciones], ['Reportar novedad', 'Sin novedades'])
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     @patch('contenedor.models.CtnWhatsappConexion')
@@ -106,7 +107,7 @@ class KickoffTests(TenantTestCase):
         self.assertTrue(r['ok'])
         self.assertIn('activa', r['mensaje'])
         self.assertEqual(RutAgenteSesion.objects.filter(despacho=self.despacho).count(), 1)  # no duplica
-        WC.return_value.enviar_texto.assert_not_called()  # no re-saluda
+        WC.return_value.enviar_botones.assert_not_called()  # no re-saluda
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     @patch('contenedor.models.CtnWhatsappConexion')
