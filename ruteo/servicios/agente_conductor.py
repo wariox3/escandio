@@ -61,6 +61,12 @@ tipos_novedad). Cada opción debe ser CORTA; si es una guía, empezá por el nú
 (ej. "200002 - Ana") para que no se pierda al recortarse. Ofrecé como máximo 10 opciones: \
 si quedan más guías pendientes, pedile que ESCRIBA el número de la guía. Pedí texto libre \
 solo para el motivo, y corto.
+- Cuando ofrezcas opciones para elegir la guía o el tipo de novedad, agregá SIEMPRE al final \
+una opción para regresar (ej. "⬅️ Volver"), así el conductor nunca queda atrapado si se equivocó.
+- El conductor se puede arrepentir en cualquier momento: si toca "Volver" o escribe "volver", \
+"atrás", "cancelar" o "me equivoqué", regresá al paso anterior (o al menú principal: ¿Reportar \
+novedad o Sin novedades?) SIN registrar nada. Si dice "ya terminé", "listo" o "no más", cerrá \
+con el resumen.
 - Al terminar, resumí en una línea qué novedades quedaron registradas.
 - Un mensaje corto por vez. No inventes datos que no tengas."""
 

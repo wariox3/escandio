@@ -100,6 +100,13 @@ class AgenteConductorTests(TenantTestCase):
         self.assertEqual(r['tipo'], 'lista')
         self.assertEqual(len(r['opciones']), 5)
 
+    def test_system_prompt_incluye_salida_y_nombre(self):
+        # El prompt debe instruir la opción "Volver" y presentarse como LOGY.
+        prompt = self._agente([]).system_prompt()
+        self.assertIn('Volver', prompt)
+        self.assertIn('cancelar', prompt.lower())
+        self.assertIn('LOGY', prompt)
+
     def test_mismo_numero(self):
         from ruteo.servicios.agente_conductor import _mismo_numero
         self.assertTrue(_mismo_numero('573006134088', '3006134088'))       # con/sin prefijo país
