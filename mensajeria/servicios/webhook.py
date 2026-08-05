@@ -62,7 +62,7 @@ class WebhookServicio:
                     connection.set_schema(schema_name)
                     if value.get('messages'):
                         for mensaje in value['messages']:
-                            resultado = cls._procesar_mensaje_entrante(mensaje, value)
+                            resultado = cls._procesar_mensaje_entrante(mensaje, value, conexion)
                             resultados.append(resultado)
                     if value.get('statuses'):
                         for estado in value['statuses']:
@@ -73,7 +73,7 @@ class WebhookServicio:
         return resultados
 
     @classmethod
-    def _procesar_mensaje_entrante(cls, mensaje, value):
+    def _procesar_mensaje_entrante(cls, mensaje, value, conexion=None):
         telefono = cls._normalizar_telefono(mensaje.get('from'))
         if not telefono:
             return {'ok': False, 'motivo': 'telefono invalido'}
@@ -148,6 +148,15 @@ class WebhookServicio:
                 media_caption=media_caption,
                 metadata=mensaje,
             )
+        # Si el remitente esta en una conversacion con el agente de conductores,
+        # dejar que el agente responda (fuera de la transaccion de logueo del inbox).
+        if tipo_modelo == MsjMensaje.TIPO_TEXTO and contenido and conexion is not None:
+            try:
+                from ruteo.servicios.agente_conductor import procesar_entrante_conductor
+                procesar_entrante_conductor(telefono, contenido, conexion)
+            except Exception:
+                logger.exception('Webhook: fallo el agente de conductores para %s', telefono)
+
         return {'ok': True, 'mensaje_id': msj.id, 'conversacion_id': conversacion.id}
 
     @classmethod

@@ -158,3 +158,47 @@ class AgenteConductor:
         )
         self.novedades_registradas.append({'guia': guia, 'tipo_id': tipo_id})
         return {'ok': True, 'guia': guia, 'tipo_id': tipo_id, 'mensaje': 'Novedad registrada.'}
+
+
+def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
+    """Orquesta un mensaje entrante del conductor.
+
+    Si hay una sesion de agente ACTIVA para este telefono, corre el agente con
+    el historial guardado, responde por WhatsApp y persiste. Devuelve la
+    respuesta de texto, o None si NO hay sesion (el webhook sigue su curso
+    normal, sin agente).
+
+    El schema del tenant ya viene seteado por el webhook antes de llamar aca.
+    """
+    # Imports locales: evita ciclos al cargar apps (mensajeria <-> ruteo).
+    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+    from ruteo.models.agente_sesion import RutAgenteSesion
+
+    sesion = (
+        RutAgenteSesion.objects
+        .filter(telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA)
+        .order_by('-id').first()
+    )
+    if not sesion:
+        return None
+
+    contenedor = getattr(conexion, 'contenedor', None)
+    agente = AgenteConductor(
+        despacho_id=sesion.despacho_id,
+        tenant=contenedor,
+        empresa=getattr(contenedor, 'nombre', None) or 'la empresa',
+        conductor=sesion.conductor_nombre or 'conductor',
+        cliente_llm=cliente_llm,
+    )
+    historial = list(sesion.historial or []) + [{'rol': 'usuario', 'texto': texto}]
+    resultado = agente.paso(historial)
+
+    sesion.historial = resultado['mensajes']
+    sesion.save(update_fields=['historial', 'fecha_actualizacion'])
+
+    respuesta = resultado['texto']
+    try:
+        WhatsappCliente(conexion).enviar_texto(telefono, respuesta)
+    except Exception:
+        logger.exception('Agente: fallo enviando respuesta a %s (despacho %s)', telefono, sesion.despacho_id)
+    return respuesta
