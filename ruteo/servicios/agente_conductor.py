@@ -26,6 +26,7 @@ from utilidades.llm import crear_cliente
 
 logger = logging.getLogger(__name__)
 
+NOMBRE_AGENTE = 'LOGY'    # nombre con el que se presenta el asistente al conductor
 MAX_RONDAS_TOOLS = 6      # tope de rondas de tool-use por mensaje (anti-loop)
 MAX_GUIAS_LISTA = 60      # tope de guias que enumeramos al modelo
 MAX_OPCIONES = 10         # tope de opciones tocables (limite de Meta para listas)
@@ -41,7 +42,7 @@ DIAS_VENTANA_PLACA = 7     # antigüedad máxima del despacho que resolvemos por
 _PLACA_RE = re.compile(r'[A-Z]{3}\s*-?\s*\d{2,3}[A-Z]?')
 
 SYSTEM = """\
-Sos un asistente de {empresa} que le escribe por WhatsApp al conductor {conductor} \
+Sos {agente}, el asistente de {empresa} que le escribe por WhatsApp al conductor {conductor} \
 para cerrar el viaje #{despacho}. Hablás español colombiano, breve y claro.
 
 Tu único objetivo: registrar las NOVEDADES de las guías que NO se pudieron entregar.
@@ -123,7 +124,8 @@ class AgenteConductor:
     ]
 
     def system_prompt(self):
-        return SYSTEM.format(empresa=self.empresa, conductor=self.conductor, despacho=self.despacho_id)
+        return SYSTEM.format(agente=NOMBRE_AGENTE, empresa=self.empresa,
+                             conductor=self.conductor, despacho=self.despacho_id)
 
     def paso(self, mensajes):
         """Procesa el historial (que termina en un mensaje del conductor) y devuelve
@@ -390,7 +392,7 @@ def _saludar_y_crear_sesion(conexion, despacho_id, telefono, conductor_nombre):
 
     empresa = getattr(getattr(conexion, 'contenedor', None), 'nombre', None) or 'la empresa'
     saludo = (
-        f'¡Hola {conductor_nombre}! 👋 Soy el asistente de {empresa}. '
+        f'¡Hola {conductor_nombre}! 👋 Soy {NOMBRE_AGENTE}, el asistente de {empresa}. '
         f'Cerremos el viaje #{despacho_id}. ¿Tuviste alguna guía con novedad?'
     )
     opciones = [{'titulo': 'Reportar novedad'}, {'titulo': 'Sin novedades'}]

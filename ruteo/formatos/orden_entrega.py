@@ -187,8 +187,8 @@ class FormatoOrdenEntrega:
             estilo_wsp.leading = 12
             texto_wsp = (
                 f'<b>¿Novedades en la entrega?</b> Al terminar el viaje, escribí la placa '
-                f'<b>{despacho.vehiculo.placa}</b> al WhatsApp <b>{numero_wsp}</b> y el '
-                f'asistente te guía para reportarlas.'
+                f'<b>{despacho.vehiculo.placa}</b> al WhatsApp <b>{numero_wsp}</b> y '
+                f'<b>LOGY</b>, el asistente, te guía para reportarlas.'
             )
             banner = Table([[Paragraph(texto_wsp, estilo_wsp)]], colWidths=[ancho_total])
             banner.setStyle(TableStyle([
