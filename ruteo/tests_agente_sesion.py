@@ -122,6 +122,47 @@ class OrquestadorSesionTests(TenantTestCase):
         self.assertIsNone(respuesta)
         WC.return_value.enviar_texto.assert_not_called()
 
+    # -- cierre de sesión (finalizar_conversacion + expiración por inactividad) --
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_finalizar_cierra_la_sesion(self, WC):
+        sesion = self._sesion()
+        guion = [
+            {'texto': None, 'tool_calls': [{'nombre': 'finalizar_conversacion', 'args': {}}]},
+            {'texto': 'Listo, sin novedades. ¡Buen camino! 🚚', 'tool_calls': []},
+        ]
+        procesar_entrante_conductor(TEL, 'ya terminé', _Conexion(), cliente_llm=LLMFalso(guion))
+        sesion.refresh_from_db()
+        self.assertEqual(sesion.estado, RutAgenteSesion.ESTADO_CERRADA)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_sesion_vieja_se_cierra_sola(self, WC):
+        from datetime import timedelta
+        from django.utils import timezone
+        sesion = self._sesion()
+        RutAgenteSesion.objects.filter(pk=sesion.id).update(
+            fecha_actualizacion=timezone.now() - timedelta(hours=24))
+        # Mensaje sin placa: no hay sesión fresca -> None; la vieja queda cerrada.
+        respuesta = procesar_entrante_conductor(TEL, 'hola', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertIsNone(respuesta)
+        sesion.refresh_from_db()
+        self.assertEqual(sesion.estado, RutAgenteSesion.ESTADO_CERRADA)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_arranca_aunque_haya_sesion_vieja(self, WC):
+        # Sesión vieja del mismo número + placa nueva -> cierra la vieja y arranca limpio.
+        from datetime import timedelta
+        from django.utils import timezone
+        vieja = self._sesion()
+        RutAgenteSesion.objects.filter(pk=vieja.id).update(
+            fecha_actualizacion=timezone.now() - timedelta(hours=24))
+        respuesta = procesar_entrante_conductor(TEL, 'ABC123', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertTrue(respuesta)  # saludo del arranque
+        vieja.refresh_from_db()
+        self.assertEqual(vieja.estado, RutAgenteSesion.ESTADO_CERRADA)
+        activas = RutAgenteSesion.objects.filter(telefono=TEL, estado=RutAgenteSesion.ESTADO_ACTIVA)
+        self.assertEqual(activas.count(), 1)  # la nueva
+
     # -- arranque self-service por placa (conductor sin sesión escribe su placa) --
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')

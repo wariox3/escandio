@@ -35,6 +35,7 @@ MAX_OPCIONES = 10         # tope de opciones tocables (limite de Meta para lista
 # rondas, o respuesta vacia del modelo): no dejamos al conductor sin respuesta ni
 # mandamos un body vacio (Meta lo rechaza). Incluye 'compañero' a proposito.
 MSJ_ERROR_TECNICO = 'Perdón, tuve un problema y no pude seguir. Un compañero te va a contactar. 🙏'
+HORAS_SESION_ACTIVA = 6   # tras este tiempo sin actividad, la sesión se cierra sola
 
 # Arranque self-service: el conductor manda su placa al terminar el viaje.
 MAX_PALABRAS_PLACA = 6     # mensajes más largos NO se tratan como inicio por placa
@@ -65,9 +66,10 @@ solo para el motivo, y corto.
 una opción para regresar (ej. "⬅️ Volver"), así el conductor nunca queda atrapado si se equivocó.
 - El conductor se puede arrepentir en cualquier momento: si toca "Volver" o escribe "volver", \
 "atrás", "cancelar" o "me equivoqué", regresá al paso anterior (o al menú principal: ¿Reportar \
-novedad o Sin novedades?) SIN registrar nada. Si dice "ya terminé", "listo" o "no más", cerrá \
-con el resumen.
-- Al terminar, resumí en una línea qué novedades quedaron registradas.
+novedad o Sin novedades?) SIN registrar nada.
+- Cuando el conductor ya no tiene más novedades (registró todas, eligió "Sin novedades", o dijo \
+"ya terminé/listo/no más"): resumí en una línea qué quedó registrado y llamá \
+`finalizar_conversacion` para CERRAR la conversación.
 - Un mensaje corto por vez. No inventes datos que no tengas."""
 
 
@@ -79,6 +81,7 @@ class AgenteConductor:
         self.conductor = conductor
         self.llm = cliente_llm or crear_cliente()
         self.novedades_registradas = []
+        self.finalizar = False   # lo prende la tool finalizar_conversacion
 
     HERRAMIENTAS = [
         {
@@ -126,6 +129,11 @@ class AgenteConductor:
                 },
                 'required': ['texto', 'opciones'],
             },
+        },
+        {
+            'nombre': 'finalizar_conversacion',
+            'descripcion': 'Cierra la conversación cuando el conductor ya terminó (reportó todas sus novedades, eligió "Sin novedades", o dijo "ya terminé/listo"). Llamala JUNTO con tu mensaje de despedida/resumen. Después de esto, el conductor tendría que volver a escribir la placa para empezar de nuevo.',
+            'parametros': {'type': 'object', 'properties': {}},
         },
     ]
 
@@ -213,6 +221,9 @@ class AgenteConductor:
                 return self._t_tipos_novedad()
             if nombre == 'registrar_novedad':
                 return self._t_registrar_novedad(args)
+            if nombre == 'finalizar_conversacion':
+                self.finalizar = True
+                return {'ok': True, 'cerrada': True}
             return {'ok': False, 'error': f'tool desconocida: {nombre}'}
         except Exception as e:
             logger.exception('Agente despacho %s: error en tool %s', self.despacho_id, nombre)
@@ -272,9 +283,18 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
     from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
     from ruteo.models.agente_sesion import RutAgenteSesion
 
+    # Las sesiones abandonadas (sin actividad hace rato) se cierran solas, así no
+    # quedan "activas" para siempre bloqueando el próximo viaje del mismo número.
+    limite = timezone.now() - timedelta(hours=HORAS_SESION_ACTIVA)
+    RutAgenteSesion.objects.filter(
+        telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA,
+        fecha_actualizacion__lt=limite,
+    ).update(estado=RutAgenteSesion.ESTADO_CERRADA)
+
     sesion = (
         RutAgenteSesion.objects
-        .filter(telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA)
+        .filter(telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA,
+                fecha_actualizacion__gte=limite)
         .order_by('-id').first()
     )
     if not sesion:
@@ -316,7 +336,11 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
         }
 
     sesion.historial = resultado['mensajes']
-    sesion.save(update_fields=['historial', 'fecha_actualizacion'])
+    # LOGY pidió cerrar (conductor terminó): la sesión pasa a CERRADA -> el próximo
+    # mensaje de este número tendrá que arrancar de nuevo por placa.
+    if agente.finalizar:
+        sesion.estado = RutAgenteSesion.ESTADO_CERRADA
+    sesion.save(update_fields=['historial', 'estado', 'fecha_actualizacion'])
 
     try:
         envio = _enviar_respuesta(WhatsappCliente(conexion), telefono, resultado)
