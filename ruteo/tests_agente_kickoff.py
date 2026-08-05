@@ -95,6 +95,20 @@ class KickoffTests(TenantTestCase):
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     @patch('contenedor.models.CtnWhatsappConexion')
     @patch('contenedor.models.User')
+    def test_saludo_rechazado_por_meta_no_crea_sesion(self, MockUser, MockConexion, WC):
+        # Caso clásico: el conductor no escribió en 24h -> Meta rechaza el saludo.
+        # No debe quedar una sesión "activa" fantasma y el despachador ve el motivo.
+        _mock_user(MockUser)
+        _mock_conexion(MockConexion)
+        WC.return_value.enviar_botones.return_value = {'error': True, 'mensaje': 'fuera de la ventana de 24h'}
+        r = iniciar_sesion_conductor(self.despacho.id)
+        self.assertFalse(r['ok'])
+        self.assertIn('24h', r['mensaje'])
+        self.assertEqual(RutAgenteSesion.objects.filter(despacho=self.despacho).count(), 0)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    @patch('contenedor.models.CtnWhatsappConexion')
+    @patch('contenedor.models.User')
     def test_reusa_sesion_activa_no_duplica(self, MockUser, MockConexion, WC):
         _mock_user(MockUser)
         _mock_conexion(MockConexion)

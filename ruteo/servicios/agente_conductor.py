@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 MAX_RONDAS_TOOLS = 6      # tope de rondas de tool-use por mensaje (anti-loop)
 MAX_GUIAS_LISTA = 60      # tope de guias que enumeramos al modelo
+MAX_OPCIONES = 10         # tope de opciones tocables (limite de Meta para listas)
+
+# Fallback cuando el agente no puede continuar (excepcion del LLM/tool, tope de
+# rondas, o respuesta vacia del modelo): no dejamos al conductor sin respuesta ni
+# mandamos un body vacio (Meta lo rechaza). Incluye 'compañero' a proposito.
+MSJ_ERROR_TECNICO = 'Perdón, tuve un problema y no pude seguir. Un compañero te va a contactar. 🙏'
 
 SYSTEM = """\
 Sos un asistente de {empresa} que le escribe por WhatsApp al conductor {conductor} \
@@ -42,8 +48,11 @@ Reglas:
 un tipo, o no sabés a qué guía se refiere, PREGUNTÁ antes de registrar.
 - No registres nada que el conductor no haya confirmado.
 - El conductor suele estar MANEJANDO: preferí que TOQUE opciones en vez de escribir. Usá \
-`ofrecer_opciones` para que elija la guía (de guias_pendientes) y el tipo de novedad (de \
-tipos_novedad). Pedí texto libre solo para el motivo, y corto.
+`ofrecer_opciones` para que elija la guía (de guias_pendientes) o el tipo de novedad (de \
+tipos_novedad). Cada opción debe ser CORTA; si es una guía, empezá por el número \
+(ej. "200002 - Ana") para que no se pierda al recortarse. Ofrecé como máximo 10 opciones: \
+si quedan más guías pendientes, pedile que ESCRIBA el número de la guía. Pedí texto libre \
+solo para el motivo, y corto.
 - Al terminar, resumí en una línea qué novedades quedaron registradas.
 - Un mensaje corto por vez. No inventes datos que no tengas."""
 
@@ -138,23 +147,45 @@ class AgenteConductor:
                     # espera el toque del conductor.
                     return {**interactivo, 'mensajes': mensajes}
                 continue
-            texto = r.get('texto') or ''
+            texto = (r.get('texto') or '').strip()
+            if not texto:
+                # Modelo respondió vacío: Meta rechaza un body vacío -> fallback.
+                logger.warning('Agente despacho %s: respuesta vacía del modelo', self.despacho_id)
+                texto = MSJ_ERROR_TECNICO
             mensajes.append({'rol': 'agente', 'texto': texto})
             return {'tipo': 'texto', 'texto': texto, 'mensajes': mensajes}
         # Se agotaron las rondas sin respuesta final: cierre seguro.
-        cierre = 'Disculpá, tuve un problema procesando. Un compañero te va a contactar.'
-        mensajes.append({'rol': 'agente', 'texto': cierre})
+        mensajes.append({'rol': 'agente', 'texto': MSJ_ERROR_TECNICO})
         logger.warning('Agente despacho %s: tope de rondas de tools sin respuesta final', self.despacho_id)
-        return {'tipo': 'texto', 'texto': cierre, 'mensajes': mensajes}
+        return {'tipo': 'texto', 'texto': MSJ_ERROR_TECNICO, 'mensajes': mensajes}
 
     def _construir_interactivo(self, args):
-        """Normaliza los args de ofrecer_opciones -> botones (<=3) o lista (>3)."""
-        texto = (args.get('texto') or '¿Qué querés hacer?')[:1024]
-        ops = [
-            {'titulo': (o.get('titulo') or '').strip(), 'descripcion': (o.get('descripcion') or '').strip()}
-            for o in (args.get('opciones') or []) if (o.get('titulo') or '').strip()
-        ][:10]
+        """Normaliza los args de ofrecer_opciones -> botones (<=3) o lista (>3).
+
+        Defensivo: el modelo a veces manda 'opciones' que no es lista, items que
+        son strings sueltos, o dicts sin 'titulo'. Nada de eso debe tumbar el turno
+        (peor caso: degradar a texto).
+        """
+        if not isinstance(args, dict):
+            args = {}
+        texto = (str(args.get('texto') or '') or '¿Qué querés hacer?')[:1024]
+        crudas = args.get('opciones')
+        if not isinstance(crudas, (list, tuple)):
+            crudas = []
+        ops = []
+        for o in crudas:
+            if isinstance(o, dict):
+                titulo = str(o.get('titulo') or '').strip()
+                desc = str(o.get('descripcion') or '').strip()
+            else:
+                titulo = str(o if o is not None else '').strip()  # string suelto
+                desc = ''
+            if titulo:
+                ops.append({'titulo': titulo, 'descripcion': desc})
+            if len(ops) >= MAX_OPCIONES:
+                break
         if not ops:
+            # Sin opciones válidas: degradar a texto (Meta rechaza interactivos vacíos).
             return {'tipo': 'texto', 'texto': texto}
         return {'tipo': 'botones' if len(ops) <= 3 else 'lista', 'texto': texto, 'opciones': ops}
 
@@ -240,28 +271,46 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
         cliente_llm=cliente_llm,
     )
     historial = list(sesion.historial or []) + [{'rol': 'usuario', 'texto': texto}]
-    resultado = agente.paso(historial)
+    try:
+        resultado = agente.paso(historial)
+    except Exception:
+        # El LLM o una tool explotó (red, timeout, cuota): no perdemos el turno del
+        # conductor -> guardamos su mensaje y respondemos un fallback.
+        logger.exception('Agente: paso() falló para %s (despacho %s)', telefono, sesion.despacho_id)
+        resultado = {
+            'tipo': 'texto', 'texto': MSJ_ERROR_TECNICO,
+            'mensajes': historial + [{'rol': 'agente', 'texto': MSJ_ERROR_TECNICO}],
+        }
 
     sesion.historial = resultado['mensajes']
     sesion.save(update_fields=['historial', 'fecha_actualizacion'])
 
     try:
-        _enviar_respuesta(WhatsappCliente(conexion), telefono, resultado)
+        envio = _enviar_respuesta(WhatsappCliente(conexion), telefono, resultado)
+        if isinstance(envio, dict) and envio.get('error'):
+            # Meta rechazó el envío (p.ej. fuera de la ventana de 24h): no crashea,
+            # pero lo dejamos en el log para diagnosticar por qué no llegó.
+            logger.error('Agente: Meta rechazó la respuesta a %s (despacho %s): %s',
+                         telefono, sesion.despacho_id, envio.get('mensaje'))
     except Exception:
         logger.exception('Agente: fallo enviando respuesta a %s (despacho %s)', telefono, sesion.despacho_id)
     return resultado.get('texto', '')
 
 
 def _enviar_respuesta(cliente, telefono, resultado):
-    """Manda la respuesta del agente por el canal correcto segun su tipo."""
+    """Manda la respuesta del agente por el canal correcto segun su tipo.
+
+    Nunca manda un body vacío ni un interactivo sin opciones (Meta los rechaza):
+    cae a texto con un fallback.
+    """
     tipo = resultado.get('tipo', 'texto')
-    texto = resultado.get('texto', '')
+    texto = (resultado.get('texto') or '').strip()
     opciones = resultado.get('opciones') or []
-    if tipo == 'botones':
-        return cliente.enviar_botones(telefono, texto, opciones)
-    if tipo == 'lista':
-        return cliente.enviar_lista(telefono, texto, 'Elegir', opciones)
-    return cliente.enviar_texto(telefono, texto)
+    if tipo == 'botones' and opciones:
+        return cliente.enviar_botones(telefono, texto or '¿Qué querés hacer?', opciones)
+    if tipo == 'lista' and opciones:
+        return cliente.enviar_lista(telefono, texto or '¿Qué querés hacer?', 'Elegir', opciones)
+    return cliente.enviar_texto(telefono, texto or MSJ_ERROR_TECNICO)
 
 
 def iniciar_sesion_conductor(despacho_id, telefono=None):
@@ -317,15 +366,23 @@ def iniciar_sesion_conductor(despacho_id, telefono=None):
         f'Cerremos el viaje #{despacho_id}. ¿Tuviste alguna guía con novedad?'
     )
     opciones_saludo = [{'titulo': 'Reportar novedad'}, {'titulo': 'Sin novedades'}]
+
+    # Mandamos el saludo ANTES de crear la sesión: si WhatsApp lo rechaza (caso
+    # típico: el conductor no escribió en las últimas 24h y Meta exige plantilla),
+    # no dejamos una sesión "activa" fantasma y el despachador puede reintentar.
+    try:
+        envio = WhatsappCliente(conexion).enviar_botones(telefono, saludo, opciones_saludo)
+    except Exception:
+        logger.exception('Agente: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
+        return {'ok': False, 'mensaje': 'No se pudo enviar el saludo por WhatsApp'}
+    if isinstance(envio, dict) and envio.get('error'):
+        detalle = envio.get('mensaje') or 'WhatsApp rechazó el mensaje'
+        logger.error('Agente: Meta rechazó el saludo a %s (despacho %s): %s', telefono, despacho_id, detalle)
+        return {'ok': False, 'mensaje': f'No se pudo enviar el saludo: {detalle}'}
+
     sesion = RutAgenteSesion.objects.create(
         despacho_id=despacho_id, telefono=telefono, conductor_nombre=conductor,
         estado=RutAgenteSesion.ESTADO_ACTIVA,
         historial=[{'rol': 'agente', 'texto': saludo}],
     )
-    try:
-        WhatsappCliente(conexion).enviar_botones(telefono, saludo, opciones_saludo)
-    except Exception:
-        logger.exception('Agente: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
-        return {'ok': False, 'mensaje': 'No se pudo enviar el saludo por WhatsApp', 'sesion_id': sesion.id}
-
     return {'ok': True, 'mensaje': 'Conversación iniciada', 'sesion_id': sesion.id, 'telefono': telefono}

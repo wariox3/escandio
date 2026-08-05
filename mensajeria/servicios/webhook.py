@@ -114,10 +114,14 @@ class WebhookServicio:
             # titulo (texto legible) como contenido -> el agente lo procesa igual
             # que un mensaje escrito.
             inter = mensaje.get('interactive') or {}
-            if inter.get('type') == 'button_reply':
+            inter_tipo = inter.get('type')
+            if inter_tipo == 'button_reply':
                 contenido = (inter.get('button_reply') or {}).get('title')
-            elif inter.get('type') == 'list_reply':
+            elif inter_tipo == 'list_reply':
                 contenido = (inter.get('list_reply') or {}).get('title')
+            else:
+                # Otros tipos (nfm_reply de Flows, etc.): no los usamos en el piloto.
+                logger.warning('Webhook: interactive.type no soportado: %s', inter_tipo)
             tipo_modelo = MsjMensaje.TIPO_TEXTO
         else:
             tipo_modelo = MsjMensaje.TIPO_TEXTO

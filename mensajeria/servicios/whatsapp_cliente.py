@@ -146,10 +146,11 @@ class WhatsappCliente:
         chars por limite de Meta). El id lo genera aca (op_0, op_1, ...); lo que
         vuelve util al webhook es el titulo.
         """
-        botones = [
-            {'type': 'reply', 'reply': {'id': f'op_{i}', 'title': (op.get('titulo') or '')[:20]}}
-            for i, op in enumerate(opciones[:3])
-        ]
+        botones = []
+        for i, op in enumerate((opciones or [])[:3]):
+            titulo = (op.get('titulo') or '').strip()[:20]
+            if titulo:  # Meta rechaza títulos vacíos; saltamos la opción inválida.
+                botones.append({'type': 'reply', 'reply': {'id': f'op_{i}', 'title': titulo}})
         payload = {
             'messaging_product': 'whatsapp',
             'to': telefono,
@@ -169,8 +170,11 @@ class WhatsappCliente:
         (max 72). `boton` es el texto del boton que abre la lista (max 20).
         """
         filas = []
-        for i, op in enumerate(opciones[:10]):
-            fila = {'id': f'op_{i}', 'title': (op.get('titulo') or '')[:24]}
+        for i, op in enumerate((opciones or [])[:10]):
+            titulo = (op.get('titulo') or '').strip()[:24]
+            if not titulo:  # Meta rechaza filas con título vacío.
+                continue
+            fila = {'id': f'op_{i}', 'title': titulo}
             desc = (op.get('descripcion') or '').strip()
             if desc:
                 fila['description'] = desc[:72]

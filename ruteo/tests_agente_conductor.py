@@ -100,6 +100,38 @@ class AgenteConductorTests(TenantTestCase):
         self.assertEqual(r['tipo'], 'lista')
         self.assertEqual(len(r['opciones']), 5)
 
+    def test_ofrecer_opciones_tolera_strings_y_basura(self):
+        # El modelo a veces manda opciones como strings sueltos, ints, o dicts sin
+        # titulo. No debe crashear: se normaliza y se descarta lo inválido.
+        agente = self._agente([])
+        r = agente._construir_interactivo({
+            'texto': 'Elegí', 'opciones': ['Ana', {'titulo': 'Juan'}, 42, {'x': 1}, {'titulo': '  '}],
+        })
+        self.assertEqual(r['tipo'], 'botones')
+        self.assertEqual([o['titulo'] for o in r['opciones']], ['Ana', 'Juan', '42'])
+
+    def test_ofrecer_opciones_sin_opciones_validas_cae_a_texto(self):
+        agente = self._agente([])
+        r = agente._construir_interactivo({'texto': 'Hola', 'opciones': []})
+        self.assertEqual(r['tipo'], 'texto')
+        self.assertEqual(r['texto'], 'Hola')
+        # 'opciones' que no es lista tampoco tumba nada.
+        r2 = agente._construir_interactivo({'opciones': 'no es lista'})
+        self.assertEqual(r2['tipo'], 'texto')
+
+    def test_ofrecer_opciones_recorta_a_10(self):
+        agente = self._agente([])
+        r = agente._construir_interactivo({'texto': 'x', 'opciones': [{'titulo': f'op{i}'} for i in range(15)]})
+        self.assertEqual(r['tipo'], 'lista')
+        self.assertEqual(len(r['opciones']), 10)  # límite de Meta
+
+    def test_respuesta_vacia_del_modelo_cae_a_fallback(self):
+        # Si el modelo responde texto vacío no mandamos un body vacío (Meta lo rechaza).
+        agente = self._agente([{'texto': '', 'tool_calls': []}])
+        r = agente.paso([{'rol': 'usuario', 'texto': 'hola'}])
+        self.assertEqual(r['tipo'], 'texto')
+        self.assertTrue(r['texto'].strip())
+
     @patch('movil.services.novedad._notificar')
     def test_guias_pendientes_solo_no_resueltas(self, _notif):
         self.v1.estado_entregado = True

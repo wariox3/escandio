@@ -23,6 +23,13 @@ from ruteo.tests_agente_conductor import LLMFalso
 TEL = '573001112233'
 
 
+class _LLMExplota:
+    """LLM que siempre falla (simula timeout/cuota/500 de la API)."""
+
+    def generar(self, *a, **k):
+        raise RuntimeError('boom red')
+
+
 class _Contenedor:
     nombre = 'Energy'
     schema_name = 'test'
@@ -85,6 +92,29 @@ class OrquestadorSesionTests(TenantTestCase):
         tel_arg, texto_arg, ops_arg = WC.return_value.enviar_botones.call_args.args
         self.assertEqual(tel_arg, TEL)
         self.assertEqual([o['titulo'] for o in ops_arg], ['Reportar novedad', 'Sin novedades'])
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_llm_falla_responde_fallback_y_no_pierde_turno(self, WC):
+        # El LLM explota: el conductor igual recibe un fallback y su mensaje queda
+        # guardado (para retomar), en vez de un silencio total.
+        sesion = self._sesion()
+        respuesta = procesar_entrante_conductor(TEL, 'hola', _Conexion(), cliente_llm=_LLMExplota())
+        self.assertTrue(respuesta.strip())
+        WC.return_value.enviar_texto.assert_called_once()  # fallback por texto plano
+        sesion.refresh_from_db()
+        self.assertEqual(sesion.historial[-2], {'rol': 'usuario', 'texto': 'hola'})
+        self.assertEqual(sesion.historial[-1]['rol'], 'agente')
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_envio_rechazado_por_meta_no_crashea(self, WC):
+        # Meta devuelve error (dict, no excepción): no debe romper el flujo.
+        self._sesion()
+        WC.return_value.enviar_texto.return_value = {'error': True, 'mensaje': 'fuera de ventana'}
+        respuesta = procesar_entrante_conductor(
+            TEL, 'todo bien', _Conexion(),
+            cliente_llm=LLMFalso([{'texto': 'Listo, gracias.', 'tool_calls': []}]),
+        )
+        self.assertIn('Listo', respuesta)  # devolvió normal pese al error de envío
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_sin_sesion_devuelve_none(self, WC):

@@ -46,6 +46,12 @@ class BotonesPayloadTests(TestCase):
         p = self._payload('57300', 'x', [{'titulo': 'X' * 40}])
         self.assertEqual(len(p['interactive']['action']['buttons'][0]['reply']['title']), 20)
 
+    def test_omite_titulos_vacios(self):
+        # Un título vacío/espacios haría que Meta rechace TODO el mensaje: se salta.
+        p = self._payload('57300', 'x', [{'titulo': ''}, {'titulo': 'Ok'}, {'titulo': '  '}])
+        titulos = [b['reply']['title'] for b in p['interactive']['action']['buttons']]
+        self.assertEqual(titulos, ['Ok'])
+
 
 class ListaPayloadTests(TestCase):
 
