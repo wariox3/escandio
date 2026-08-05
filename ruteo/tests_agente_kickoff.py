@@ -64,6 +64,8 @@ class KickoffTests(TenantTestCase):
         self.assertEqual(ses.count(), 1)
         self.assertEqual(ses.first().conductor_nombre, 'conductor')  # sin user -> genérico
         WC.return_value.enviar_botones.assert_called_once()
+        d.refresh_from_db()
+        self.assertEqual(d.conductor_telefono, '573006134088')  # queda autorizado para el arranque por placa
 
     @patch('contenedor.models.User')
     def test_conductor_sin_telefono_ni_param(self, MockUser):

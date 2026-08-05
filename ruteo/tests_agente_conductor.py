@@ -100,6 +100,14 @@ class AgenteConductorTests(TenantTestCase):
         self.assertEqual(r['tipo'], 'lista')
         self.assertEqual(len(r['opciones']), 5)
 
+    def test_mismo_numero(self):
+        from ruteo.servicios.agente_conductor import _mismo_numero
+        self.assertTrue(_mismo_numero('573006134088', '3006134088'))       # con/sin prefijo país
+        self.assertTrue(_mismo_numero('+57 300 613 4088', '573006134088')) # con formato
+        self.assertFalse(_mismo_numero('573006134088', '573009999999'))    # distintos
+        self.assertFalse(_mismo_numero('', '573006134088'))                # vacío
+        self.assertFalse(_mismo_numero(None, None))
+
     def test_extraer_placas(self):
         from ruteo.servicios.agente_conductor import _extraer_placas
         self.assertEqual(_extraer_placas('ABC123'), ['ABC123'])

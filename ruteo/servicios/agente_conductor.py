@@ -278,6 +278,12 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
         despacho = _resolver_despacho_por_placa(texto)
         if not despacho:
             return None   # no es para el agente -> sigue al inbox normal
+        # Híbrido: si el viaje tiene un número autorizado, solo ese puede arrancar.
+        esperado = _telefono_esperado(despacho)
+        if esperado and not _mismo_numero(esperado, telefono):
+            logger.warning('Agente: %s intentó arrancar el viaje %s por placa, pero no es '
+                           'el número autorizado; se ignora.', telefono, despacho.id)
+            return None   # no autorizado -> no arranca (queda en el inbox normal)
         nueva, _envio = _saludar_y_crear_sesion(conexion, despacho.id, telefono, _nombre_conductor(despacho))
         if not nueva:
             return None   # Meta rechazó el saludo (raro: el conductor acaba de escribir)
@@ -373,6 +379,28 @@ def _resolver_despacho_por_placa(texto):
     return None
 
 
+def _mismo_numero(a, b):
+    """Compara dos teléfonos por sus últimos 10 dígitos (ignora prefijos país/formato)."""
+    da = re.sub(r'\D', '', str(a or ''))[-10:]
+    db = re.sub(r'\D', '', str(b or ''))[-10:]
+    return len(da) == 10 and da == db
+
+
+def _telefono_esperado(despacho):
+    """Teléfono autorizado para arrancar este viaje por placa (crudo), o None.
+
+    Si el viaje tiene un número registrado (el que cargó el despachador, o el del
+    conductor asignado), SOLO ese número puede arrancar el agente. Si no hay
+    ninguno, devuelve None y cualquiera con la placa puede (self-service).
+    """
+    from contenedor.models import User
+    tel = getattr(despacho, 'conductor_telefono', None)
+    if not tel and despacho.conductor_id:
+        user = User.objects.filter(pk=despacho.conductor_id).first()
+        tel = getattr(user, 'telefono', None)
+    return tel or None
+
+
 def _nombre_conductor(despacho):
     """Nombre del conductor asignado al despacho (si hay); si no, 'conductor'."""
     from contenedor.models import User
@@ -441,6 +469,12 @@ def iniciar_sesion_conductor(despacho_id, telefono=None):
     telefono = NotificacionServicio.normalizar_telefono(telefono or getattr(user, 'telefono', None))
     if not telefono:
         return {'ok': False, 'mensaje': 'Indicá un número de WhatsApp válido para escribirle'}
+
+    # Registrar el número como autorizado para este viaje (hybrid): el arranque por
+    # placa luego solo lo permite desde este número.
+    if despacho.conductor_telefono != telefono:
+        despacho.conductor_telefono = telefono
+        despacho.save(update_fields=['conductor_telefono'])
 
     conexion = (
         CtnWhatsappConexion.objects

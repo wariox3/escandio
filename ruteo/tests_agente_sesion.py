@@ -158,6 +158,26 @@ class OrquestadorSesionTests(TenantTestCase):
         self.assertEqual(RutAgenteSesion.objects.count(), 0)
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_de_numero_autorizado_arranca(self, WC):
+        # El viaje tiene número autorizado y escribe ESE número -> arranca.
+        self.despacho.conductor_telefono = '573007654321'
+        self.despacho.save(update_fields=['conductor_telefono'])
+        respuesta = procesar_entrante_conductor('573007654321', 'ABC123', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertTrue(respuesta)
+        self.assertEqual(RutAgenteSesion.objects.filter(despacho=self.despacho).count(), 1)
+        WC.return_value.enviar_botones.assert_called_once()
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_de_numero_no_autorizado_no_arranca(self, WC):
+        # El viaje tiene número autorizado pero escribe OTRO -> no arranca (anti-abuso).
+        self.despacho.conductor_telefono = '573007654321'
+        self.despacho.save(update_fields=['conductor_telefono'])
+        respuesta = procesar_entrante_conductor('573009999999', 'ABC123', _Conexion(), cliente_llm=LLMFalso([]))
+        self.assertIsNone(respuesta)
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+        WC.return_value.enviar_botones.assert_not_called()
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_mensaje_largo_con_placa_no_secuestra(self, WC):
         # Cliente que casualmente menciona una placa en un mensaje largo: NO arranca.
         largo = 'hola necesito ayuda con mi pedido de la placa ABC123 que no llegó gracias'
