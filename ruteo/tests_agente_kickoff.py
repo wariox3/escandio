@@ -45,18 +45,32 @@ class KickoffTests(TenantTestCase):
         self.assertFalse(r['ok'])
         self.assertIn('no existe', r['mensaje'])
 
-    def test_sin_conductor(self):
-        d = RutDespacho.objects.create(estado_aprobado=True, vehiculo=self.vehiculo)  # sin conductor_id
-        r = iniciar_sesion_conductor(d.id)
+    def test_sin_conductor_ni_telefono(self):
+        d = RutDespacho.objects.create(estado_aprobado=True, vehiculo=self.vehiculo)  # sin conductor
+        r = iniciar_sesion_conductor(d.id)  # y sin telefono
         self.assertFalse(r['ok'])
-        self.assertIn('conductor', r['mensaje'])
+        self.assertIn('número', r['mensaje'])
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    @patch('contenedor.models.CtnWhatsappConexion')
+    def test_telefono_del_despachador_sin_conductor(self, MockConexion, WC):
+        # Despacho por PLACA (sin conductor): el despachador indica el número.
+        d = RutDespacho.objects.create(estado_aprobado=True, vehiculo=self.vehiculo)
+        _mock_conexion(MockConexion)
+        r = iniciar_sesion_conductor(d.id, telefono='3006134088')
+        self.assertTrue(r['ok'])
+        self.assertEqual(r['telefono'], '573006134088')
+        ses = RutAgenteSesion.objects.filter(despacho=d, estado=RutAgenteSesion.ESTADO_ACTIVA)
+        self.assertEqual(ses.count(), 1)
+        self.assertEqual(ses.first().conductor_nombre, 'conductor')  # sin user -> genérico
+        WC.return_value.enviar_texto.assert_called_once()
 
     @patch('contenedor.models.User')
-    def test_conductor_sin_telefono(self, MockUser):
+    def test_conductor_sin_telefono_ni_param(self, MockUser):
         _mock_user(MockUser, telefono=None)
-        r = iniciar_sesion_conductor(self.despacho.id)
+        r = iniciar_sesion_conductor(self.despacho.id)  # conductor sin tel, sin param
         self.assertFalse(r['ok'])
-        self.assertIn('teléfono', r['mensaje'])
+        self.assertIn('número', r['mensaje'])
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     @patch('contenedor.models.CtnWhatsappConexion')

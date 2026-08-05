@@ -205,15 +205,17 @@ def procesar_entrante_conductor(telefono, texto, conexion, cliente_llm=None):
     return respuesta
 
 
-def iniciar_sesion_conductor(despacho_id):
-    """Arranque MANUAL desde Tráfico: crea (o reusa) la sesión del agente para el
-    conductor del despacho y le manda el saludo por WhatsApp.
+def iniciar_sesion_conductor(despacho_id, telefono=None):
+    """Arranque MANUAL desde Tráfico: crea (o reusa) la sesión del agente y le
+    manda el saludo por WhatsApp.
+
+    El `telefono` lo puede indicar el despachador: los despachos van por PLACA
+    (sin conductor fijo), así que casi nunca hay un conductor del que sacar el
+    número. Si no se indica, cae al teléfono del conductor asignado (si lo hay).
 
     Corre en el schema del tenant (lo setea la request). Devuelve
-    {'ok', 'mensaje', 'sesion_id'?, 'telefono'?}.
-
-    El teléfono se normaliza igual que el webhook (mismo algoritmo) para que el
-    entrante del conductor matchee la sesión.
+    {'ok', 'mensaje', 'sesion_id'?, 'telefono'?}. El teléfono se normaliza igual
+    que el webhook para que el entrante del conductor matchee la sesión.
     """
     from contenedor.models import CtnWhatsappConexion, User
     from django.db import connection
@@ -225,13 +227,13 @@ def iniciar_sesion_conductor(despacho_id):
     despacho = RutDespacho.objects.filter(pk=despacho_id).first()
     if not despacho:
         return {'ok': False, 'mensaje': 'El despacho no existe'}
-    if not despacho.conductor_id:
-        return {'ok': False, 'mensaje': 'El despacho no tiene conductor asignado'}
 
-    user = User.objects.filter(pk=despacho.conductor_id).first()
-    telefono = NotificacionServicio.normalizar_telefono(getattr(user, 'telefono', None)) if user else None
+    # El teléfono lo indica el despachador; si no, se resuelve del conductor
+    # asignado (cuando el despacho tiene uno).
+    user = User.objects.filter(pk=despacho.conductor_id).first() if despacho.conductor_id else None
+    telefono = NotificacionServicio.normalizar_telefono(telefono or getattr(user, 'telefono', None))
     if not telefono:
-        return {'ok': False, 'mensaje': 'El conductor no tiene un teléfono válido'}
+        return {'ok': False, 'mensaje': 'Indicá un número de WhatsApp válido para escribirle'}
 
     conexion = (
         CtnWhatsappConexion.objects
@@ -249,7 +251,7 @@ def iniciar_sesion_conductor(despacho_id):
         return {'ok': True, 'mensaje': 'Ya había una conversación activa',
                 'sesion_id': sesion.id, 'telefono': telefono}
 
-    conductor = f"{(user.nombre or '')} {(user.apellido or '')}".strip() or 'conductor'
+    conductor = (f"{(user.nombre or '')} {(user.apellido or '')}".strip() if user else '') or 'conductor'
     empresa = getattr(conexion.contenedor, 'nombre', None) or 'la empresa'
     saludo = (
         f'¡Hola {conductor}! 👋 Soy el asistente de {empresa}. '

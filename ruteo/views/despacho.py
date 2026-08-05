@@ -369,13 +369,14 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='iniciar-agente')
     def iniciar_agente(self, request):
-        """Arranque manual (desde Tráfico) del agente de WhatsApp para el conductor
-        del despacho: crea la sesión y le manda el saludo."""
+        """Arranque manual (desde Tráfico) del agente de WhatsApp: crea la sesión y
+        saluda. El despachador puede indicar el `telefono` (los despachos van por
+        placa); si no, se cae al conductor asignado."""
         despacho_id = request.data.get('id')
         if not despacho_id:
             return Response({'mensaje': 'Falta el id del despacho'}, status=status.HTTP_400_BAD_REQUEST)
         from ruteo.servicios.agente_conductor import iniciar_sesion_conductor
-        resultado = iniciar_sesion_conductor(despacho_id)
+        resultado = iniciar_sesion_conductor(despacho_id, telefono=request.data.get('telefono'))
         codigo = status.HTTP_200_OK if resultado.get('ok') else status.HTTP_400_BAD_REQUEST
         return Response(resultado, status=codigo)
 
