@@ -98,7 +98,8 @@ class AgenteConductor:
                 mensajes.append({'rol': 'agente', 'texto': r.get('texto'), 'tool_calls': r['tool_calls']})
                 for tc in r['tool_calls']:
                     resultado = self._ejecutar_tool(tc.get('nombre'), tc.get('args') or {})
-                    mensajes.append({'rol': 'tool', 'nombre': tc.get('nombre'), 'resultado': resultado})
+                    mensajes.append({'rol': 'tool', 'nombre': tc.get('nombre'),
+                                     'resultado': resultado, '_id': tc.get('_id')})
                 continue
             texto = r.get('texto') or ''
             mensajes.append({'rol': 'agente', 'texto': texto})

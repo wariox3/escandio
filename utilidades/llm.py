@@ -77,12 +77,21 @@ class ClienteGemini(ClienteLLM):
             if m.get('texto'):
                 partes.append({'text': m['texto']})
             for tc in (m.get('tool_calls') or []):
-                partes.append({'functionCall': {'name': tc['nombre'], 'args': tc.get('args') or {}}})
+                fc = {'name': tc['nombre'], 'args': tc.get('args') or {}}
+                if tc.get('_id'):
+                    fc['id'] = tc['_id']
+                parte = {'functionCall': fc}
+                # Gemini 3.x exige devolver el thought_signature que vino con el
+                # functionCall; si no, rechaza el turno siguiente (HTTP 400).
+                if tc.get('_firma'):
+                    parte['thoughtSignature'] = tc['_firma']
+                partes.append(parte)
             return {'role': 'model', 'parts': partes or [{'text': ''}]}
         if rol == 'tool':
-            return {'role': 'user', 'parts': [{
-                'functionResponse': {'name': m['nombre'], 'response': m.get('resultado') or {}}
-            }]}
+            fr = {'name': m['nombre'], 'response': m.get('resultado') or {}}
+            if m.get('_id'):
+                fr['id'] = m['_id']
+            return {'role': 'user', 'parts': [{'functionResponse': fr}]}
         raise LLMError(f'rol de mensaje desconocido: {rol!r}')
 
     @staticmethod
@@ -107,7 +116,13 @@ class ClienteGemini(ClienteLLM):
                 texto = (texto or '') + p['text']
             fc = p.get('functionCall')
             if fc:
-                tool_calls.append({'nombre': fc.get('name'), 'args': fc.get('args') or {}})
+                tc = {'nombre': fc.get('name'), 'args': fc.get('args') or {}}
+                if fc.get('id'):
+                    tc['_id'] = fc['id']
+                # thought_signature viene a NIVEL de parte; hay que reenviarlo.
+                if p.get('thoughtSignature'):
+                    tc['_firma'] = p['thoughtSignature']
+                tool_calls.append(tc)
         return {'texto': texto, 'tool_calls': tool_calls, 'raw': data}
 
 
@@ -117,6 +132,6 @@ def crear_cliente(proveedor=None, modelo=None):
     if proveedor == 'gemini':
         return ClienteGemini(
             api_key=config('GEMINI_API_KEY', default=''),
-            modelo=modelo or config('LLM_MODELO', default='gemini-2.5-flash'),
+            modelo=modelo or config('LLM_MODELO', default='gemini-flash-latest'),
         )
     raise LLMError(f'Proveedor LLM no soportado: {proveedor!r}')

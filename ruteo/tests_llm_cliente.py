@@ -107,3 +107,34 @@ class GenerarConMockTests(SimpleTestCase):
         with patch('utilidades.llm.requests.post', return_value=fake):
             with self.assertRaises(LLMError):
                 cliente.generar(system=None, mensajes=[{'rol': 'usuario', 'texto': 'hi'}])
+
+
+class FirmaEIdTests(SimpleTestCase):
+    """Gemini 3.x exige capturar y reenviar thoughtSignature + id del functionCall,
+    o rechaza el turno siguiente (HTTP 400). Verificado contra la API real."""
+
+    def test_parse_captura_firma_e_id(self):
+        data = {'candidates': [{'content': {'parts': [
+            {'functionCall': {'name': 'f', 'args': {}, 'id': 'abc'}, 'thoughtSignature': 'SIG'}
+        ]}}]}
+        tc = ClienteGemini._parse(data)['tool_calls'][0]
+        self.assertEqual(tc['_id'], 'abc')
+        self.assertEqual(tc['_firma'], 'SIG')
+
+    def test_map_agente_reenvia_firma_e_id(self):
+        m = ClienteGemini._map_mensaje({'rol': 'agente', 'tool_calls': [
+            {'nombre': 'f', 'args': {'x': 1}, '_id': 'abc', '_firma': 'SIG'}
+        ]})
+        parte = m['parts'][0]
+        self.assertEqual(parte['functionCall']['id'], 'abc')
+        self.assertEqual(parte['thoughtSignature'], 'SIG')
+
+    def test_map_tool_incluye_id(self):
+        m = ClienteGemini._map_mensaje({'rol': 'tool', 'nombre': 'f', 'resultado': {'ok': True}, '_id': 'abc'})
+        self.assertEqual(m['parts'][0]['functionResponse']['id'], 'abc')
+
+    def test_sin_firma_ni_id_no_agrega_claves(self):
+        # Backward-compat: sin _id/_firma no aparecen esas claves.
+        m = ClienteGemini._map_mensaje({'rol': 'agente', 'tool_calls': [{'nombre': 'f', 'args': {}}]})
+        self.assertNotIn('id', m['parts'][0]['functionCall'])
+        self.assertNotIn('thoughtSignature', m['parts'][0])
