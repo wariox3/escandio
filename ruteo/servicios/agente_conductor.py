@@ -15,6 +15,7 @@ import logging
 import re
 from datetime import timedelta
 
+from decouple import config
 from django.utils import timezone
 
 from movil.services.novedad import registrar_novedad
@@ -36,7 +37,9 @@ MSJ_ERROR_TECNICO = 'Perdón, tuve un problema y no pude seguir. Un compañero t
 
 # Arranque self-service: el conductor manda su placa al terminar el viaje.
 MAX_PALABRAS_PLACA = 6     # mensajes más largos NO se tratan como inicio por placa
-DIAS_VENTANA_PLACA = 7     # antigüedad máxima del despacho que resolvemos por placa
+# Antigüedad máxima (días) del despacho que resolvemos por placa/número. Configurable
+# por entorno: en QA se puede subir (ej. 400) para probar con data vieja; prod deja 7.
+DIAS_VENTANA_PLACA = config('LOGY_DIAS_VENTANA_PLACA', default=7, cast=int)
 _PLACA_RE = re.compile(r'[A-Z]{3}\s*-?\s*\d{2,3}[A-Z]?')
 
 
