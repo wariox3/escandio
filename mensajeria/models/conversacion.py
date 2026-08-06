@@ -17,6 +17,9 @@ class MsjConversacion(models.Model):
     asignada_a = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='conversaciones_asignadas')
     ultimo_mensaje_fecha = models.DateTimeField(null=True, blank=True)
     no_leidos = models.IntegerField(default=0)
+    # Lo prende LOGY (el bot) cuando pasa la conversación a un asesor humano; lo
+    # apaga cuando el bot se reactiva o el asesor la marca resuelta.
+    requiere_apoyo = models.BooleanField(default=False)
     fecha_ventana_24h = models.DateTimeField(null=True, blank=True)
     fecha = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)

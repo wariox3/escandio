@@ -25,7 +25,7 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = MsjConversacion.objects.all()
     serializer_class = MsjConversacionSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ['estado', 'asignada_a']
+    filterset_fields = ['estado', 'asignada_a', 'requiere_apoyo']
     ordering_fields = ['ultimo_mensaje_fecha', 'id', 'no_leidos']
 
     def _obtener_conexion(self):
@@ -72,7 +72,17 @@ class MsjConversacionViewSet(RolMixin, viewsets.ModelViewSet):
     def cerrar(self, request, pk=None):
         conversacion = self.get_object()
         conversacion.estado = MsjConversacion.ESTADO_CERRADA
-        conversacion.save(update_fields=['estado', 'fecha_actualizacion'])
+        conversacion.requiere_apoyo = False   # cerrar también resuelve el apoyo
+        conversacion.save(update_fields=['estado', 'requiere_apoyo', 'fecha_actualizacion'])
+        return Response(self.get_serializer(conversacion).data)
+
+    @action(detail=True, methods=['post'], url_path='resolver-apoyo')
+    def resolver_apoyo(self, request, pk=None):
+        """El asesor marca la conversación como atendida: apaga 'requiere apoyo'
+        (sin cerrarla). La usa el botón del inbox cuando terminó de atender."""
+        conversacion = self.get_object()
+        conversacion.requiere_apoyo = False
+        conversacion.save(update_fields=['requiere_apoyo', 'fecha_actualizacion'])
         return Response(self.get_serializer(conversacion).data)
 
     @action(detail=True, methods=['post'])

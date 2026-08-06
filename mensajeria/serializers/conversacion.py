@@ -10,7 +10,7 @@ class MsjConversacionSerializador(serializers.ModelSerializer):
         fields = [
             'id', 'cliente_telefono', 'cliente_nombre', 'visita_id', 'estado',
             'asignada_a', 'asignada_a__nombre', 'ultimo_mensaje_fecha', 'no_leidos',
-            'fecha_ventana_24h', 'fecha', 'fecha_actualizacion',
+            'requiere_apoyo', 'fecha_ventana_24h', 'fecha', 'fecha_actualizacion',
         ]
         select_related_fields = ['asignada_a']
         read_only_fields = ['ultimo_mensaje_fecha', 'no_leidos', 'fecha_ventana_24h', 'fecha', 'fecha_actualizacion']

@@ -452,6 +452,16 @@ class FlujoNovedades:
 # ---------------------------------------------------------------------------
 # Orquestador (webhook -> flujo -> WhatsApp)
 # ---------------------------------------------------------------------------
+def _marcar_apoyo(telefono, requiere):
+    """Prende/apaga la marca 'requiere apoyo' de la conversación del inbox, para que
+    el asesor la vea resaltada cuando LOGY pasa a modo humano."""
+    try:
+        from mensajeria.models import MsjConversacion
+        MsjConversacion.objects.filter(cliente_telefono=telefono).update(requiere_apoyo=requiere)
+    except Exception:
+        logger.exception('LOGY: no se pudo marcar apoyo=%s para %s', requiere, telefono)
+
+
 def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
     """Orquesta un mensaje entrante del conductor.
 
@@ -486,6 +496,7 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
             return None   # el mensaje va al inbox; lo maneja el asesor
         sesion.estado = RutAgenteSesion.ESTADO_CERRADA
         sesion.save(update_fields=['estado', 'fecha_actualizacion'])
+        _marcar_apoyo(telefono, False)   # vuelve el bot -> apagamos la marca
         sesion = None     # cae al arranque por placa abajo
 
     if not sesion:
@@ -529,6 +540,10 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
     hist.append({'rol': 'agente', 'texto': respuesta.get('texto', '')})
     sesion.historial = hist[-40:]   # transcripción acotada
     sesion.save(update_fields=['paso', 'contexto', 'estado', 'historial', 'fecha_actualizacion'])
+
+    if sesion.estado == RutAgenteSesion.ESTADO_HUMANO:
+        # LOGY pasó a un asesor: resaltamos la conversación en el inbox.
+        _marcar_apoyo(telefono, True)
 
     try:
         envio = _enviar_respuesta(WhatsappCliente(conexion), telefono, respuesta)

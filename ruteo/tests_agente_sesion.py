@@ -217,6 +217,18 @@ class OrquestadorTests(TenantTestCase):
             telefono=TEL, estado=RutAgenteSesion.ESTADO_ACTIVA).count(), 1)
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_handoff_marca_y_desmarca_requiere_apoyo(self, _WC):
+        from mensajeria.models import MsjConversacion
+        conv = MsjConversacion.objects.create(cliente_telefono=TEL)
+        self._sesion()
+        procesar_entrante_conductor(TEL, 'necesito un asesor', _Conexion())
+        conv.refresh_from_db()
+        self.assertTrue(conv.requiere_apoyo)                 # se prende al escalar
+        procesar_entrante_conductor(TEL, 'ABC123', _Conexion())   # placa reactiva el bot
+        conv.refresh_from_db()
+        self.assertFalse(conv.requiere_apoyo)                # se apaga al volver el bot
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_error_del_flujo_escala_a_asesor(self, WC):
         self._sesion()
         with patch('ruteo.servicios.agente_conductor.FlujoNovedades.procesar', side_effect=RuntimeError('boom')):
