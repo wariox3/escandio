@@ -400,17 +400,23 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
     )
     if not sesion:
         despacho = _resolver_despacho_por_placa(texto)
-        if not despacho:
-            return None   # no es para LOGY -> sigue al inbox normal
-        esperado = _telefono_esperado(despacho)
-        if esperado and not _mismo_numero(esperado, telefono):
-            logger.warning('LOGY: %s intentó arrancar el viaje %s por placa, pero no es '
-                           'el número autorizado; se ignora.', telefono, despacho.id)
+        if despacho:
+            esperado = _telefono_esperado(despacho)
+            if esperado and not _mismo_numero(esperado, telefono):
+                logger.warning('LOGY: %s intentó arrancar el viaje %s por placa, pero no es '
+                               'el número autorizado; se ignora.', telefono, despacho.id)
+                return None
+            nueva, _envio = _arrancar_sesion(conexion, despacho.id, telefono, _nombre_conductor(despacho))
+            if not nueva:
+                return None
+            return nueva.historial[-1]['texto'] if nueva.historial else ''
+        # No hay placa: a un texto CORTO lo saludamos y le pedimos la placa, así el
+        # conductor que escribe suelto (un "hola") no queda sin respuesta. Un texto
+        # largo o un toque de botón huérfano probablemente sea un cliente -> lo
+        # dejamos pasar al inbox humano sin auto-responder.
+        if opcion_id or len((texto or '').split()) > MAX_PALABRAS_PLACA:
             return None
-        nueva, _envio = _arrancar_sesion(conexion, despacho.id, telefono, _nombre_conductor(despacho))
-        if not nueva:
-            return None
-        return nueva.historial[-1]['texto'] if nueva.historial else ''
+        return _bienvenida(conexion, telefono)
 
     tenant = getattr(conexion, 'contenedor', None)
     flujo = FlujoNovedades(sesion, tenant)
@@ -520,6 +526,28 @@ def _nombre_conductor(despacho):
     user = User.objects.filter(pk=despacho.conductor_id).first() if despacho.conductor_id else None
     nombre = f"{(user.nombre or '')} {(user.apellido or '')}".strip() if user else ''
     return nombre or 'conductor'
+
+
+def _bienvenida(conexion, telefono):
+    """Saluda a un texto corto sin sesión y le pide la placa (no crea sesión: la
+    placa es la que arranca el flujo). Devuelve el saludo, o None si no se pudo
+    enviar. Así el conductor que escribe suelto no queda sin respuesta."""
+    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+
+    empresa = getattr(getattr(conexion, 'contenedor', None), 'nombre', None) or 'la empresa'
+    saludo = (
+        f'¡Hola! 👋 Soy {NOMBRE_AGENTE}, el asistente de {empresa}. '
+        f'Para cerrar tu viaje y reportar novedades, escribime tu *placa* (ej. ABC123).'
+    )
+    try:
+        envio = WhatsappCliente(conexion).enviar_texto(telefono, saludo)
+    except Exception:
+        logger.exception('LOGY: fallo enviando la bienvenida a %s', telefono)
+        return None
+    if isinstance(envio, dict) and envio.get('error'):
+        logger.error('LOGY: Meta rechazó la bienvenida a %s: %s', telefono, envio.get('mensaje'))
+        return None
+    return saludo
 
 
 def _arrancar_sesion(conexion, despacho_id, telefono, conductor_nombre):

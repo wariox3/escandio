@@ -59,10 +59,13 @@ class OrquestadorTests(TenantTestCase):
         self.assertTrue(WC.return_value.enviar_botones.called or WC.return_value.enviar_lista.called)
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_sin_sesion_sin_placa_devuelve_none(self, WC):
+    def test_texto_corto_sin_sesion_da_bienvenida(self, WC):
+        # Un "hola" suelto NO queda en silencio: LOGY saluda y pide la placa.
         r = procesar_entrante_conductor('599999999', 'hola', _Conexion())
-        self.assertIsNone(r)
-        WC.return_value.enviar_botones.assert_not_called()
+        self.assertTrue(r)
+        self.assertIn('placa', r.lower())
+        WC.return_value.enviar_texto.assert_called_once()
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)  # la sesión la crea la placa
 
     # -- flujo completo -----------------------------------------------------
     @patch('movil.services.novedad._notificar')
@@ -100,10 +103,12 @@ class OrquestadorTests(TenantTestCase):
         self.assertEqual([o['id'] for o in opciones], ['menu:reportar', 'menu:sin_novedades'])
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_mensaje_sin_placa_no_arranca(self, WC):
-        r = procesar_entrante_conductor('573007654321', 'hola buenas', _Conexion())
+    def test_texto_largo_sin_placa_no_saluda(self, WC):
+        # Un mensaje largo (probable cliente) NO se auto-responde: va al inbox humano.
+        largo = 'buenas necesito saber donde esta mi pedido que pedí la semana pasada gracias'
+        r = procesar_entrante_conductor('573007654321', largo, _Conexion())
         self.assertIsNone(r)
-        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+        WC.return_value.enviar_texto.assert_not_called()
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_mensaje_largo_con_placa_no_secuestra(self, WC):
@@ -135,10 +140,9 @@ class OrquestadorTests(TenantTestCase):
     def test_sesion_vieja_se_cierra_sola(self, WC):
         ses = self._sesion()
         RutAgenteSesion.objects.filter(pk=ses.id).update(fecha_actualizacion=timezone.now() - timedelta(hours=24))
-        r = procesar_entrante_conductor(TEL, 'hola', _Conexion())   # sin placa
-        self.assertIsNone(r)
+        procesar_entrante_conductor(TEL, 'hola', _Conexion())   # sin placa (texto corto)
         ses.refresh_from_db()
-        self.assertEqual(ses.estado, RutAgenteSesion.ESTADO_CERRADA)
+        self.assertEqual(ses.estado, RutAgenteSesion.ESTADO_CERRADA)   # la vieja quedó cerrada
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_placa_arranca_aunque_haya_sesion_vieja(self, WC):
