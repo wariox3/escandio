@@ -13,6 +13,7 @@ class RutAgenteSesion(models.Model):
     """
     ESTADO_ACTIVA = 'activa'
     ESTADO_CERRADA = 'cerrada'
+    ESTADO_HUMANO = 'humano'     # el bot pausó: la atiende un asesor por el inbox
 
     # Pasos de la máquina de estados del flujo de novedades.
     PASO_MENU = 'menu'

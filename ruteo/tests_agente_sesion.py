@@ -193,3 +193,34 @@ class OrquestadorTests(TenantTestCase):
         self.assertEqual(vieja.estado, RutAgenteSesion.ESTADO_CERRADA)
         activas = RutAgenteSesion.objects.filter(telefono=TEL, estado=RutAgenteSesion.ESTADO_ACTIVA)
         self.assertEqual(activas.count(), 1)
+
+    # -- handoff a asesor humano -------------------------------------------
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_pedir_asesor_pausa_el_bot(self, _WC):
+        self._sesion()
+        procesar_entrante_conductor(TEL, 'quiero hablar con un asesor', _Conexion())
+        ses = RutAgenteSesion.objects.get(telefono=TEL)
+        self.assertEqual(ses.estado, RutAgenteSesion.ESTADO_HUMANO)
+        # el bot ya no responde: lo atiende el asesor por el inbox
+        r = procesar_entrante_conductor(TEL, 'sigo esperando', _Conexion())
+        self.assertIsNone(r)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_reactiva_el_bot_desde_humano(self, _WC):
+        s = self._sesion()
+        RutAgenteSesion.objects.filter(pk=s.id).update(estado=RutAgenteSesion.ESTADO_HUMANO)
+        r = procesar_entrante_conductor(TEL, 'ABC123', _Conexion())
+        self.assertTrue(r)                                            # la placa reactiva el bot
+        s.refresh_from_db()
+        self.assertEqual(s.estado, RutAgenteSesion.ESTADO_CERRADA)    # la humana se cerró
+        self.assertEqual(RutAgenteSesion.objects.filter(
+            telefono=TEL, estado=RutAgenteSesion.ESTADO_ACTIVA).count(), 1)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_error_del_flujo_escala_a_asesor(self, WC):
+        self._sesion()
+        with patch('ruteo.servicios.agente_conductor.FlujoNovedades.procesar', side_effect=RuntimeError('boom')):
+            procesar_entrante_conductor(TEL, 'hola', _Conexion())
+        ses = RutAgenteSesion.objects.get(telefono=TEL)
+        self.assertEqual(ses.estado, RutAgenteSesion.ESTADO_HUMANO)   # escaló, no dead-end
+        WC.return_value.enviar_texto.assert_called_once()

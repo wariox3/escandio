@@ -35,6 +35,16 @@ MAX_TIPOS_MENU = 9          # tipos tappables (deja lugar al Volver)
 # mandamos un body vacío (Meta lo rechaza). Incluye 'compañero' a propósito.
 MSJ_ERROR_TECNICO = 'Perdón, tuve un problema y no pude seguir. Un compañero te va a contactar. 🙏'
 
+# Handoff a un asesor humano: el bot pausa y la conversación queda para el inbox.
+MSJ_A_ASESOR = ('Te paso con un asesor 🙋 En un momento te atienden por acá. '
+                '(Cuando quieras volver al asistente, escribí tu placa.)')
+MSJ_ERROR_A_ASESOR = ('Perdón, esto se me complicó 🙏 Te paso con un asesor, '
+                      'en un momento te atienden por acá.')
+# Frases con las que el conductor pide hablar con una persona. Distintivas, para no
+# confundirlas con el motivo de una novedad ("no había persona", etc.).
+_PIDE_HUMANO = ('asesor', 'humano', 'operador', 'soporte',
+                'hablar con alguien', 'con una persona', 'un compañero', 'una compañera')
+
 # Arranque self-service: el conductor manda su placa al terminar el viaje.
 MAX_PALABRAS_PLACA = 6     # mensajes más largos NO se tratan como inicio por placa
 # Antigüedad máxima (días) del despacho que resolvemos por placa/número. Configurable
@@ -75,11 +85,19 @@ def _registrar(despacho_id, visita_id, tipo_id, motivo, tenant):
     if not RutNovedadTipo.objects.filter(pk=tipo_id).exists():
         return False, 'Ese tipo de novedad no existe.'
     token = f'agente:{despacho_id}:{visita.id}:{tipo_id}'
-    registrar_novedad(
-        visita=visita, novedad_tipo_id=tipo_id, fecha=timezone.now(),
-        descripcion=(motivo or '').strip(), movil_token=token, imagenes=[], tenant=tenant,
-    )
-    return True, 'ok'
+    try:
+        registrar_novedad(
+            visita=visita, novedad_tipo_id=tipo_id, fecha=timezone.now(),
+            descripcion=(motivo or '').strip(), movil_token=token, imagenes=[], tenant=tenant,
+        )
+    except Exception:
+        # La novedad puede haber quedado escrita y fallar solo la notificación: no
+        # tumbamos el flujo. Confirmamos por el estado real de la visita.
+        logger.exception('LOGY: registrar_novedad falló (despacho %s, visita %s)', despacho_id, visita.id)
+    visita.refresh_from_db()
+    if visita.estado_novedad:
+        return True, 'ok'
+    return False, 'No pude registrar la novedad. Un compañero la va a revisar.'
 
 
 def _menu_opciones():
@@ -129,6 +147,11 @@ class FlujoNovedades:
 
     def procesar(self, texto, opcion_id=None):
         kind, val = self._intent(texto, opcion_id)
+        # Si el conductor pide una persona -> pasar a un asesor. No en el paso del
+        # motivo, donde el texto libre es el contenido de la novedad.
+        if kind == 'texto' and self.sesion.paso != RutAgenteSesion.PASO_MOTIVO \
+                and self._pide_humano(texto):
+            return self._pasar_a_humano()
         # Comandos globales (en cualquier estado). 'volver' NO es global: es por-paso.
         if kind == 'nav' and val == 'menu':
             return self._ir_menu()
@@ -361,6 +384,16 @@ class FlujoNovedades:
         texto = f'{prefijo}🏁 Cerramos el viaje #{self.despacho_id}.\n{resumen}\n¡Gracias, buen camino! 🚚💨'
         return {'tipo': 'texto', 'texto': texto}
 
+    def _pide_humano(self, texto):
+        t = (texto or '').lower()
+        return any(w in t for w in _PIDE_HUMANO)
+
+    def _pasar_a_humano(self, texto=MSJ_A_ASESOR):
+        """Pausa el bot: la sesión pasa a modo HUMANO (la atiende un asesor por el
+        inbox). El orquestador persiste el estado."""
+        self.sesion.estado = RutAgenteSesion.ESTADO_HUMANO
+        return {'tipo': 'texto', 'texto': texto}
+
     def _opts(self, texto, opciones, boton='Elegir'):
         """Arma la respuesta interactiva: botones si son <=3, lista si son más."""
         tipo = 'botones' if len(opciones) <= 3 else 'lista'
@@ -431,20 +464,30 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
     """
     from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
 
-    # Cierra sesiones abandonadas (sin actividad hace rato): no quedan "activas"
-    # para siempre bloqueando el próximo viaje del mismo número.
+    # Cierra sesiones abandonadas (sin actividad hace rato): no quedan colgadas
+    # para siempre bloqueando el próximo viaje del mismo número. Aplica también al
+    # modo humano (si el asesor no la cerró, expira sola).
+    vivas = [RutAgenteSesion.ESTADO_ACTIVA, RutAgenteSesion.ESTADO_HUMANO]
     limite = timezone.now() - timedelta(hours=HORAS_SESION_ACTIVA)
     RutAgenteSesion.objects.filter(
-        telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA,
-        fecha_actualizacion__lt=limite,
+        telefono=telefono, estado__in=vivas, fecha_actualizacion__lt=limite,
     ).update(estado=RutAgenteSesion.ESTADO_CERRADA)
 
     sesion = (
         RutAgenteSesion.objects
-        .filter(telefono=telefono, estado=RutAgenteSesion.ESTADO_ACTIVA,
-                fecha_actualizacion__gte=limite)
+        .filter(telefono=telefono, estado__in=vivas, fecha_actualizacion__gte=limite)
         .order_by('-id').first()
     )
+    if sesion and sesion.estado == RutAgenteSesion.ESTADO_HUMANO:
+        # Modo humano: el asesor atiende, el bot NO responde. El único que reactiva
+        # al bot es la placa (el conductor terminó con el asesor y quiere seguir).
+        despacho, _m = _resolver_o_diagnosticar(texto, telefono)
+        if not despacho:
+            return None   # el mensaje va al inbox; lo maneja el asesor
+        sesion.estado = RutAgenteSesion.ESTADO_CERRADA
+        sesion.save(update_fields=['estado', 'fecha_actualizacion'])
+        sesion = None     # cae al arranque por placa abajo
+
     if not sesion:
         despacho, motivo = _resolver_o_diagnosticar(texto, telefono)
         # Sin placa en el texto: ¿el número ya está ligado a un viaje? -> arranca
@@ -474,8 +517,11 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
     try:
         respuesta = flujo.procesar(texto, opcion_id)
     except Exception:
+        # El flujo explotó: en vez de dejar al conductor en un dead-end, ESCALA a un
+        # asesor humano (la sesión pasa a modo humano y sigue por el inbox).
         logger.exception('LOGY: el flujo falló para %s (despacho %s)', telefono, sesion.despacho_id)
-        respuesta = {'tipo': 'texto', 'texto': MSJ_ERROR_TECNICO}
+        sesion.estado = RutAgenteSesion.ESTADO_HUMANO
+        respuesta = {'tipo': 'texto', 'texto': MSJ_ERROR_A_ASESOR}
 
     sesion.contexto = flujo.ctx
     hist = list(sesion.historial or [])

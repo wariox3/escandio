@@ -211,6 +211,23 @@ class FlujoNovedadesTests(TenantTestCase):
         self.assertIn(f'guia:{self.v2.id}', ids)
         self.assertNotIn(f'guia:{self.v1.id}', ids)  # entregada -> no se ofrece
 
+    # -- handoff a asesor humano -------------------------------------------
+    def test_pide_asesor_pasa_a_humano(self):
+        ses = self._sesion(paso=RutAgenteSesion.PASO_GUIA)
+        r = self._flujo(ses).procesar('quiero un asesor', None)
+        self.assertEqual(ses.estado, RutAgenteSesion.ESTADO_HUMANO)
+        self.assertIn('asesor', r['texto'].lower())
+
+    def test_no_escala_en_paso_motivo(self):
+        # En el motivo, un texto que casualmente pide "hablar con alguien" NO escala:
+        # es el contenido de la novedad.
+        ses = self._sesion(paso=RutAgenteSesion.PASO_MOTIVO,
+                           contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'x'}})
+        f = self._flujo(ses)
+        f.procesar('el cliente quiere hablar con alguien de la empresa', None)
+        self.assertNotEqual(ses.estado, RutAgenteSesion.ESTADO_HUMANO)   # no escaló
+        self.assertEqual(ses.paso, RutAgenteSesion.PASO_CONFIRMA)         # lo tomó como motivo
+
     # -- registro directo: guardrails + idempotencia -----------------------
     def test_guia_ajena_no_registra(self):
         ok, _ = _registrar(self.despacho.id, 999999, 1, 'x', _TenantStub())  # id inexistente
