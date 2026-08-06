@@ -82,7 +82,7 @@ class OrquestadorTests(TenantTestCase):
     # -- flujo completo -----------------------------------------------------
     @patch('movil.services.novedad._notificar')
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_flujo_completo_registra_novedad(self, WC, _notif):
+    def test_flujo_completo_registra_novedad(self, _WC, _notif):
         self._sesion()
         procesar_entrante_conductor(TEL, 'Reportar', _Conexion(), opcion_id='menu:reportar')
         procesar_entrante_conductor(TEL, '200002 · Ana', _Conexion(), opcion_id='guia:200002')
@@ -96,7 +96,7 @@ class OrquestadorTests(TenantTestCase):
         self.assertIn('200002', ses.contexto.get('registradas', []))
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_sin_novedades_cierra_sesion(self, WC):
+    def test_sin_novedades_cierra_sesion(self, _WC):
         self._sesion()
         procesar_entrante_conductor(TEL, 'Sin novedades', _Conexion(), opcion_id='menu:sin_novedades')
         ses = RutAgenteSesion.objects.get(telefono=TEL)
@@ -123,7 +123,7 @@ class OrquestadorTests(TenantTestCase):
         WC.return_value.enviar_texto.assert_not_called()
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_mensaje_largo_con_placa_no_secuestra(self, WC):
+    def test_mensaje_largo_con_placa_no_secuestra(self, _WC):
         largo = 'hola necesito ayuda con mi pedido de la placa ABC123 que no llegó gracias'
         r = procesar_entrante_conductor('573007654321', largo, _Conexion())
         self.assertIsNone(r)
@@ -131,7 +131,7 @@ class OrquestadorTests(TenantTestCase):
 
     # -- autorización híbrida ----------------------------------------------
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_placa_numero_autorizado_arranca(self, WC):
+    def test_placa_numero_autorizado_arranca(self, _WC):
         self.despacho.conductor_telefono = '573007654321'
         self.despacho.save(update_fields=['conductor_telefono'])
         r = procesar_entrante_conductor('573007654321', 'ABC123', _Conexion())
@@ -176,7 +176,7 @@ class OrquestadorTests(TenantTestCase):
 
     # -- expiración de sesión ----------------------------------------------
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_sesion_vieja_se_cierra_sola(self, WC):
+    def test_sesion_vieja_se_cierra_sola(self, _WC):
         ses = self._sesion()
         RutAgenteSesion.objects.filter(pk=ses.id).update(fecha_actualizacion=timezone.now() - timedelta(hours=24))
         procesar_entrante_conductor(TEL, 'hola', _Conexion())   # sin placa (texto corto)
@@ -184,7 +184,7 @@ class OrquestadorTests(TenantTestCase):
         self.assertEqual(ses.estado, RutAgenteSesion.ESTADO_CERRADA)   # la vieja quedó cerrada
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_placa_arranca_aunque_haya_sesion_vieja(self, WC):
+    def test_placa_arranca_aunque_haya_sesion_vieja(self, _WC):
         vieja = self._sesion()
         RutAgenteSesion.objects.filter(pk=vieja.id).update(fecha_actualizacion=timezone.now() - timedelta(hours=24))
         r = procesar_entrante_conductor(TEL, 'ABC123', _Conexion())
