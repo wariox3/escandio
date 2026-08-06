@@ -16,6 +16,7 @@ import re
 from datetime import timedelta
 
 from decouple import config
+from django.db import connection
 from django.utils import timezone
 
 from movil.services.novedad import registrar_novedad
@@ -94,6 +95,16 @@ def _registrar(despacho_id, visita_id, tipo_id, motivo, tenant):
         # La novedad puede haber quedado escrita y fallar solo la notificación: no
         # tumbamos el flujo. Confirmamos por el estado real de la visita.
         logger.exception('LOGY: registrar_novedad falló (despacho %s, visita %s)', despacho_id, visita.id)
+    finally:
+        # registrar_novedad -> _notificar consulta modelos shared y deja la conexión
+        # en schema 'public'. Reafirmamos el schema del tenant antes de seguir con
+        # ORM de tenant (el refresh_from_db de acá y el sesion.save() aguas arriba):
+        # si no, corren en 'public', la tabla del modelo de tenant no existe y la
+        # confirmación al conductor nunca se envía (aunque la novedad SÍ quedó
+        # grabada). Ver tests_agente_conductor.test_registrar_no_deja_schema_public.
+        _schema = getattr(tenant, 'schema_name', None)
+        if _schema:
+            connection.set_schema(_schema)
     visita.refresh_from_db()
     if visita.estado_novedad:
         return True, 'ok'
@@ -747,7 +758,6 @@ def iniciar_sesion_conductor(despacho_id, telefono=None):
     {'ok', 'mensaje', 'sesion_id'?, 'telefono'?}.
     """
     from contenedor.models import CtnWhatsappConexion, User
-    from django.db import connection
     from ruteo.models.despacho import RutDespacho
     from ruteo.servicios.notificacion import NotificacionServicio
 

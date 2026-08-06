@@ -141,6 +141,27 @@ class FlujoNovedadesTests(TenantTestCase):
         self.assertIn('✅', r['texto'])
         self.assertIn('200002', f.ctx['registradas'])
 
+    @patch('ruteo.servicios.agente_conductor.registrar_novedad')
+    def test_registrar_no_deja_schema_public(self, mock_reg):
+        # Regresión: registrar_novedad -> _notificar consulta modelos shared y deja
+        # la conexión en schema 'public'. Antes, el refresh_from_db() posterior (y el
+        # sesion.save() aguas arriba) corrían en 'public' -> tabla inexistente -> la
+        # novedad quedaba grabada pero el conductor NUNCA recibía la confirmación.
+        from django.db import connection
+
+        def _graba_y_fuga_schema(**kwargs):
+            RutVisita.objects.filter(pk=self.v1.id).update(estado_novedad=True)
+            connection.set_schema_to_public()   # simula la fuga real de la notificación
+        mock_reg.side_effect = _graba_y_fuga_schema
+
+        try:
+            ok, msg = _registrar(self.despacho.id, self.v1.id, 1, 'motivo', _TenantStub())
+            self.assertTrue(ok)                               # refresh_from_db NO explotó
+            self.assertEqual(msg, 'ok')
+            self.assertEqual(connection.schema_name, 'test')  # _registrar restauró el tenant
+        finally:
+            connection.set_schema('test')   # blindaje: que un fallo no contamine otros tests
+
     def test_descartar_no_registra(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_CONFIRMA,
                            contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'x'}, 'motivo': 'y'})
