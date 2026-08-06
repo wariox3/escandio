@@ -47,24 +47,31 @@ _PLACA_RE = re.compile(r'[A-Z]{3}\s*-?\s*\d{2,3}[A-Z]?')
 # Datos (acotados a un despacho; reusan la lógica de ruteo)
 # ---------------------------------------------------------------------------
 def _guias_pendientes(despacho_id):
-    """Guías del viaje sin resolver (ni entregadas ni con novedad)."""
+    """Guías del viaje sin resolver (ni entregadas ni con novedad). Incluye el id
+    interno de la visita, que es el identificador estable (el número puede faltar)."""
     qs = (RutVisita.objects
           .filter(despacho_id=despacho_id, estado_entregado=False, estado_novedad=False)
-          .values('numero', 'destinatario', 'destinatario_direccion')
-          .order_by('numero')[:MAX_GUIAS_FETCH])
+          .values('id', 'numero', 'destinatario', 'destinatario_direccion')
+          .order_by('id')[:MAX_GUIAS_FETCH])
     return list(qs)
+
+
+def _etiqueta_guia(g):
+    """Cómo se muestra la guía al conductor: su número, o un fallback si no tiene
+    (nunca 'None')."""
+    num = str(g.get('numero') or '').strip()
+    return num or f'#{g["id"]}'
 
 
 def _tipos_novedad():
     return list(RutNovedadTipo.objects.values('id', 'nombre').order_by('id'))
 
 
-def _registrar(despacho_id, guia_numero, tipo_id, motivo, tenant):
-    """Registra la novedad (idempotente por movil_token). Devuelve (ok, mensaje)."""
-    guia = str(guia_numero or '').strip()
-    visita = RutVisita.objects.filter(despacho_id=despacho_id, numero=guia).first()
+def _registrar(despacho_id, visita_id, tipo_id, motivo, tenant):
+    """Registra la novedad de una visita (por id, idempotente). Devuelve (ok, mensaje)."""
+    visita = RutVisita.objects.filter(despacho_id=despacho_id, id=visita_id).first()
     if not visita:
-        return False, f'La guía {guia} ya no está en el viaje.'
+        return False, 'Esa guía ya no está en el viaje.'
     if not RutNovedadTipo.objects.filter(pk=tipo_id).exists():
         return False, 'Ese tipo de novedad no existe.'
     token = f'agente:{despacho_id}:{visita.id}:{tipo_id}'
@@ -173,7 +180,7 @@ class FlujoNovedades:
         if kind == 'texto':
             g = self._match_guia(texto)
             if g:
-                return self._elegir_guia(g['numero'])
+                return self._elegir_guia(g['id'])
             return self._menu_guias(prefijo='No encontré esa guía. ')
         return self._menu_guias()
 
@@ -228,11 +235,11 @@ class FlujoNovedades:
         return self._menu_otra()
 
     # -- transiciones -------------------------------------------------------
-    def _elegir_guia(self, numero):
-        g = self._buscar_guia(numero)
+    def _elegir_guia(self, vid):
+        g = self._buscar_guia(vid)
         if not g:
             return self._menu_guias(prefijo='Esa guía ya no está pendiente. ')
-        self.ctx['guia'] = {'numero': str(g['numero']), 'nombre': g.get('destinatario') or ''}
+        self.ctx['guia'] = {'id': g['id'], 'etiqueta': _etiqueta_guia(g), 'nombre': g.get('destinatario') or ''}
         self.sesion.paso = RutAgenteSesion.PASO_TIPO
         return self._menu_tipos()
 
@@ -251,17 +258,18 @@ class FlujoNovedades:
     def _registrar_y_seguir(self):
         guia = self.ctx.get('guia') or {}
         tipo = self.ctx.get('tipo') or {}
-        ok, msg = _registrar(self.despacho_id, guia.get('numero'), tipo.get('id'),
+        ok, msg = _registrar(self.despacho_id, guia.get('id'), tipo.get('id'),
                              self.ctx.get('motivo', ''), self.tenant)
         self.ctx.pop('guia', None); self.ctx.pop('tipo', None); self.ctx.pop('motivo', None)
         if not ok:
             return self._ir_guias(prefijo=f'{msg} ')
+        etiqueta = guia.get('etiqueta') or ''
         regs = self.ctx.get('registradas') or []
-        if guia.get('numero') and guia['numero'] not in regs:
-            regs.append(guia['numero'])
+        if etiqueta and etiqueta not in regs:
+            regs.append(etiqueta)
         self.ctx['registradas'] = regs
         self.sesion.paso = RutAgenteSesion.PASO_OTRA
-        return self._menu_otra(prefijo=f'✅ Registré la novedad de la guía {guia.get("numero", "")}.\n')
+        return self._menu_otra(prefijo=f'✅ Registré la novedad de la guía {etiqueta}.\n')
 
     # -- constructores de mensaje ------------------------------------------
     def _ir_menu(self, prefijo=''):
@@ -292,8 +300,8 @@ class FlujoNovedades:
             return self._cerrar(sin_novedades=True, prefijo='Ya no quedan guías pendientes. ')
         opciones = []
         for g in guias[:MAX_GUIAS_MENU]:
-            titulo = f'{g["numero"]} · {(g.get("destinatario") or "").strip()}'.strip(' ·')
-            opciones.append({'id': f'guia:{g["numero"]}', 'titulo': titulo,
+            titulo = f'{_etiqueta_guia(g)} · {(g.get("destinatario") or "").strip()}'.strip(' ·')
+            opciones.append({'id': f'guia:{g["id"]}', 'titulo': titulo,
                              'descripcion': (g.get('destinatario_direccion') or '').strip()})
         if len(guias) > MAX_GUIAS_MENU:
             opciones.append({'id': 'nav:escribir', 'titulo': '✍️ Escribir número'})
@@ -308,7 +316,7 @@ class FlujoNovedades:
         guia = self.ctx.get('guia') or {}
         opciones = [{'id': f'tipo:{t["id"]}', 'titulo': t['nombre']} for t in tipos[:MAX_TIPOS_MENU]]
         opciones.append({'id': 'nav:volver', 'titulo': '⬅️ Volver'})
-        texto = prefijo + f'Guía {guia.get("numero", "")} · {guia.get("nombre", "")}. ¿Qué pasó?'
+        texto = prefijo + f'Guía {guia.get("etiqueta", "")} · {guia.get("nombre", "")}. ¿Qué pasó?'
         return self._opts(texto, opciones, boton='Ver tipos')
 
     def _pedir_motivo(self, prefijo=''):
@@ -322,7 +330,7 @@ class FlujoNovedades:
         tipo = self.ctx.get('tipo') or {}
         motivo = self.ctx.get('motivo', '')
         lineas = ['Confirmá la novedad:',
-                  f'📦 Guía {guia.get("numero", "")} · {guia.get("nombre", "")}',
+                  f'📦 Guía {guia.get("etiqueta", "")} · {guia.get("nombre", "")}',
                   f'⚠️ {tipo.get("nombre", "")}']
         if motivo:
             lineas.append(f'📝 "{motivo}"')
@@ -359,14 +367,19 @@ class FlujoNovedades:
         return {'tipo': tipo, 'texto': texto[:1024], 'opciones': opciones, 'boton': boton}
 
     # -- matching de texto libre -------------------------------------------
-    def _buscar_guia(self, numero):
-        num = str(numero).strip()
+    def _buscar_guia(self, vid):
+        """Busca la guía pendiente por su id interno."""
+        try:
+            vid = int(vid)
+        except (TypeError, ValueError):
+            return None
         for g in _guias_pendientes(self.despacho_id):
-            if str(g['numero']) == num:
+            if g['id'] == vid:
                 return g
         return None
 
     def _match_guia(self, texto):
+        """Match de texto libre a una guía pendiente, por número exacto o por nombre."""
         t = (texto or '').strip().lower()
         if not t:
             return None
@@ -374,7 +387,7 @@ class FlujoNovedades:
         digitos = re.sub(r'\D', '', t)
         if digitos:
             for g in guias:
-                if str(g['numero']) == digitos:
+                if str(g.get('numero') or '') == digitos:
                     return g
         for g in guias:
             nom = (g.get('destinatario') or '').lower()

@@ -85,7 +85,7 @@ class OrquestadorTests(TenantTestCase):
     def test_flujo_completo_registra_novedad(self, _WC, _notif):
         self._sesion()
         procesar_entrante_conductor(TEL, 'Reportar', _Conexion(), opcion_id='menu:reportar')
-        procesar_entrante_conductor(TEL, '200002 · Ana', _Conexion(), opcion_id='guia:200002')
+        procesar_entrante_conductor(TEL, '200002 · Ana', _Conexion(), opcion_id=f'guia:{self.v2.id}')
         procesar_entrante_conductor(TEL, 'Cliente ausente', _Conexion(), opcion_id='tipo:1')
         procesar_entrante_conductor(TEL, 'no estaba', _Conexion())          # motivo libre
         procesar_entrante_conductor(TEL, 'Confirmar', _Conexion(), opcion_id='conf:si')

@@ -51,9 +51,24 @@ class FlujoNovedadesTests(TenantTestCase):
         ses = self._sesion()
         r = self._flujo(ses).procesar(None, 'menu:reportar')
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_GUIA)
-        self.assertIn('guia:200001', self._ids(r))
-        self.assertIn('guia:200002', self._ids(r))
+        self.assertIn(f'guia:{self.v1.id}', self._ids(r))
+        self.assertIn(f'guia:{self.v2.id}', self._ids(r))
         self.assertIn('nav:volver', self._ids(r))
+
+    @patch('movil.services.novedad._notificar')
+    def test_guia_sin_numero_no_muestra_none_y_es_registrable(self, _notif):
+        # Bug real: una guía creada sin número mostraba "None". Ahora usa "#id" y
+        # se identifica por id (seleccionable y registrable).
+        v = RutVisita.objects.create(despacho=self.despacho, ciudad_id=None, numero=None,
+                                     destinatario='Sin Numero', destinatario_direccion='Calle X')
+        ses = self._sesion()
+        r = self._flujo(ses).procesar(None, 'menu:reportar')
+        self.assertNotIn('None', ' '.join(o['titulo'] for o in r.get('opciones', [])))
+        self.assertIn(f'guia:{v.id}', self._ids(r))
+        f = self._flujo(ses)
+        f.procesar(None, f'guia:{v.id}')
+        self.assertEqual(f.ctx['guia']['id'], v.id)
+        self.assertEqual(f.ctx['guia']['etiqueta'], f'#{v.id}')   # fallback, no "None"
 
     def test_menu_guias_muestra_resumen_y_sigue_en_menu(self):
         self.v1.estado_entregado = True
@@ -76,14 +91,14 @@ class FlujoNovedadesTests(TenantTestCase):
     def test_elegir_guia_lleva_a_tipos(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_GUIA)
         f = self._flujo(ses)
-        r = f.procesar(None, 'guia:200002')
+        r = f.procesar(None, f'guia:{self.v2.id}')
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_TIPO)
-        self.assertEqual(f.ctx['guia']['numero'], '200002')
+        self.assertEqual(f.ctx['guia']['etiqueta'], '200002')
         self.assertIn('tipo:1', self._ids(r))
         self.assertIn('nav:volver', self._ids(r))
 
     def test_elegir_tipo_pide_motivo(self):
-        ses = self._sesion(paso=RutAgenteSesion.PASO_TIPO, contexto={'guia': {'numero': '200002', 'nombre': 'Ana'}})
+        ses = self._sesion(paso=RutAgenteSesion.PASO_TIPO, contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}})
         f = self._flujo(ses)
         r = f.procesar(None, 'tipo:1')
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_MOTIVO)
@@ -92,7 +107,7 @@ class FlujoNovedadesTests(TenantTestCase):
 
     def test_motivo_lleva_a_confirmar(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_MOTIVO,
-                           contexto={'guia': {'numero': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'Cliente ausente'}})
+                           contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'Cliente ausente'}})
         f = self._flujo(ses)
         r = f.procesar('no había nadie', None)
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_CONFIRMA)
@@ -103,7 +118,7 @@ class FlujoNovedadesTests(TenantTestCase):
 
     def test_omitir_motivo_va_a_confirmar_sin_texto(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_MOTIVO,
-                           contexto={'guia': {'numero': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'Cliente ausente'}})
+                           contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'Cliente ausente'}})
         f = self._flujo(ses)
         f.procesar(None, 'nav:omitir')
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_CONFIRMA)
@@ -113,7 +128,7 @@ class FlujoNovedadesTests(TenantTestCase):
     @patch('movil.services.novedad._notificar')
     def test_confirmar_registra_la_novedad(self, _notif):
         ses = self._sesion(paso=RutAgenteSesion.PASO_CONFIRMA,
-                           contexto={'guia': {'numero': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'Cliente ausente'}, 'motivo': 'no estaba'})
+                           contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'Cliente ausente'}, 'motivo': 'no estaba'})
         f = self._flujo(ses)
         r = f.procesar(None, 'conf:si')
         self.v2.refresh_from_db()
@@ -128,7 +143,7 @@ class FlujoNovedadesTests(TenantTestCase):
 
     def test_descartar_no_registra(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_CONFIRMA,
-                           contexto={'guia': {'numero': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'x'}, 'motivo': 'y'})
+                           contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}, 'tipo': {'id': 1, 'nombre': 'x'}, 'motivo': 'y'})
         f = self._flujo(ses)
         f.procesar(None, 'conf:descartar')
         self.assertEqual(RutNovedad.objects.count(), 0)
@@ -137,10 +152,10 @@ class FlujoNovedadesTests(TenantTestCase):
 
     # -- navegación de retroceso / escape ----------------------------------
     def test_volver_desde_tipo_vuelve_a_guias(self):
-        ses = self._sesion(paso=RutAgenteSesion.PASO_TIPO, contexto={'guia': {'numero': '200002', 'nombre': 'Ana'}})
+        ses = self._sesion(paso=RutAgenteSesion.PASO_TIPO, contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002', 'nombre': 'Ana'}})
         r = self._flujo(ses).procesar(None, 'nav:volver')
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_GUIA)
-        self.assertIn('guia:200002', self._ids(r))
+        self.assertIn(f'guia:{self.v2.id}', self._ids(r))
 
     def test_volver_desde_guia_vuelve_a_menu(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_GUIA)
@@ -150,7 +165,7 @@ class FlujoNovedadesTests(TenantTestCase):
 
     def test_cancelar_global_limpia_y_va_a_menu(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_CONFIRMA,
-                           contexto={'guia': {'numero': '200002'}, 'tipo': {'id': 1}})
+                           contexto={'guia': {'id': self.v2.id, 'etiqueta': '200002'}, 'tipo': {'id': 1}})
         f = self._flujo(ses)
         f.procesar('cancelar', None)
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_MENU)
@@ -169,14 +184,14 @@ class FlujoNovedadesTests(TenantTestCase):
         f = self._flujo(ses)
         f.procesar('la de ana', None)
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_TIPO)
-        self.assertEqual(f.ctx['guia']['numero'], '200002')
+        self.assertEqual(f.ctx['guia']['id'], self.v2.id)
 
     def test_match_guia_por_numero_escrito(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_GUIA)
         f = self._flujo(ses)
         f.procesar('200001', None)
         self.assertEqual(ses.paso, RutAgenteSesion.PASO_TIPO)
-        self.assertEqual(f.ctx['guia']['numero'], '200001')
+        self.assertEqual(f.ctx['guia']['id'], self.v1.id)
 
     def test_otra_si_vuelve_a_guias_y_no_cierra(self):
         ses = self._sesion(paso=RutAgenteSesion.PASO_OTRA)
@@ -193,24 +208,24 @@ class FlujoNovedadesTests(TenantTestCase):
         r = self._flujo(ses).procesar(None, 'nav:menu')  # ir a menú y volver
         r = self._flujo(ses).procesar(None, 'menu:reportar')
         ids = self._ids(r)
-        self.assertIn('guia:200002', ids)
-        self.assertNotIn('guia:200001', ids)  # entregada -> no se ofrece
+        self.assertIn(f'guia:{self.v2.id}', ids)
+        self.assertNotIn(f'guia:{self.v1.id}', ids)  # entregada -> no se ofrece
 
     # -- registro directo: guardrails + idempotencia -----------------------
     def test_guia_ajena_no_registra(self):
-        ok, _ = _registrar(self.despacho.id, '999999', 1, 'x', _TenantStub())
+        ok, _ = _registrar(self.despacho.id, 999999, 1, 'x', _TenantStub())  # id inexistente
         self.assertFalse(ok)
         self.assertEqual(RutNovedad.objects.count(), 0)
 
     def test_tipo_invalido_no_registra(self):
-        ok, _ = _registrar(self.despacho.id, '200002', 999, 'x', _TenantStub())
+        ok, _ = _registrar(self.despacho.id, self.v2.id, 999, 'x', _TenantStub())
         self.assertFalse(ok)
         self.assertEqual(RutNovedad.objects.count(), 0)
 
     @patch('movil.services.novedad._notificar')
     def test_registrar_idempotente(self, _notif):
-        _registrar(self.despacho.id, '200002', 1, 'no estaba', _TenantStub())
-        _registrar(self.despacho.id, '200002', 1, 'no estaba', _TenantStub())  # mismo token
+        _registrar(self.despacho.id, self.v2.id, 1, 'no estaba', _TenantStub())
+        _registrar(self.despacho.id, self.v2.id, 1, 'no estaba', _TenantStub())  # mismo token
         self.assertEqual(RutNovedad.objects.filter(visita=self.v2).count(), 1)
 
 
