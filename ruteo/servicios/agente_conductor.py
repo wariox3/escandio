@@ -431,6 +431,11 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
     )
     if not sesion:
         despacho, motivo = _resolver_o_diagnosticar(texto, telefono)
+        # Sin placa en el texto: ¿el número ya está ligado a un viaje? -> arranca
+        # directo (el conductor escribe "hola" y ve el menú, sin pedir la placa).
+        if despacho is None and motivo is None and not opcion_id \
+                and len((texto or '').split()) <= MAX_PALABRAS_PLACA:
+            despacho = _despacho_por_telefono(telefono)
         if despacho:
             nueva, _envio = _arrancar_sesion(conexion, despacho.id, telefono, _nombre_conductor(despacho))
             if not nueva:
@@ -564,6 +569,34 @@ def _telefono_esperado(despacho):
         user = User.objects.filter(pk=despacho.conductor_id).first()
         tel = getattr(user, 'telefono', None)
     return tel or None
+
+
+def _despacho_por_telefono(telefono):
+    """Despacho activo reciente cuyo número autorizado coincide con `telefono`.
+
+    Permite que el conductor arranque LOGY escribiendo cualquier cosa ("hola") sin
+    la placa: si su número ya está ligado a un viaje (lo registró el despachador, o
+    es el conductor asignado), se resuelve solo. Devuelve el más reciente o None.
+    """
+    from django.db.models import Q
+    from ruteo.models.despacho import RutDespacho
+
+    last10 = re.sub(r'\D', '', str(telefono or ''))[-10:]
+    if len(last10) != 10:
+        return None
+    limite = timezone.now() - timedelta(days=DIAS_VENTANA_PLACA)
+    base = RutDespacho.objects.filter(
+        Q(fecha__gte=limite) | Q(fecha__isnull=True),
+        estado_aprobado=True, estado_anulado=False)
+    # 1) por teléfono registrado (lo carga "Consultar al conductor") — consulta directa.
+    d = base.filter(conductor_telefono__endswith=last10).order_by('-id').first()
+    if d:
+        return d
+    # 2) por conductor asignado (su teléfono vive en User, otro schema).
+    for d in base.filter(conductor_id__isnull=False).order_by('-id')[:30]:
+        if _mismo_numero(_telefono_esperado(d), telefono):
+            return d
+    return None
 
 
 def _nombre_conductor(despacho):

@@ -60,12 +60,24 @@ class OrquestadorTests(TenantTestCase):
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_texto_corto_sin_sesion_da_bienvenida(self, WC):
-        # Un "hola" suelto NO queda en silencio: LOGY saluda y pide la placa.
+        # "hola" de un número DESCONOCIDO: LOGY saluda y pide la placa (no lo deja mudo).
         r = procesar_entrante_conductor('599999999', 'hola', _Conexion())
         self.assertTrue(r)
         self.assertIn('placa', r.lower())
         WC.return_value.enviar_texto.assert_called_once()
         self.assertEqual(RutAgenteSesion.objects.count(), 0)  # la sesión la crea la placa
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_hola_con_numero_registrado_arranca_sin_placa(self, WC):
+        # El número YA está ligado al viaje -> "hola" abre el menú directo, sin placa.
+        self.despacho.conductor_telefono = '573006134088'
+        self.despacho.save(update_fields=['conductor_telefono'])
+        r = procesar_entrante_conductor('573006134088', 'buenas', _Conexion())
+        self.assertTrue(r)
+        ses = RutAgenteSesion.objects.filter(telefono='573006134088', estado=RutAgenteSesion.ESTADO_ACTIVA)
+        self.assertEqual(ses.count(), 1)
+        WC.return_value.enviar_botones.assert_called_once()   # menú con opciones
+        WC.return_value.enviar_texto.assert_not_called()      # no la bienvenida de texto
 
     # -- flujo completo -----------------------------------------------------
     @patch('movil.services.novedad._notificar')
