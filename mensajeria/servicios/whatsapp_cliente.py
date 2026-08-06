@@ -143,14 +143,15 @@ class WhatsappCliente:
         """Mensaje interactivo con botones de respuesta (hasta 3).
 
         `opciones`: lista de dicts con 'titulo' (lo que toca el conductor, max 20
-        chars por limite de Meta). El id lo genera aca (op_0, op_1, ...); lo que
-        vuelve util al webhook es el titulo.
+        chars por limite de Meta) y 'id' opcional (semantico, ej. 'menu:reportar').
+        Si no trae 'id', se genera (op_0, op_1, ...). El webhook devuelve el id.
         """
         botones = []
         for i, op in enumerate((opciones or [])[:3]):
             titulo = (op.get('titulo') or '').strip()[:20]
             if titulo:  # Meta rechaza títulos vacíos; saltamos la opción inválida.
-                botones.append({'type': 'reply', 'reply': {'id': f'op_{i}', 'title': titulo}})
+                bid = (op.get('id') or f'op_{i}')[:256]
+                botones.append({'type': 'reply', 'reply': {'id': bid, 'title': titulo}})
         payload = {
             'messaging_product': 'whatsapp',
             'to': telefono,
@@ -174,7 +175,7 @@ class WhatsappCliente:
             titulo = (op.get('titulo') or '').strip()[:24]
             if not titulo:  # Meta rechaza filas con título vacío.
                 continue
-            fila = {'id': f'op_{i}', 'title': titulo}
+            fila = {'id': (op.get('id') or f'op_{i}')[:200], 'title': titulo}
             desc = (op.get('descripcion') or '').strip()
             if desc:
                 fila['description'] = desc[:72]

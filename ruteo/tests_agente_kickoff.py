@@ -92,7 +92,7 @@ class KickoffTests(TenantTestCase):
         tel, texto, opciones = WC.return_value.enviar_botones.call_args.args
         self.assertEqual(tel, '573001112233')
         self.assertIn(f'#{self.despacho.id}', texto)
-        self.assertEqual([o['titulo'] for o in opciones], ['Reportar novedad', 'Sin novedades'])
+        self.assertEqual([o['id'] for o in opciones], ['menu:reportar', 'menu:sin_novedades'])
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     @patch('contenedor.models.CtnWhatsappConexion')

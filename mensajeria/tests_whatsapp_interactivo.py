@@ -52,6 +52,13 @@ class BotonesPayloadTests(TestCase):
         titulos = [b['reply']['title'] for b in p['interactive']['action']['buttons']]
         self.assertEqual(titulos, ['Ok'])
 
+    def test_usa_id_semantico(self):
+        # El id (ej. 'menu:reportar') viaja tal cual para que el webhook lo enrute.
+        p = self._payload('57300', 'x', [{'id': 'menu:reportar', 'titulo': 'Reportar'},
+                                         {'id': 'menu:sin', 'titulo': 'Sin'}])
+        ids = [b['reply']['id'] for b in p['interactive']['action']['buttons']]
+        self.assertEqual(ids, ['menu:reportar', 'menu:sin'])
+
 
 class ListaPayloadTests(TestCase):
 
@@ -86,3 +93,8 @@ class ListaPayloadTests(TestCase):
         self.assertEqual(len(fila['title']), 24)
         self.assertEqual(len(fila['description']), 72)
         self.assertEqual(len(p['interactive']['action']['button']), 20)
+
+    def test_usa_id_semantico(self):
+        p = self._payload(telefono='57300', texto='x', boton='Ver',
+                          opciones=[{'id': 'guia:200002', 'titulo': '200002 · Ana'}])
+        self.assertEqual(p['interactive']['action']['sections'][0]['rows'][0]['id'], 'guia:200002')
