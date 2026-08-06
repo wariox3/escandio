@@ -100,7 +100,7 @@ class OrquestadorTests(TenantTestCase):
         self.assertEqual(ses.first().paso, RutAgenteSesion.PASO_MENU)
         WC.return_value.enviar_botones.assert_called_once()
         _tel, _texto, opciones = WC.return_value.enviar_botones.call_args.args
-        self.assertEqual([o['id'] for o in opciones], ['menu:reportar', 'menu:sin_novedades'])
+        self.assertEqual([o['id'] for o in opciones], ['menu:guias', 'menu:reportar', 'menu:sin_novedades'])
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
     def test_texto_largo_sin_placa_no_saluda(self, WC):

@@ -72,6 +72,26 @@ def _registrar(despacho_id, guia_numero, tipo_id, motivo, tenant):
     return True, 'ok'
 
 
+def _menu_opciones():
+    """Opciones del menú principal del conductor (las comparten el saludo y el flujo)."""
+    return [
+        {'id': 'menu:guias', 'titulo': '📦 Mis guías'},
+        {'id': 'menu:reportar', 'titulo': '📋 Reportar novedad'},
+        {'id': 'menu:sin_novedades', 'titulo': '🏁 Terminar'},
+    ]
+
+
+def _resumen_viaje(despacho_id):
+    """Contadores del viaje para el resumen (calculados de las visitas reales)."""
+    qs = RutVisita.objects.filter(despacho_id=despacho_id)
+    return {
+        'total': qs.count(),
+        'entregadas': qs.filter(estado_entregado=True).count(),
+        'novedad': qs.filter(estado_novedad=True).count(),
+        'pendientes': qs.filter(estado_entregado=False, estado_novedad=False).count(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Máquina de estados del flujo de novedades
 # ---------------------------------------------------------------------------
@@ -127,12 +147,16 @@ class FlujoNovedades:
     def _en_menu(self, kind, val, texto):
         if kind == 'menu' and val == 'reportar':
             return self._ir_guias()
+        if kind == 'menu' and val == 'guias':
+            return self._resumen()
         if kind == 'menu' and val == 'sin_novedades':
             return self._cerrar(sin_novedades=True)
         t = (texto or '').lower()
         if any(w in t for w in ('report', 'novedad', 'problema', 'no entreg', 'no pude', 'devol')):
             return self._ir_guias()
-        if any(w in t for w in ('sin novedad', 'ninguna', 'nada', 'todo bien', 'entregue', 'entregué', 'entregado')):
+        if any(w in t for w in ('cuant', 'quedan', 'pendient', 'resumen', 'mis guia', 'mis guía')):
+            return self._resumen()
+        if any(w in t for w in ('sin novedad', 'ninguna', 'nada', 'todo bien', 'entregue', 'entregué', 'entregado', 'termin')):
             return self._cerrar(sin_novedades=True)
         return self._menu_principal(prefijo='No te seguí 🤔 ')
 
@@ -242,11 +266,18 @@ class FlujoNovedades:
         return self._menu_principal(prefijo=prefijo)
 
     def _menu_principal(self, prefijo=''):
-        texto = prefijo + f'¿Cómo te fue con el viaje #{self.despacho_id}?'
-        return self._opts(texto, [
-            {'id': 'menu:reportar', 'titulo': '📋 Reportar novedad'},
-            {'id': 'menu:sin_novedades', 'titulo': '✅ Sin novedades'},
-        ])
+        texto = prefijo + f'Viaje #{self.despacho_id} — ¿en qué te ayudo?'
+        return self._opts(texto, _menu_opciones())
+
+    def _resumen(self):
+        """Estado del viaje (solo lectura) y vuelve a ofrecer el menú."""
+        r = _resumen_viaje(self.despacho_id)
+        texto = (f'📦 Viaje #{self.despacho_id}\n'
+                 f'• {r["total"]} guías en total\n'
+                 f'• {r["entregadas"]} entregadas ✅\n'
+                 f'• {r["novedad"]} con novedad ⚠️\n'
+                 f'• {r["pendientes"]} pendientes ⏳')
+        return self._opts(texto, _menu_opciones())
 
     def _ir_guias(self, prefijo=''):
         self.sesion.paso = RutAgenteSesion.PASO_GUIA
@@ -559,14 +590,10 @@ def _arrancar_sesion(conexion, despacho_id, telefono, conductor_nombre):
     empresa = getattr(getattr(conexion, 'contenedor', None), 'nombre', None) or 'la empresa'
     saludo = (
         f'¡Hola {conductor_nombre}! 👋 Soy {NOMBRE_AGENTE}, el asistente de {empresa}. '
-        f'Cerremos el viaje #{despacho_id}. ¿Cómo te fue?'
+        f'Viaje #{despacho_id} — ¿en qué te ayudo?'
     )
-    opciones = [
-        {'id': 'menu:reportar', 'titulo': '📋 Reportar novedad'},
-        {'id': 'menu:sin_novedades', 'titulo': '✅ Sin novedades'},
-    ]
     try:
-        envio = WhatsappCliente(conexion).enviar_botones(telefono, saludo, opciones)
+        envio = WhatsappCliente(conexion).enviar_botones(telefono, saludo, _menu_opciones())
     except Exception:
         logger.exception('LOGY: fallo enviando saludo a %s (despacho %s)', telefono, despacho_id)
         return None, {'error': True, 'mensaje': 'Excepción enviando el saludo por WhatsApp'}

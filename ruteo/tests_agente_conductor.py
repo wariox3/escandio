@@ -55,6 +55,17 @@ class FlujoNovedadesTests(TenantTestCase):
         self.assertIn('guia:200002', self._ids(r))
         self.assertIn('nav:volver', self._ids(r))
 
+    def test_menu_guias_muestra_resumen_y_sigue_en_menu(self):
+        self.v1.estado_entregado = True
+        self.v1.save(update_fields=['estado_entregado'])
+        ses = self._sesion()
+        r = self._flujo(ses).procesar(None, 'menu:guias')
+        self.assertIn('Viaje', r['texto'])
+        self.assertIn('1 entregadas', r['texto'])
+        self.assertIn('1 pendientes', r['texto'])
+        self.assertEqual(ses.paso, RutAgenteSesion.PASO_MENU)   # solo lectura
+        self.assertIn('menu:reportar', self._ids(r))            # re-ofrece el menú
+
     def test_menu_sin_novedades_cierra(self):
         ses = self._sesion()
         r = self._flujo(ses).procesar(None, 'menu:sin_novedades')
