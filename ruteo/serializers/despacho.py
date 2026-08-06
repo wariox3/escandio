@@ -47,7 +47,8 @@ class RutDespachoSerializador(_ConductorNombreMixin, serializers.ModelSerializer
                   'vehiculo',
                   'vehiculo__placa' ,
                   'vehiculo__capacidad',
-                  'conductor_id']
+                  'conductor_id',
+                  'conductor_telefono']
         select_related_fields = ['vehiculo']
 
     def to_representation(self, instance):
