@@ -430,17 +430,16 @@ def procesar_entrante_conductor(telefono, texto, conexion, opcion_id=None):
         .order_by('-id').first()
     )
     if not sesion:
-        despacho = _resolver_despacho_por_placa(texto)
+        despacho, motivo = _resolver_o_diagnosticar(texto, telefono)
         if despacho:
-            esperado = _telefono_esperado(despacho)
-            if esperado and not _mismo_numero(esperado, telefono):
-                logger.warning('LOGY: %s intentó arrancar el viaje %s por placa, pero no es '
-                               'el número autorizado; se ignora.', telefono, despacho.id)
-                return None
             nueva, _envio = _arrancar_sesion(conexion, despacho.id, telefono, _nombre_conductor(despacho))
             if not nueva:
                 return None
             return nueva.historial[-1]['texto'] if nueva.historial else ''
+        if motivo:
+            # Había una placa que no sirve (inexistente/vieja/sin aprobar/de otro
+            # número): mensaje ESPECÍFICO, no la bienvenida genérica.
+            return _enviar_texto_suelto(conexion, telefono, motivo)
         # No hay placa: a un texto CORTO lo saludamos y le pedimos la placa, así el
         # conductor que escribe suelto (un "hola") no queda sin respuesta. Un texto
         # largo o un toque de botón huérfano probablemente sea un cliente -> lo
@@ -501,32 +500,48 @@ def _extraer_placas(texto):
     return placas
 
 
-def _resolver_despacho_por_placa(texto):
-    """Si el texto trae la placa de un despacho activo reciente, lo devuelve.
+def _resolver_o_diagnosticar(texto, telefono):
+    """Para un texto sin sesión, intenta resolver la placa a un despacho para
+    arrancar. Devuelve:
+      - (despacho, None)  -> arranca.
+      - (None, motivo)    -> hay una placa que NO sirve; `motivo` es el mensaje
+                             específico para el conductor (inexistente / vieja /
+                             sin aprobar / de otro número).
+      - (None, None)      -> no hay placa (mensaje corto -> bienvenida; largo -> inbox).
 
-    Solo matchea mensajes cortos (para no secuestrar mensajes largos de clientes)
-    contra despachos aprobados, no anulados, de los últimos días.
+    Solo diagnostica mensajes cortos, para no secuestrar mensajes largos de clientes.
     """
-    from django.db.models import Q
     from ruteo.models.despacho import RutDespacho
 
     if len((texto or '').split()) > MAX_PALABRAS_PLACA:
-        return None
+        return None, None
     placas = _extraer_placas(texto)
     if not placas:
-        return None
+        return None, None
     limite = timezone.now() - timedelta(days=DIAS_VENTANA_PLACA)
     for placa in placas:
         despacho = (
             RutDespacho.objects
-            .filter(Q(fecha__gte=limite) | Q(fecha__isnull=True),
-                    vehiculo__placa__iexact=placa,
-                    estado_aprobado=True, estado_anulado=False)
+            .filter(vehiculo__placa__iexact=placa, estado_anulado=False)
             .order_by('-id').first()
         )
-        if despacho:
-            return despacho
-    return None
+        if not despacho:
+            continue
+        if not despacho.estado_aprobado:
+            return None, (f'El viaje de la placa {placa} todavía no está listo (sin aprobar). '
+                          f'Avisá al despachador. 🙏')
+        if despacho.fecha and despacho.fecha < limite:
+            return None, (f'El viaje de la placa {placa} es de hace más de {DIAS_VENTANA_PLACA} días, '
+                          f'no lo puedo cerrar por acá. Si es un viaje nuevo, avisá al despachador. 🙏')
+        esperado = _telefono_esperado(despacho)
+        if esperado and not _mismo_numero(esperado, telefono):
+            logger.warning('LOGY: %s escribió la placa del viaje %s pero no es el número autorizado.',
+                           telefono, despacho.id)
+            return None, (f'El viaje de la placa {placa} está registrado a otro número. '
+                          f'Si sos vos, pedile al despachador que actualice tu teléfono. 🙏')
+        return despacho, None
+    return None, (f'No encontré ningún viaje con la placa {placas[0]}. '
+                  f'Revisá que esté bien escrita, o avisá al despachador. 🙏')
 
 
 def _mismo_numero(a, b):
@@ -559,26 +574,31 @@ def _nombre_conductor(despacho):
     return nombre or 'conductor'
 
 
+def _enviar_texto_suelto(conexion, telefono, texto):
+    """Manda un texto suelto (bienvenida o diagnóstico de placa). Devuelve el texto,
+    o None si no se pudo enviar."""
+    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
+    try:
+        envio = WhatsappCliente(conexion).enviar_texto(telefono, texto)
+    except Exception:
+        logger.exception('LOGY: fallo enviando texto suelto a %s', telefono)
+        return None
+    if isinstance(envio, dict) and envio.get('error'):
+        logger.error('LOGY: Meta rechazó el texto a %s: %s', telefono, envio.get('mensaje'))
+        return None
+    return texto
+
+
 def _bienvenida(conexion, telefono):
     """Saluda a un texto corto sin sesión y le pide la placa (no crea sesión: la
-    placa es la que arranca el flujo). Devuelve el saludo, o None si no se pudo
-    enviar. Así el conductor que escribe suelto no queda sin respuesta."""
-    from mensajeria.servicios.whatsapp_cliente import WhatsappCliente
-
+    placa es la que arranca el flujo). Así el conductor que escribe suelto no queda
+    sin respuesta."""
     empresa = getattr(getattr(conexion, 'contenedor', None), 'nombre', None) or 'la empresa'
     saludo = (
         f'¡Hola! 👋 Soy {NOMBRE_AGENTE}, el asistente de {empresa}. '
         f'Para cerrar tu viaje y reportar novedades, escribime tu *placa* (ej. ABC123).'
     )
-    try:
-        envio = WhatsappCliente(conexion).enviar_texto(telefono, saludo)
-    except Exception:
-        logger.exception('LOGY: fallo enviando la bienvenida a %s', telefono)
-        return None
-    if isinstance(envio, dict) and envio.get('error'):
-        logger.error('LOGY: Meta rechazó la bienvenida a %s: %s', telefono, envio.get('mensaje'))
-        return None
-    return saludo
+    return _enviar_texto_suelto(conexion, telefono, saludo)
 
 
 def _arrancar_sesion(conexion, despacho_id, telefono, conductor_nombre):

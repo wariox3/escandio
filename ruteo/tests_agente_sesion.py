@@ -127,13 +127,40 @@ class OrquestadorTests(TenantTestCase):
         self.assertEqual(RutAgenteSesion.objects.filter(despacho=self.despacho).count(), 1)
 
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
-    def test_placa_numero_no_autorizado_no_arranca(self, WC):
+    def test_placa_numero_no_autorizado_avisa_y_no_arranca(self, WC):
         self.despacho.conductor_telefono = '573007654321'
         self.despacho.save(update_fields=['conductor_telefono'])
         r = procesar_entrante_conductor('573009999999', 'ABC123', _Conexion())
-        self.assertIsNone(r)
-        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+        self.assertIn('otro número', r)                       # motivo específico, no silencio
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)  # no arranca
         WC.return_value.enviar_botones.assert_not_called()
+        WC.return_value.enviar_texto.assert_called_once()     # avisa por texto
+
+    # -- diagnóstico de placa que no sirve (no la bienvenida genérica) ------
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_inexistente_avisa(self, WC):
+        r = procesar_entrante_conductor('573007654321', 'XYZ999', _Conexion())
+        self.assertIn('No encontré', r)
+        WC.return_value.enviar_texto.assert_called_once()
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_vieja_avisa(self, WC):
+        self.despacho.fecha = timezone.now() - timedelta(days=30)
+        self.despacho.save(update_fields=['fecha'])
+        r = procesar_entrante_conductor('573007654321', 'ABC123', _Conexion())
+        self.assertIn('días', r)
+        WC.return_value.enviar_texto.assert_called_once()
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
+
+    @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
+    def test_placa_sin_aprobar_avisa(self, WC):
+        self.despacho.estado_aprobado = False
+        self.despacho.save(update_fields=['estado_aprobado'])
+        r = procesar_entrante_conductor('573007654321', 'ABC123', _Conexion())
+        self.assertIn('aprobar', r)
+        WC.return_value.enviar_texto.assert_called_once()
+        self.assertEqual(RutAgenteSesion.objects.count(), 0)
 
     # -- expiración de sesión ----------------------------------------------
     @patch('mensajeria.servicios.whatsapp_cliente.WhatsappCliente')
