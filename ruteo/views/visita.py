@@ -1370,9 +1370,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         id = raw.get('id')        
         if id:
             try:
-                visita = RutVisita.objects.get(pk=id)                            
-            except RutVisita.DoesNotExist:
-                return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)            
+                visita = RutVisita.objects.get(pk=id)
+            except (RutVisita.DoesNotExist, ValueError, TypeError):
+                # ValueError/TypeError: el id no es numérico (p. ej. 'CSV35') -> Django
+                # falla al castear el pk antes de consultar. Un id así no puede ser una
+                # visita: respondemos 400 limpio en vez de un 500 no manejado.
+                return Response({'mensaje':'La visita no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
             if visita.estado_entregado == False and visita.estado_despacho == True:                
                 despacho = RutDespacho.objects.get(pk=visita.despacho_id)                
                 despacho.visitas_liberadas += 1
