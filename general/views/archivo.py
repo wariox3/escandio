@@ -12,6 +12,11 @@ from utilidades.excel_exportar import ExcelExportar
 from contenedor.mixins import RolMixin
 from django.http import HttpResponse
 from io import BytesIO
+from b2sdk.v2.exception import B2Error
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ArchivoViewSet(RolMixin, viewsets.ModelViewSet):
     queryset = GenArchivo.objects.all()
@@ -91,9 +96,18 @@ class ArchivoViewSet(RolMixin, viewsets.ModelViewSet):
                     response['Content-Disposition'] = f'attachment; filename="{archivo.nombre}"'                    
                     return response                                                                                   
                 except ValueError as e:
-                    return Response({'mensaje': str(e), 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)                                   
+                    return Response({'mensaje': str(e), 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+                except B2Error:
+                    # Falla transitoria de Backblaze (p. ej. 500 internal_error). Ya se
+                    # reintentó en descargar(); acá respondemos limpio en vez de un 500
+                    # opaco, para que el cliente pueda reintentar.
+                    logger.exception('Descarga de archivo falló en Backblaze (archivo id=%s)', id)
+                    return Response(
+                        {'mensaje': 'No se pudo descargar el archivo en este momento. Intentá de nuevo en unos segundos.', 'codigo': 16},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
             except GenArchivo.DoesNotExist:
-                return Response({'mensaje':'El archivo no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)                        
+                return Response({'mensaje':'El archivo no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)        
 

@@ -45,3 +45,27 @@ class BackblazeReintentoTests(SimpleTestCase):
             self._backblaze(bucket).subir_data(b'data', 'energy', 'foto.png', intentos=3)
 
         self.assertEqual(bucket.upload_bytes.call_count, 3)
+
+    # -- descargar: B2 puede tirar un 500 transitorio (internal_error) ---------
+    @patch('utilidades.backblaze.config', lambda k: 'ruteoco')
+    @patch('utilidades.backblaze.time.sleep', lambda *a: None)
+    def test_descargar_reintenta_ante_error_y_tiene_exito(self):
+        bucket = MagicMock()
+        ok = MagicMock(response='contenido')
+        bucket.download_file_by_id.side_effect = [B2Error('500'), ok]
+
+        result = self._backblaze(bucket).descargar('archivo-id')
+
+        self.assertEqual(result, 'contenido')
+        self.assertEqual(bucket.download_file_by_id.call_count, 2)
+
+    @patch('utilidades.backblaze.config', lambda k: 'ruteoco')
+    @patch('utilidades.backblaze.time.sleep', lambda *a: None)
+    def test_descargar_reranza_tras_agotar_los_intentos(self):
+        bucket = MagicMock()
+        bucket.download_file_by_id.side_effect = B2Error('500')
+
+        with self.assertRaises(B2Error):
+            self._backblaze(bucket).descargar('archivo-id', intentos=3)
+
+        self.assertEqual(bucket.download_file_by_id.call_count, 3)

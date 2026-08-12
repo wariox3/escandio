@@ -52,14 +52,22 @@ class Backblaze():
                     raise
                 time.sleep(0.4 * (intento + 1))
 
-    def descargar(self, archivo_id):
+    def descargar(self, archivo_id, intentos=3):
         bucket_nombre = config('B2_BUCKET_NAME')
         bucket = self.b2_api.get_bucket_by_name(bucket_nombre)
         if bucket is None:
-            raise ValueError(f"El bucket '{bucket_nombre}' no existe.")         
-                        
-        downloaded_file = bucket.download_file_by_id(archivo_id)  
-        return downloaded_file.response
+            raise ValueError(f"El bucket '{bucket_nombre}' no existe.")
+        # B2 puede tirar un 500 transitorio (internal_error) en la descarga. Se
+        # reintenta con backoff (mismo patron que subir_data); si persiste, se
+        # propaga el B2Error para que la vista responda limpio, no un 500 opaco.
+        for intento in range(intentos):
+            try:
+                downloaded_file = bucket.download_file_by_id(archivo_id)
+                return downloaded_file.response
+            except B2Error:
+                if intento == intentos - 1:
+                    raise
+                time.sleep(0.4 * (intento + 1))
     
     def descargar_bytes(self, archivo_id):
         bucket_nombre = config('B2_BUCKET_NAME')
