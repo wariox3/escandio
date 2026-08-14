@@ -27,6 +27,11 @@ class RutDespacho(models.Model):
     # el schema publico y ruteo es app de tenant -> se evita un FK cross-schema,
     # igual que RutUbicacion.usuario_id / RutSeguimiento.usuario_id.
     conductor_id = models.IntegerField(null=True)
+    # Telefono autorizado para reportar novedades por WhatsApp (agente LOGY). Si
+    # esta seteado, solo ese numero puede arrancar el agente por placa; si es null,
+    # cualquiera con la placa puede (self-service). Lo setea el despachador al usar
+    # "Consultar al conductor" (o se cae al telefono del conductor asignado).
+    conductor_telefono = models.CharField(max_length=30, null=True, blank=True)
 
     class Meta:
         db_table = "rut_despacho"

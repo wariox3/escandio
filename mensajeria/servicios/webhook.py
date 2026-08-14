@@ -62,7 +62,7 @@ class WebhookServicio:
                     connection.set_schema(schema_name)
                     if value.get('messages'):
                         for mensaje in value['messages']:
-                            resultado = cls._procesar_mensaje_entrante(mensaje, value)
+                            resultado = cls._procesar_mensaje_entrante(mensaje, value, conexion)
                             resultados.append(resultado)
                     if value.get('statuses'):
                         for estado in value['statuses']:
@@ -73,7 +73,7 @@ class WebhookServicio:
         return resultados
 
     @classmethod
-    def _procesar_mensaje_entrante(cls, mensaje, value):
+    def _procesar_mensaje_entrante(cls, mensaje, value, conexion=None):
         telefono = cls._normalizar_telefono(mensaje.get('from'))
         if not telefono:
             return {'ok': False, 'motivo': 'telefono invalido'}
@@ -86,6 +86,7 @@ class WebhookServicio:
 
         tipo_mensaje = mensaje.get('type', 'texto')
         contenido = None
+        opcion_id = None       # id del botón/fila que tocó el usuario (interactive)
         media_url = None
         media_caption = None
 
@@ -109,6 +110,22 @@ class WebhookServicio:
             loc = mensaje.get('location') or {}
             contenido = f'{loc.get("latitude")},{loc.get("longitude")}'
             tipo_modelo = MsjMensaje.TIPO_UBICACION
+        elif tipo_mensaje == 'interactive':
+            # Respuesta a botones/lista: el conductor toco una opcion. Tomamos el
+            # titulo (texto legible) como contenido -> el agente lo procesa igual
+            # que un mensaje escrito.
+            inter = mensaje.get('interactive') or {}
+            inter_tipo = inter.get('type')
+            if inter_tipo == 'button_reply':
+                br = inter.get('button_reply') or {}
+                contenido = br.get('title'); opcion_id = br.get('id')
+            elif inter_tipo == 'list_reply':
+                lr = inter.get('list_reply') or {}
+                contenido = lr.get('title'); opcion_id = lr.get('id')
+            else:
+                # Otros tipos (nfm_reply de Flows, etc.): no los usamos en el piloto.
+                logger.warning('Webhook: interactive.type no soportado: %s', inter_tipo)
+            tipo_modelo = MsjMensaje.TIPO_TEXTO
         else:
             tipo_modelo = MsjMensaje.TIPO_TEXTO
             contenido = f'[tipo no soportado: {tipo_mensaje}]'
@@ -148,6 +165,15 @@ class WebhookServicio:
                 media_caption=media_caption,
                 metadata=mensaje,
             )
+        # Si el remitente esta en una conversacion con el agente de conductores,
+        # dejar que el agente responda (fuera de la transaccion de logueo del inbox).
+        if tipo_modelo == MsjMensaje.TIPO_TEXTO and (contenido or opcion_id) and conexion is not None:
+            try:
+                from ruteo.servicios.agente_conductor import procesar_entrante_conductor
+                procesar_entrante_conductor(telefono, contenido, conexion, opcion_id=opcion_id)
+            except Exception:
+                logger.exception('Webhook: fallo el agente de conductores para %s', telefono)
+
         return {'ok': True, 'mensaje_id': msj.id, 'conversacion_id': conversacion.id}
 
     @classmethod

@@ -113,10 +113,10 @@ def registrar_novedad(visita, novedad_tipo_id, fecha, descripcion, movil_token, 
         )
         visita.estado_novedad = True
         visita.save(update_fields=['estado_novedad'])
-        if visita.despacho:
-            despacho = visita.despacho
-            despacho.visitas_novedad = (despacho.visitas_novedad or 0) + 1
-            despacho.save(update_fields=['visitas_novedad'])
+        # El contador despacho.visitas_novedad lo recalcula la señal post_save de
+        # RutVisita (ver ruteo/signals.py). NO incrementar acá: la señal ya deja
+        # el valor correcto y este += sumaba de más (1 novedad -> visitas_novedad
+        # quedaba en 2).
 
         if imagenes:
             _guardar_imagenes(novedad.id, imagenes, tenant.schema_name)
