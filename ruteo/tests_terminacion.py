@@ -10,7 +10,9 @@ Cubre:
 Correr: python manage.py test ruteo.tests_terminacion
 """
 from datetime import datetime, timezone as dt_timezone
+from io import StringIO
 
+from django.core.management import call_command
 from django.db import connection
 from django.test import SimpleTestCase
 from django.utils import timezone
@@ -215,6 +217,55 @@ class TerminacionPdfTests(_Base):
         respuesta = RutDespachoViewSet().terminacion_pdf(_Req({'id': self.despacho.id}))
         self.assertEqual(respuesta.status_code, 200)
         self.assertTrue(respuesta.content.startswith(b'%PDF'))
+
+
+class BackfillTerminacionTests(_Base):
+    """Comando backfill_terminacion: repone el snapshot de viajes cerrados sin el."""
+
+    def _backfill(self, *args):
+        salida = StringIO()
+        call_command('backfill_terminacion', '--schema', connection.tenant.schema_name,
+                     *args, stdout=salida, stderr=salida)
+        return salida.getvalue()
+
+    def test_crea_snapshot_de_terminado_sin_documento(self):
+        self._visita(entregado=True)
+        self._visita(novedad=True, numero=3)
+        self.despacho.estado_terminado = True
+        self.despacho.save()
+
+        self._backfill('--despacho', str(self.despacho.id))
+
+        term = RutTerminacion.objects.get(despacho=self.despacho)
+        self.assertEqual((term.total_guias, term.entregadas, term.con_novedad), (2, 1, 1))
+        self.assertEqual(term.consecutivo, 999)
+        self.assertEqual(RutTerminacionNovedad.objects.filter(terminacion=term).count(), 1)
+
+    def test_dry_run_no_escribe(self):
+        self._visita(entregado=True)
+        self.despacho.estado_terminado = True
+        self.despacho.save()
+        self._backfill('--todos', '--dry-run')
+        self.assertFalse(RutTerminacion.objects.exists())
+
+    def test_omite_no_terminados_anulados_y_con_documento(self):
+        # no terminado
+        salida = self._backfill('--despacho', str(self.despacho.id))
+        self.assertIn('omitido', salida)
+        # anulado (anular tambien marca terminado)
+        self.despacho.estado_terminado = True
+        self.despacho.estado_anulado = True
+        self.despacho.save()
+        salida = self._backfill('--todos')
+        self.assertFalse(RutTerminacion.objects.exists())
+        # con documento: el cierre normal ya creo el snapshot, no debe duplicar
+        self.despacho.estado_anulado = False
+        self.despacho.estado_terminado = False
+        self.despacho.save()
+        self._visita(entregado=True)
+        RutDespachoViewSet().terminar(_Req({'id': self.despacho.id}))
+        self._backfill('--todos')
+        self.assertEqual(RutTerminacion.objects.filter(despacho=self.despacho).count(), 1)
 
 
 class FormatoFechaLocalTests(SimpleTestCase):
