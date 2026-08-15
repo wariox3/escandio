@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class ArchivoViewSet(RolMixin, viewsets.ModelViewSet):
+    # Descargar es solo-lectura: los roles de consulta (p. ej. trafico) deben
+    # poder ver las evidencias de entrega sin ser editores.
+    acciones_lectura = ['descargar']
     queryset = GenArchivo.objects.all()
     serializer_class = GenArchivoSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
