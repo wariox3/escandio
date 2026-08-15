@@ -9,7 +9,7 @@ from ruteo.models.flota import RutFlota
 from general.models.configuracion import GenConfiguracion
 from general.models.archivo import GenArchivo
 from general.models.ciudad import GenCiudad
-from contenedor.models import CtnDireccion
+from contenedor.models import CtnDireccion, User
 from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
 from ruteo.servicios.complemento import ComplementoServicio
@@ -125,7 +125,23 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         campos = serializer_class.Meta.fields        
         if campos and campos != '__all__':
             queryset = queryset.only(*campos) 
-        return queryset 
+        return queryset
+
+    def retrieve(self, request, *args, **kwargs):
+        """Detalle + contexto del despacho: que vehiculo/conductor llevo la visita."""
+        respuesta = super().retrieve(request, *args, **kwargs)
+        despacho_id = respuesta.data.get('despacho')
+        if despacho_id:
+            despacho = RutDespacho.objects.filter(pk=despacho_id).select_related('vehiculo').first()
+            if despacho:
+                respuesta.data['vehiculo_placa'] = despacho.vehiculo.placa if despacho.vehiculo_id else None
+                conductor_nombre = None
+                if despacho.conductor_id:
+                    u = User.objects.filter(pk=despacho.conductor_id).values('nombre', 'apellido').first()
+                    if u:
+                        conductor_nombre = f"{u['nombre'] or ''} {u['apellido'] or ''}".strip() or None
+                respuesta.data['conductor_nombre'] = conductor_nombre
+        return respuesta
 
     def list(self, request, *args, **kwargs):
         #Ya no se va a usar lista deprecated
