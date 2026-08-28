@@ -7,7 +7,7 @@ import base64
 import logging
 
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.db.models import F
 
 from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
@@ -110,23 +110,19 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
 
     # Mantener el contador del Home movil (VerEntrega, tabla externa que se fija
     # al aprobar y NO reflejaba las entregas -> el Home mostraba "0 entregadas").
-    # Se espeja el conteo VERIFICADO de RutDespacho usando EXACTAMENTE la misma
-    # relacion que `recalcular_contadores_despacho` (Count('visitas_despacho_rel'),
-    # 0-drift comprobado) -> queda consistente por construccion. Va fuera de la
-    # transaccion y es fail-silent: nunca debe frenar una entrega ya guardada.
+    # Espeja los CAMPOS ALMACENADOS de RutDespacho (visitas / visitas_entregadas),
+    # que son el snapshot que mantiene la señal/`recalcular_contadores_despacho` y
+    # el que queremos mostrar (no el count vivo de la relacion, que difiere en
+    # despachos liberados). Va fuera de la transaccion y es fail-silent: nunca
+    # debe frenar una entrega ya guardada.
     try:
-        d = RutDespacho.objects.filter(pk=visita.despacho_id).annotate(
-            _visitas=Count('visitas_despacho_rel'),
-            _entregadas=Count(
-                'visitas_despacho_rel',
-                filter=Q(visitas_despacho_rel__estado_entregado=True),
-            ),
-        ).values('_visitas', '_entregadas').first()
+        d = RutDespacho.objects.filter(pk=visita.despacho_id).values(
+            'visitas', 'visitas_entregadas').first()
         if d:
             VerEntrega.objects.filter(
                 despacho_id=visita.despacho_id, schema_name=tenant.schema_name,
             ).update(
-                visitas=d['_visitas'], visitas_entregadas=d['_entregadas'],
+                visitas=d['visitas'], visitas_entregadas=d['visitas_entregadas'],
             )
     except Exception:  # noqa: BLE001
         logger.warning(

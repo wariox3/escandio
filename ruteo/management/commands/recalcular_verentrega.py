@@ -7,11 +7,12 @@ que no cuadraban con la lista de guias. A partir del fix en
 `movil/services/entrega.py` cada entrega la sincroniza; este comando repone las
 filas VIEJAS (aprobadas antes del fix o sin mas entregas).
 
-Usa EXACTAMENTE el mismo conteo que `recalcular_contadores_despacho`
-(Count('visitas_despacho_rel'...)), no el campo `despacho_id` crudo de RutVisita:
-son distintos en despachos liberados/reasignados, y la relacion es la verificada.
-Idempotente. NO toca peso/volumen/tiempo. VerEntrega huerfanos (cuyo despacho no
-existe) se dejan intactos.
+Espeja los CAMPOS ALMACENADOS de RutDespacho (visitas / visitas_entregadas), que
+son el snapshot que mantiene la señal/`recalcular_contadores_despacho` y el que se
+muestra en el Home — NO el count vivo de la relacion, que difiere en despachos
+liberados/reasignados (ej. despacho 62: campo=12 vs count vivo=0). Idempotente.
+NO toca peso/volumen/tiempo. VerEntrega huerfanos (cuyo despacho no existe) se
+dejan intactos.
 
 Uso:
     python manage.py recalcular_verentrega            # aplica a todos
@@ -19,7 +20,6 @@ Uso:
     python manage.py recalcular_verentrega --schema energypruebas
 """
 from django.core.management.base import BaseCommand
-from django.db.models import Count, Q
 from django_tenants.utils import schema_context
 
 from contenedor.models import Contenedor
@@ -35,16 +35,13 @@ def recalcular_verentrega(schema_name, dry_run=False):
     revisados = 0
     corregidos = []
     with schema_context(schema_name):
-        # Mismo conteo que recalcular_contadores_despacho (verificado 0-drift).
+        # Espeja los CAMPOS ALMACENADOS de RutDespacho (el snapshot que se quiere
+        # mostrar en el Home), NO el count vivo de la relacion (que difiere en
+        # despachos liberados/reasignados).
         despachos = {
-            d['id']: (d['_visitas'], d['_entregadas'])
-            for d in RutDespacho.objects.annotate(
-                _visitas=Count('visitas_despacho_rel'),
-                _entregadas=Count(
-                    'visitas_despacho_rel',
-                    filter=Q(visitas_despacho_rel__estado_entregado=True),
-                ),
-            ).values('id', '_visitas', '_entregadas')
+            d['id']: (d['visitas'], d['visitas_entregadas'])
+            for d in RutDespacho.objects.values(
+                'id', 'visitas', 'visitas_entregadas')
         }
 
         por_actualizar = []
