@@ -1,58 +1,60 @@
-"""Recalcula los contadores de VerEntrega (el contador del Home movil) desde las
-visitas reales de cada despacho.
+"""Recalcula los contadores de VerEntrega (el contador del Home movil) para que
+espejen los de RutDespacho (fuente verificada, 0-drift).
 
 VerEntrega (tabla `ver_entrega`, app vertical) se crea al APROBAR el despacho y
 NO se actualizaba al entregar -> el Home movil mostraba "0 entregadas" y totales
 que no cuadraban con la lista de guias. A partir del fix en
 `movil/services/entrega.py` cada entrega la sincroniza; este comando repone las
-filas VIEJAS (despachos aprobados antes del fix, o que ya no tendran mas
-entregas y por eso no se auto-corrigen).
+filas VIEJAS (aprobadas antes del fix o sin mas entregas).
 
-Recalcula ABSOLUTO desde RutVisita (idempotente). NO toca peso/volumen/tiempo.
+Usa EXACTAMENTE el mismo conteo que `recalcular_contadores_despacho`
+(Count('visitas_despacho_rel'...)), no el campo `despacho_id` crudo de RutVisita:
+son distintos en despachos liberados/reasignados, y la relacion es la verificada.
+Idempotente. NO toca peso/volumen/tiempo. VerEntrega huerfanos (cuyo despacho no
+existe) se dejan intactos.
 
 Uso:
     python manage.py recalcular_verentrega            # aplica a todos
     python manage.py recalcular_verentrega --dry-run  # solo muestra
-    python manage.py recalcular_verentrega --schema energy
+    python manage.py recalcular_verentrega --schema energypruebas
 """
 from django.core.management.base import BaseCommand
 from django.db.models import Count, Q
 from django_tenants.utils import schema_context
 
 from contenedor.models import Contenedor
-from ruteo.models.visita import RutVisita
+from ruteo.models.despacho import RutDespacho
 from vertical.models.entrega import VerEntrega
 
 
 def recalcular_verentrega(schema_name, dry_run=False):
-    """Repone VerEntrega.visitas/visitas_entregadas del `schema_name` dado desde
-    las RutVisita reales. Devuelve {'revisados': int, 'corregidos': [...]}.
-
-    Se hace todo dentro del schema_context del tenant: sirve tanto si ver_entrega
-    es una tabla compartida (public, accesible desde el tenant) como si fuera por
-    schema. Se filtra por schema_name para acotar en el caso compartido.
+    """Espeja VerEntrega.visitas/visitas_entregadas del `schema_name` dado sobre
+    los contadores verificados de RutDespacho. Devuelve
+    {'revisados': int, 'corregidos': [...]}.
     """
     revisados = 0
     corregidos = []
     with schema_context(schema_name):
-        # Conteo real por despacho desde las visitas del tenant.
-        conteos = {
-            r['despacho_id']: (r['total'], r['entregadas'])
-            for r in RutVisita.objects
-            .filter(despacho_id__isnull=False)
-            .values('despacho_id')
-            .annotate(
-                total=Count('id'),
-                entregadas=Count('id', filter=Q(estado_entregado=True)),
-            )
+        # Mismo conteo que recalcular_contadores_despacho (verificado 0-drift).
+        despachos = {
+            d['id']: (d['_visitas'], d['_entregadas'])
+            for d in RutDespacho.objects.annotate(
+                _visitas=Count('visitas_despacho_rel'),
+                _entregadas=Count(
+                    'visitas_despacho_rel',
+                    filter=Q(visitas_despacho_rel__estado_entregado=True),
+                ),
+            ).values('id', '_visitas', '_entregadas')
         }
 
         por_actualizar = []
         filas = VerEntrega.objects.filter(schema_name=schema_name).only(
             'id', 'despacho_id', 'visitas', 'visitas_entregadas')
         for e in filas.iterator(chunk_size=1000):
+            if e.despacho_id not in despachos:
+                continue  # VerEntrega huerfano (despacho borrado): no tocar
             revisados += 1
-            total, entregadas = conteos.get(e.despacho_id, (0, 0))
+            total, entregadas = despachos[e.despacho_id]
             if e.visitas != total or e.visitas_entregadas != entregadas:
                 corregidos.append({
                     'id': e.id,
@@ -72,8 +74,9 @@ def recalcular_verentrega(schema_name, dry_run=False):
 
 
 class Command(BaseCommand):
-    help = ('Recalcula VerEntrega.visitas/visitas_entregadas (contador del Home '
-            'movil) desde las visitas reales, en todos los contenedores.')
+    help = ('Espeja VerEntrega.visitas/visitas_entregadas (contador del Home '
+            'movil) sobre los contadores verificados de RutDespacho, en todos '
+            'los contenedores.')
 
     def add_arguments(self, parser):
         parser.add_argument('--schema', help='Procesa solo el contenedor indicado (schema_name).')

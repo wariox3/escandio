@@ -13,7 +13,6 @@ from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
 from movil.services.errores import EvidenciaNoGuardada
 from ruteo.models.despacho import RutDespacho
-from ruteo.models.visita import RutVisita
 from ruteo.servicios.notificacion import NotificacionServicio
 from ruteo.servicios.visita import VisitaServicio
 from vertical.models.entrega import VerEntrega
@@ -111,22 +110,24 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
 
     # Mantener el contador del Home movil (VerEntrega, tabla externa que se fija
     # al aprobar y NO reflejaba las entregas -> el Home mostraba "0 entregadas").
-    # Se recalcula ABSOLUTO desde RutVisita (idempotente, sin drift). Va fuera de
-    # la transaccion y es fail-silent: nunca debe frenar una entrega ya guardada
-    # (si falla, se corrige en la proxima entrega del mismo despacho).
+    # Se espeja el conteo VERIFICADO de RutDespacho usando EXACTAMENTE la misma
+    # relacion que `recalcular_contadores_despacho` (Count('visitas_despacho_rel'),
+    # 0-drift comprobado) -> queda consistente por construccion. Va fuera de la
+    # transaccion y es fail-silent: nunca debe frenar una entrega ya guardada.
     try:
-        conteos = RutVisita.objects.filter(
-            despacho_id=visita.despacho_id,
-        ).aggregate(
-            total=Count('id'),
-            entregadas=Count('id', filter=Q(estado_entregado=True)),
-        )
-        VerEntrega.objects.filter(
-            despacho_id=visita.despacho_id, schema_name=tenant.schema_name,
-        ).update(
-            visitas=conteos['total'] or 0,
-            visitas_entregadas=conteos['entregadas'] or 0,
-        )
+        d = RutDespacho.objects.filter(pk=visita.despacho_id).annotate(
+            _visitas=Count('visitas_despacho_rel'),
+            _entregadas=Count(
+                'visitas_despacho_rel',
+                filter=Q(visitas_despacho_rel__estado_entregado=True),
+            ),
+        ).values('_visitas', '_entregadas').first()
+        if d:
+            VerEntrega.objects.filter(
+                despacho_id=visita.despacho_id, schema_name=tenant.schema_name,
+            ).update(
+                visitas=d['_visitas'], visitas_entregadas=d['_entregadas'],
+            )
     except Exception:  # noqa: BLE001
         logger.warning(
             'No se pudo sincronizar VerEntrega (contador Home) del despacho %s',
