@@ -7,14 +7,16 @@ import base64
 import logging
 
 from django.db import transaction
-from django.db.models import F
+from django.db.models import Count, F, Q
 
 from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
 from movil.services.errores import EvidenciaNoGuardada
 from ruteo.models.despacho import RutDespacho
+from ruteo.models.visita import RutVisita
 from ruteo.servicios.notificacion import NotificacionServicio
 from ruteo.servicios.visita import VisitaServicio
+from vertical.models.entrega import VerEntrega
 from utilidades.backblaze import Backblaze
 from utilidades.imagen import Imagen
 from utilidades.utilidades import UtilidadGeneral
@@ -106,6 +108,30 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
             VisitaServicio.entrega_complemento(
                 visita, _a_base64(imagenes), _a_base64(firmas), datos_entrega,
             )
+
+    # Mantener el contador del Home movil (VerEntrega, tabla externa que se fija
+    # al aprobar y NO reflejaba las entregas -> el Home mostraba "0 entregadas").
+    # Se recalcula ABSOLUTO desde RutVisita (idempotente, sin drift). Va fuera de
+    # la transaccion y es fail-silent: nunca debe frenar una entrega ya guardada
+    # (si falla, se corrige en la proxima entrega del mismo despacho).
+    try:
+        conteos = RutVisita.objects.filter(
+            despacho_id=visita.despacho_id,
+        ).aggregate(
+            total=Count('id'),
+            entregadas=Count('id', filter=Q(estado_entregado=True)),
+        )
+        VerEntrega.objects.filter(
+            despacho_id=visita.despacho_id, schema_name=tenant.schema_name,
+        ).update(
+            visitas=conteos['total'] or 0,
+            visitas_entregadas=conteos['entregadas'] or 0,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            'No se pudo sincronizar VerEntrega (contador Home) del despacho %s',
+            visita.despacho_id, exc_info=True,
+        )
 
     # Tras commit: notificar al cliente. Falla silenciosa — la entrega ya quedo
     # registrada y no debe revertirse porque WhatsApp este caido.
