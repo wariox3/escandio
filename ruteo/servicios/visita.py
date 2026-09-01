@@ -208,9 +208,18 @@ class VisitaServicio():
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
-            # update_fields: el solver tarda segundos y un save() completo
-            # pisaría una entrega registrada por el conductor en ese intervalo.
-            visita.save(update_fields=['orden', 'distancia', 'tiempo_trayecto', 'tiempo'])
+            # UPDATE por PK (no save(update_fields=...)): el solver tarda segundos
+            # y en esa ventana una visita del lote puede borrarse o despacharse. Un
+            # save(update_fields=...) sobre una fila que ya no existe afecta 0 filas
+            # y lanza DatabaseError ("did not affect any rows"). .update() no lanza:
+            # devuelve 0 y omite esa visita, que es justo lo deseado. Sigue sin
+            # pisar otros campos (p.ej. una entrega registrada en el intervalo).
+            RutVisita.objects.filter(pk=visita.pk).update(
+                orden=visita.orden,
+                distancia=visita.distancia,
+                tiempo_trayecto=visita.tiempo_trayecto,
+                tiempo=visita.tiempo,
+            )
         return {'error': False}
 
     @staticmethod
@@ -408,9 +417,18 @@ class VisitaServicio():
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
-            # update_fields: el solver tarda segundos y un save() completo
-            # pisaría una entrega registrada por el conductor en ese intervalo.
-            visita.save(update_fields=['orden', 'distancia', 'tiempo_trayecto', 'tiempo'])
+            # UPDATE por PK (no save(update_fields=...)): el solver tarda segundos
+            # y en esa ventana una visita del lote puede borrarse o despacharse. Un
+            # save(update_fields=...) sobre una fila que ya no existe afecta 0 filas
+            # y lanza DatabaseError ("did not affect any rows"). .update() no lanza:
+            # devuelve 0 y omite esa visita, que es justo lo deseado. Sigue sin
+            # pisar otros campos (p.ej. una entrega registrada en el intervalo).
+            RutVisita.objects.filter(pk=visita.pk).update(
+                orden=visita.orden,
+                distancia=visita.distancia,
+                tiempo_trayecto=visita.tiempo_trayecto,
+                tiempo=visita.tiempo,
+            )
         return {
             'error': False,
             'debug': {
