@@ -134,7 +134,18 @@ class Utilidades:
                 'base64_raw': base64_data
             }
         else:
-            raise ValueError("La cadena base64 no contiene el formato esperado 'data:[tipo]/[extensión];base64,'.")
+            # Base64 crudo (sin prefijo 'data:[tipo]/[extensión];base64,').
+            # Algunos clientes (p. ej. la app móvil al cargar el logo) envían
+            # solo el contenido, sin encabezado. En vez de romper con un 500,
+            # asumimos un tipo por defecto (imagen JPEG) y devolvemos el mismo
+            # contrato de salida.
+            content_type = 'image/jpeg'
+            extension = content_type.split('/')[1]
+            return {
+                'content_type': content_type,
+                'extension': extension,
+                'base64_raw': base64_string
+            }
         
     @staticmethod
     def redondear_cien(valor):
