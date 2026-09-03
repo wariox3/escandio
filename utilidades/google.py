@@ -42,9 +42,16 @@ class Google():
                 cantidad_resultados = len(resultados)
                 location = resultados[0]['geometry']['location']
                 direccion_formato = resultados[0]['formatted_address']
+                # Google puede devolver formatted_address > 200 chars; direccion y
+                # direccion_formato son varchar(200) (aca en CtnDireccion y aguas
+                # abajo en la visita). Sin truncar -> DataError
+                # (StringDataRightTruncation) que tumba la importacion de
+                # complemento. Se trunca la variable para que viaje acotada tambien
+                # en el return. lat/lng/resultados (JSON completo) quedan intactos.
+                direccion_formato = (direccion_formato or '')[:200]
                 direccion = CtnDireccion()
                 direccion.fecha = now()
-                direccion.direccion = direccion_parametro
+                direccion.direccion = (direccion_parametro or '')[:200]
                 direccion.direccion_formato = direccion_formato
                 direccion.latitud = location['lat']
                 direccion.longitud = location['lng']
