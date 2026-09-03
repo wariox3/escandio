@@ -271,10 +271,16 @@ class NotificacionServicio():
                         )
                     else:
                         errores += 1
-                        logger.error(
+                        _msg_wa = (
                             f'Despacho {despacho_id}: error enviando WhatsApp [{plantilla_efectiva}] a {telefono}: '
                             f'{resultado.get("mensaje")}'
                         )
+                        # 132xxx = config de la plantilla del cliente (no un fallo
+                        # del backend); a warning para no alertar en Sentry.
+                        if resultado.get('codigo') in {132000, 132001, 132005, 132007, 132012, 132015, 132016}:
+                            logger.warning(_msg_wa)
+                        else:
+                            logger.error(_msg_wa)
 
                     RutNotificacion.objects.create(
                         despacho_id=despacho_id,
@@ -506,10 +512,16 @@ class NotificacionServicio():
                         f'wamid={resultado.get("message_id")}'
                     )
                 else:
-                    logger.error(
+                    _msg_wa = (
                         f'Visita {visita_id}: error enviando [{plantilla}] a {telefono}: '
                         f'{resultado.get("mensaje")}'
                     )
+                    # 132xxx = config de la plantilla del cliente; a warning para
+                    # no alertar en Sentry (la notificacion es best-effort).
+                    if resultado.get('codigo') in {132000, 132001, 132005, 132007, 132012, 132015, 132016}:
+                        logger.warning(_msg_wa)
+                    else:
+                        logger.error(_msg_wa)
 
                 NotificacionServicio._registrar_en_inbox(
                     telefono=telefono,
