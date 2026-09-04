@@ -125,9 +125,8 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
             visita = RutVisita.objects.filter(pk=novedad.visita_id).first()
             if visita:
                 visita.estado_novedad = False
+                # save() dispara la señal post_save que RECOMPUTA visitas_novedad
+                # desde las visitas reales; NO restar -1 a mano aca (quedaba doble
+                # decremento y el contador podia terminar negativo).
                 visita.save(update_fields=['estado_novedad'])
-                if visita.despacho:
-                    despacho = visita.despacho
-                    despacho.visitas_novedad = (despacho.visitas_novedad or 0) - 1
-                    despacho.save(update_fields=['visitas_novedad'])
         return Response({'mensaje': 'Novedad solucionada'})

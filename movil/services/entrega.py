@@ -7,7 +7,6 @@ import base64
 import logging
 
 from django.db import transaction
-from django.db.models import F
 
 from general.models.archivo import GenArchivo
 from general.models.configuracion import GenConfiguracion
@@ -91,10 +90,11 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
         visita.estado_entregado = True
         visita.fecha_entrega = fecha_entrega
         visita.datos_entrega = datos_entrega
+        # visita.save() dispara la señal post_save (ruteo/signals.py) que
+        # RECOMPUTA visitas_entregadas desde las visitas reales; NO sumar +1 a
+        # mano aca (lo hacia y quedaba +1 de mas por entrega -> marcaba el
+        # despacho "Completada" con guias aun pendientes e inflaba VerEntrega).
         visita.save()
-        RutDespacho.objects.filter(pk=visita.despacho_id).update(
-            visitas_entregadas=F('visitas_entregadas') + 1,
-        )
         if imagenes:
             _guardar_archivos(visita.id, imagenes, tenant.schema_name, 2, 'jpg', comprimir=True)
         if firmas:
