@@ -15,6 +15,7 @@ from movil.services.errores import EvidenciaNoGuardada
 from ruteo.models.despacho import RutDespacho
 from ruteo.servicios.notificacion import NotificacionServicio
 from ruteo.servicios.visita import VisitaServicio
+from vertical.models.entrega import VerEntrega
 from utilidades.backblaze import Backblaze
 from utilidades.imagen import Imagen
 from utilidades.utilidades import UtilidadGeneral
@@ -106,6 +107,28 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
             VisitaServicio.entrega_complemento(
                 visita, _a_base64(imagenes), _a_base64(firmas), datos_entrega,
             )
+
+    # Mantener el contador del Home movil (VerEntrega, tabla externa que se fija
+    # al aprobar y NO reflejaba las entregas -> el Home mostraba "0 entregadas").
+    # Espeja los CAMPOS ALMACENADOS de RutDespacho (visitas / visitas_entregadas),
+    # que son el snapshot que mantiene la señal/`recalcular_contadores_despacho` y
+    # el que queremos mostrar (no el count vivo de la relacion, que difiere en
+    # despachos liberados). Va fuera de la transaccion y es fail-silent: nunca
+    # debe frenar una entrega ya guardada.
+    try:
+        d = RutDespacho.objects.filter(pk=visita.despacho_id).values(
+            'visitas', 'visitas_entregadas').first()
+        if d:
+            VerEntrega.objects.filter(
+                despacho_id=visita.despacho_id, schema_name=tenant.schema_name,
+            ).update(
+                visitas=d['visitas'], visitas_entregadas=d['visitas_entregadas'],
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            'No se pudo sincronizar VerEntrega (contador Home) del despacho %s',
+            visita.despacho_id, exc_info=True,
+        )
 
     # Tras commit: notificar al cliente. Falla silenciosa — la entrega ya quedo
     # registrada y no debe revertirse porque WhatsApp este caido.

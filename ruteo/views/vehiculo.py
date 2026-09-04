@@ -57,7 +57,11 @@ class RutVehiculoViewSet(RolMixin, viewsets.ModelViewSet):
             try:
                 franja = RutFranja.objects.get(pk=codigo)
                 vehiculo.franjas.add(franja)
-            except RutFranja.DoesNotExist:
+            except (RutFranja.DoesNotExist, ValueError, TypeError):
+                # franja_codigo puede traer un valor no numerico (p.ej. el codigo
+                # de zona 'CSV35' en vez del id): get(pk=...) lanzaba ValueError,
+                # que este except no atrapaba -> 500. Se omite la franja invalida
+                # igual que una inexistente, en vez de tumbar todo el guardado.
                 pass
         
         headers = self.get_success_headers(serializer.data)
@@ -77,7 +81,11 @@ class RutVehiculoViewSet(RolMixin, viewsets.ModelViewSet):
             try:
                 franja = RutFranja.objects.get(pk=codigo)
                 vehiculo.franjas.add(franja)
-            except RutFranja.DoesNotExist:
+            except (RutFranja.DoesNotExist, ValueError, TypeError):
+                # franja_codigo puede traer un valor no numerico (p.ej. el codigo
+                # de zona 'CSV35' en vez del id): get(pk=...) lanzaba ValueError,
+                # que este except no atrapaba -> 500. Se omite la franja invalida
+                # igual que una inexistente, en vez de tumbar todo el guardado.
                 pass
         
         return Response(serializer.data)

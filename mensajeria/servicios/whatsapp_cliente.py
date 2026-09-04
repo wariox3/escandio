@@ -92,7 +92,16 @@ class WhatsappCliente:
 
         mensaje_error = self._formatear_error_meta(datos, respuesta.status_code)
         codigo = (datos.get('error') or {}).get('code')
-        logger.error(f'Whatsapp error {respuesta.status_code}: {mensaje_error}')
+        # Errores de Meta que reflejan la config de la PLANTILLA del cliente (no
+        # un fallo de nuestro servicio): 132001 = la plantilla no existe / no
+        # esta traducida al idioma pedido; 132000/132005/132007/132012 =
+        # parametros/formato; 132015/132016 = plantilla pausada/deshabilitada.
+        # Se loguean como warning para no disparar alertas en Sentry: la
+        # notificacion es best-effort y el flujo de negocio no se revierte.
+        if codigo in {132000, 132001, 132005, 132007, 132012, 132015, 132016}:
+            logger.warning(f'Whatsapp plantilla no enviada ({respuesta.status_code}): {mensaje_error}')
+        else:
+            logger.error(f'Whatsapp error {respuesta.status_code}: {mensaje_error}')
         return {
             'error': True,
             'mensaje': mensaje_error,
