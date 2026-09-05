@@ -101,15 +101,12 @@ class SolicitarClaveView(MovilApiMixin, APIView):
                 'El correo es obligatorio', responses.COD_PARAMETROS, 400,
                 titulo='Datos invalidos',
             )
-        ok, _ = auth_service.solicitar_cambio_clave(
+        # No revelar si el correo existe (evita enumeracion de usuarios): misma
+        # respuesta exista o no la cuenta.
+        auth_service.solicitar_cambio_clave(
             entrada.validated_data['username'].strip().lower(),
         )
-        if not ok:
-            return responses.error(
-                'No existe una cuenta con ese correo', responses.COD_NO_ENCONTRADO, 404,
-                titulo='Cuenta no encontrada',
-            )
-        return Response({'mensaje': 'Te enviamos un correo para cambiar tu clave'})
+        return Response({'mensaje': 'Si existe una cuenta con ese correo, te enviamos un enlace para cambiar tu clave'})
 
 
 class LogoutView(MovilApiMixin, APIView):

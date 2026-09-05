@@ -210,21 +210,29 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'usuario_id': usuario.id,
                 'token': token,
                 'vence': datetime.now().date() + timedelta(days=7),
+                # Token de CLAVE (no solo verificacion): la invitacion lleva al
+                # formulario que CREA la clave (/auth/clave/cambiar), unico flujo
+                # que hace set_password. El de /auth/verificacion solo marcaba
+                # verificado=True y dejaba al invitado sin poder ingresar.
+                'accion': 'clave',
             }
             serializador_verificacion = CtnVerificacionSerializador(data=data_v)
             if not serializador_verificacion.is_valid():
                 return Response({'mensaje': 'Errores en el registro de la verificacion', 'codigo': 3, 'validaciones': serializador_verificacion.errors}, status=status.HTTP_400_BAD_REQUEST)
             serializador_verificacion.save()
-            url = f"https://app.ruteo.co/auth/verificacion/" + token
+            url = f"https://app.ruteo.co/auth/clave/cambiar/" + token
             if config('ENV') == "test":
-                url = f"http://app.ruteo.online/auth/verificacion/" + token
+                url = f"http://app.ruteo.online/auth/clave/cambiar/" + token
             if config('ENV') == "dev":
-                url = f"http://localhost:4200/auth/verificacion/" + token
+                url = f"http://localhost:4200/auth/clave/cambiar/" + token
             html_content = """
                             <h1>¡Hola {usuario}!</h1>
-                            <p>Te han invitado a usar Ruteo.co. Por favor verifica tu cuenta y elige tu clave
-                            haciendo clic en el siguiente enlace.</p>
-                            <a href='{url}' class='button'>Verificar cuenta</a>
+                            <p>Te damos la bienvenida a Ruteo.co. Un administrador te invitó a la
+                            plataforma para gestionar tus entregas.</p>
+                            <p>Solo falta un paso para activar tu cuenta: <b>crear tu clave de acceso</b>.</p>
+                            <a href='{url}' class='button'>Crear mi clave</a>
+                            <p style="color:#8a98ae;font-size:13px;margin-top:16px;">Este enlace es válido por 7 días.
+                            Si vence, pídele a tu administrador que te reenvíe la invitación.</p>
                             """.format(url=url, usuario=usuario.nombre_corto or usuario.username)
             correo_enviado = True
             mensaje_correo = None
@@ -484,12 +492,14 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         raw = request.data
         username = raw.get('username')        
         if username:
-            try:
-                usuario = User.objects.get(username = username)
-            except User.DoesNotExist:
-                return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)    
-            
-            token = secrets.token_urlsafe(20)            
+            usuario = User.objects.filter(username=username).first()
+            if usuario is None:
+                # No revelar si el correo existe (evita enumeracion de usuarios).
+                # Misma forma/estado que el exito; el contrato movil v1.6.4 espera
+                # 201 {verificacion} (contenedor/contrato_movil.py).
+                return Response({'verificacion': {}}, status=status.HTTP_201_CREATED)
+
+            token = secrets.token_urlsafe(20)
             data = {
                 'token': token,
                 'vence': datetime.now().date() + timedelta(days=1),
@@ -505,12 +515,14 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 if config('ENV') == "dev":
                     url = f"http://localhost:4200/auth/clave/cambiar/" + token  
 
+                nombre = usuario.nombre_corto or ''
+                saludo = f'¡Hola {nombre}!' if nombre else '¡Hola!'
                 html_content = """
-                                <h1>¡Hola {usuario}!</h1>
-                                <p>Recibimos una solicitud para cambiar tu clave, puedes cambiarla haciendo clic en 
+                                <h1>{saludo}</h1>
+                                <p>Recibimos una solicitud para cambiar tu clave, puedes cambiarla haciendo clic en
                                 el siguiente enlace.</p>
                                 <a href='{url}' class='button'>Cambiar clave</a>
-                                """.format(url=url, usuario=usuario.nombre_corto)
+                                """.format(url=url, saludo=saludo)
                 correo = Zinc()  
                 correo.correo(usuario.correo, f'Solicitud cambio clave Ruteo.co', html_content, 'ruteo')
                 return Response({'verificacion': verificacion_serializer.data}, status=status.HTTP_201_CREATED)
@@ -534,6 +546,10 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                             verificacion.save()
                             usuario.set_password(clave)
                             usuario.debe_cambiar_clave = False
+                            # Un invitado queda verificado al crear su clave (llega
+                            # aquí desde el link de invitación). Para un reset normal
+                            # es no-op (ya estaba verificado).
+                            usuario.verificado = True
                             usuario.save()
                             return Response({'cambio': True}, status=status.HTTP_200_OK)
                         return Response({'mensaje':'El token de la verificacion esta vencido', 'codigo': 6, 'codigoUsuario': verificacion.usuario_id}, status=status.HTTP_400_BAD_REQUEST)
