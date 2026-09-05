@@ -492,12 +492,14 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         raw = request.data
         username = raw.get('username')        
         if username:
-            try:
-                usuario = User.objects.get(username = username)
-            except User.DoesNotExist:
-                return Response({'mensaje':'El usuario no existe', 'codigo':8}, status=status.HTTP_400_BAD_REQUEST)    
-            
-            token = secrets.token_urlsafe(20)            
+            usuario = User.objects.filter(username=username).first()
+            if usuario is None:
+                # No revelar si el correo existe (evita enumeracion de usuarios).
+                # Misma forma/estado que el exito; el contrato movil v1.6.4 espera
+                # 201 {verificacion} (contenedor/contrato_movil.py).
+                return Response({'verificacion': {}}, status=status.HTTP_201_CREATED)
+
+            token = secrets.token_urlsafe(20)
             data = {
                 'token': token,
                 'vence': datetime.now().date() + timedelta(days=1),
@@ -513,12 +515,14 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 if config('ENV') == "dev":
                     url = f"http://localhost:4200/auth/clave/cambiar/" + token  
 
+                nombre = usuario.nombre_corto or ''
+                saludo = f'¡Hola {nombre}!' if nombre else '¡Hola!'
                 html_content = """
-                                <h1>¡Hola {usuario}!</h1>
-                                <p>Recibimos una solicitud para cambiar tu clave, puedes cambiarla haciendo clic en 
+                                <h1>{saludo}</h1>
+                                <p>Recibimos una solicitud para cambiar tu clave, puedes cambiarla haciendo clic en
                                 el siguiente enlace.</p>
                                 <a href='{url}' class='button'>Cambiar clave</a>
-                                """.format(url=url, usuario=usuario.nombre_corto)
+                                """.format(url=url, saludo=saludo)
                 correo = Zinc()  
                 correo.correo(usuario.correo, f'Solicitud cambio clave Ruteo.co', html_content, 'ruteo')
                 return Response({'verificacion': verificacion_serializer.data}, status=status.HTTP_201_CREATED)

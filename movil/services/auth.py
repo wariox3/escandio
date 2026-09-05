@@ -90,8 +90,10 @@ def solicitar_cambio_clave(username):
     })
     if verificacion.is_valid():
         verificacion.save()
+        nombre = usuario.nombre_corto or ''
+        saludo = f'¡Hola {nombre}!' if nombre else '¡Hola!'
         html = (
-            f"<h1>Hola {usuario.nombre_corto}!</h1>"
+            f"<h1>{saludo}</h1>"
             f"<p>Recibimos una solicitud para cambiar tu clave.</p>"
             f"<a href='{_url_app('auth/clave/cambiar', token)}'>Cambiar clave</a>"
         )
