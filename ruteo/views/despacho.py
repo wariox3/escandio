@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Count, Q
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.visita import RutVisita
 from ruteo.models.vehiculo import RutVehiculo
@@ -56,10 +57,28 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         select_related = getattr(serializer_class.Meta, 'select_related_fields', [])
         if select_related:
             queryset = queryset.select_related(*select_related)        
-        campos = serializer_class.Meta.fields        
+        campos = serializer_class.Meta.fields
         if campos and campos != '__all__':
-            queryset = queryset.only(*campos) 
-        return queryset 
+            queryset = queryset.only(*campos)
+        # Conteo REAL de visitas por despacho (conteo condicional sobre la
+        # relacion, en la misma consulta). Evita mostrar los contadores
+        # denormalizados, que pueden quedar desincronizados de las visitas
+        # reales; los serializers lo aplican via _aplicar_contadores_reales.
+        queryset = queryset.annotate(
+            _v_total=Count('visitas_despacho_rel'),
+            _v_entregadas=Count(
+                'visitas_despacho_rel',
+                filter=Q(visitas_despacho_rel__estado_entregado=True),
+            ),
+            _v_novedad=Count(
+                'visitas_despacho_rel',
+                filter=Q(
+                    visitas_despacho_rel__estado_novedad=True,
+                    visitas_despacho_rel__estado_entregado=False,
+                ),
+            ),
+        )
+        return queryset
 
     def list(self, request, *args, **kwargs):
             if request.query_params.get('lista_completa', '').lower() == 'true':

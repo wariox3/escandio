@@ -6,6 +6,25 @@ from django.utils.timezone import now
 from decimal import Decimal
 
 
+def _aplicar_contadores_reales(instance, data):
+    """Muestra el conteo REAL de visitas cuando el queryset lo anoto (_v_total,
+    _v_entregadas, _v_novedad).
+
+    Los campos denormalizados (visitas / visitas_entregadas / visitas_novedad)
+    pueden quedar desincronizados de las visitas reales; el conteo anotado es la
+    fuente de verdad (coincide con la validacion de 'terminar' y con el detalle).
+    Si no viene anotado (p.ej. respuesta de un create), cae al valor almacenado.
+    """
+    for campo, attr in (
+        ('visitas', '_v_total'),
+        ('visitas_entregadas', '_v_entregadas'),
+        ('visitas_novedad', '_v_novedad'),
+    ):
+        valor = getattr(instance, attr, None)
+        if valor is not None:
+            data[campo] = valor
+
+
 class _ConductorNombreMixin:
     """Resuelve conductor_nombre con cache por instancia (request).
 
@@ -54,6 +73,7 @@ class RutDespachoSerializador(_ConductorNombreMixin, serializers.ModelSerializer
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['conductor_nombre'] = self._nombre_conductor(instance.conductor_id)
+        _aplicar_contadores_reales(instance, data)
         return data
 
 class RutDespachoTraficoSerializador(_ConductorNombreMixin, serializers.ModelSerializer):
@@ -72,4 +92,5 @@ class RutDespachoTraficoSerializador(_ConductorNombreMixin, serializers.ModelSer
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['conductor_nombre'] = self._nombre_conductor(instance.conductor_id)
+        _aplicar_contadores_reales(instance, data)
         return data
