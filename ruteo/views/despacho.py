@@ -577,7 +577,16 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         mensaje = f'Se creo el despacho con {cantidad} guia(s).'
                         if duplicadas:
                             mensaje += f' ({duplicadas} ya estaban en Ruteo y no se re-agregaron.)'
-                        return Response({'mensaje': mensaje}, status=status.HTTP_200_OK)
+                        # Se devuelven los conteos para que el front muestre el
+                        # mismo modal de resumen que los otros imports.
+                        return Response({
+                            'mensaje': mensaje,
+                            'cantidad': cantidad,
+                            'duplicadas': duplicadas,
+                            'sin_ubicar': resultado.get('sin_ubicar', 0),
+                            'errores_guia': resultado.get('errores_guia', 0),
+                            'descartadas': resultado.get('descartadas', 0),
+                        }, status=status.HTTP_200_OK)
                 else:
                     # El vehiculo debe existir ANTES: Semantica manda solo la
                     # placa, no la capacidad/tiempo/franjas que el ruteo necesita.
