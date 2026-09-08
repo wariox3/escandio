@@ -552,7 +552,10 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         else:
                             return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)                              
                 else:
-                    return Response({'mensaje':f'No existe el vehiculo {placa}', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                    # El vehiculo debe existir ANTES: Semantica manda solo la
+                    # placa, no la capacidad/tiempo/franjas que el ruteo necesita.
+                    # Mensaje que guia en vez de un "no existe" seco.
+                    return Response({'mensaje':f'El vehiculo {placa_norm} del despacho no esta registrado en Ruteo. Registralo en Administracion → Vehiculos (con su capacidad y tiempo) y volve a intentar.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 # Se propaga el motivo del complemento (p.ej. "el despacho no
                 # existe") en vez de un mensaje generico que no dice nada.
