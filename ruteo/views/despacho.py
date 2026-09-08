@@ -526,6 +526,12 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         list(RutVehiculo.objects.values_list('placa', flat=True)[:50]),
                     )
                 if vehiculo:
+                    # Idempotencia: no crear un despacho duplicado si ese codigo del
+                    # complemento ya se trajo. Re-ejecutar generaba un 2do despacho
+                    # VACIO (el dedup omite las guias que ya asigno el 1ro).
+                    existente = RutDespacho.objects.filter(codigo_complemento=codigo_complemento).first()
+                    if existente:
+                        return Response({'mensaje': f'El despacho {despacho_id} ya esta creado en Ruteo (despacho #{existente.id}). Buscalo en la lista de despachos.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                     with transaction.atomic():
                         data = {
                             'vehiculo':vehiculo.id,
@@ -533,24 +539,45 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                             'codigo_complemento': codigo_complemento
                         }
                         serializador = RutDespachoSerializador(data=data)
-                        if serializador.is_valid():
-                            despacho = serializador.save()
-                            limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
-                            respuesta = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
-                            # Ubicar todas (es segura ante lat/lng nulos) y ordenar solo
-                            # las decodificadas: una visita sin coordenadas rompe
-                            # haversine() y dejaria sin 'orden' a todo el despacho.
-                            # ordenar() ademas calcula tiempo/tiempo_trayecto, asi que
-                            # debe correr ANTES de regenerar_valores (que los suma).
-                            visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id)
-                            VisitaServicio.ubicar(visitas_despacho)
-                            visitas_a_ordenar = visitas_despacho.filter(estado_decodificado=True)
-                            if visitas_a_ordenar.count() > 1:
-                                VisitaServicio.ordenar(visitas_a_ordenar)
-                            DespachoServicio.regenerar_valores(despacho)
-                            return Response({'mensaje': f'Se creo el despacho con exito'}, status=status.HTTP_200_OK)
-                        else:
-                            return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)                              
+                        if not serializador.is_valid():
+                            return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)
+                        despacho = serializador.save()
+                        limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
+                        resultado = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
+                        # El import puede fallar (p.ej. Semantica caida en la 2da
+                        # llamada). Antes se IGNORABA el retorno y se respondia
+                        # "exito" con un despacho vacio -> el operador creia que
+                        # quedo bien. Ahora se revierte y se avisa el fallo real.
+                        if resultado.get('error'):
+                            transaction.set_rollback(True)
+                            return Response({'mensaje': f'No se pudieron traer las guias del despacho {despacho_id}: {resultado.get("mensaje", "error del complemento")}. No se creo el despacho.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                        cantidad = resultado.get('cantidad', 0)
+                        duplicadas = resultado.get('duplicadas', 0)
+                        # No dejar un despacho VACIO: si no entro ninguna guia se
+                        # revierte y se explica por que (ya importadas vs sin guias),
+                        # en vez de crear un despacho inutil que dice "exito".
+                        if cantidad == 0:
+                            transaction.set_rollback(True)
+                            if duplicadas:
+                                msg = f'El despacho {despacho_id} no se creo: sus {duplicadas} guia(s) ya estan importadas en Ruteo. Buscalas en Rutear o en el despacho donde ya esten.'
+                            else:
+                                msg = f'El despacho {despacho_id} no tiene guias para traer del complemento.'
+                            return Response({'mensaje': msg, 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                        # Ubicar todas (es segura ante lat/lng nulos) y ordenar solo
+                        # las decodificadas: una visita sin coordenadas rompe
+                        # haversine() y dejaria sin 'orden' a todo el despacho.
+                        # ordenar() ademas calcula tiempo/tiempo_trayecto, asi que
+                        # debe correr ANTES de regenerar_valores (que los suma).
+                        visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id)
+                        VisitaServicio.ubicar(visitas_despacho)
+                        visitas_a_ordenar = visitas_despacho.filter(estado_decodificado=True)
+                        if visitas_a_ordenar.count() > 1:
+                            VisitaServicio.ordenar(visitas_a_ordenar)
+                        DespachoServicio.regenerar_valores(despacho)
+                        mensaje = f'Se creo el despacho con {cantidad} guia(s).'
+                        if duplicadas:
+                            mensaje += f' ({duplicadas} ya estaban en Ruteo y no se re-agregaron.)'
+                        return Response({'mensaje': mensaje}, status=status.HTTP_200_OK)
                 else:
                     # El vehiculo debe existir ANTES: Semantica manda solo la
                     # placa, no la capacidad/tiempo/franjas que el ruteo necesita.
