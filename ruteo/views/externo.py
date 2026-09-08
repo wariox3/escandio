@@ -33,6 +33,27 @@ def crear_guia(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # numero es la llave del pedido (RutVisita.numero es IntegerField).
+    try:
+        numero = int(data['numero'])
+    except (TypeError, ValueError):
+        return Response(
+            {'mensaje': 'numero debe ser numérico'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Idempotencia: si ya existe una guía con ese numero en este contenedor, NO se
+    # crea otra (evita duplicados por reintentos o re-empujes del cliente). Se
+    # devuelve la existente sin geocodificar de nuevo.
+    existente = RutVisita.objects.filter(numero=numero).first()
+    if existente:
+        return Response({
+            'mensaje': 'La guía ya existe (no se duplica)',
+            'id': existente.id,
+            'decodificada': existente.estado_decodificado or False,
+            'duplicada': True,
+        }, status=status.HTTP_200_OK)
+
     # Buscar ciudad por nombre + departamento
     departamento_nombre = str(data['departamento']).strip()
     ciudad_nombre = str(data['ciudad']).strip()
@@ -56,7 +77,7 @@ def crear_guia(request):
     franjas = RutFranja.objects.all()
 
     visita_data = {
-        'numero': data['numero'],
+        'numero': numero,
         'documento': str(data['documento'])[:30],
         'destinatario': data['destinatario'],
         'destinatario_direccion': direccion_limpia,

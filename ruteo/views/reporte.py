@@ -52,7 +52,11 @@ class ReporteMensajeroView(APIView):
         despachos = despachos.annotate(
             _asignadas=Count('visitas_despacho_rel'),
             _entregadas=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_entregado=True)),
-            _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True)),
+            # Novedad = con novedad y NO entregada (gana entregada), igual que en
+            # tráfico y el documento de terminación. Sin excluir entregadas, una
+            # guía con novedad ya entregada se contaba en ambas -> asignadas !=
+            # entregadas + novedades + pendientes y se sobre-reportaban novedades.
+            _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True, visitas_despacho_rel__estado_entregado=False)),
         )
 
         registros = list(
@@ -228,7 +232,10 @@ class ReporteMensajeroEntregasView(APIView):
             ).annotate(
                 asignadas=Count('id'),
                 entregadas=Count('id', filter=Q(estado_entregado=True)),
-                novedades=Count('id', filter=Q(estado_novedad=True)),
+                # Novedad = con novedad y NO entregada (gana entregada), para que
+                # asignadas = entregadas + novedades + pendientes y no se
+                # sobre-reporten novedades ya entregadas.
+                novedades=Count('id', filter=Q(estado_novedad=True, estado_entregado=False)),
             )
         )
 

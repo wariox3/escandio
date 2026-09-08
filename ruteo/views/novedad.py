@@ -41,6 +41,10 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
     serializer_class = RutNovedadSerializador
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = NovedadFilter
+    # Sin serializadores alternos por ahora; el atributo debe existir para que
+    # get_serializer_class no reviente (AttributeError -> 500) si llega
+    # ?serializador=algo.
+    serializadores = {}
 
     def get_serializer_class(self):
         serializador_parametro = self.request.query_params.get('serializador', None)
