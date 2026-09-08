@@ -26,6 +26,9 @@ from utilidades.holmio import Holmio
 from ruteo.servicios.notificacion import NotificacionServicio
 from general.models.configuracion import GenConfiguracion
 from contenedor.mixins import RolMixin
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
@@ -506,8 +509,29 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 codigo_complemento = despacho_complemento.get('codigoDespachoPk')
                 if not placa or not codigo_complemento:
                     return Response({'mensaje':f'El complemento devolvio el despacho {despacho_id} sin placa de vehiculo o sin codigo', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                vehiculo = RutVehiculo.objects.filter(placa=placa).first()
+                # Match tolerante de placa: Semantica puede mandar la placa con
+                # espacios o distinta capitalizacion que la guardada, y un match
+                # EXACTO daba un falso "No existe el vehiculo" (fragil). Se compara
+                # normalizado (sin espacios, case-insensitive).
+                placa_norm = str(placa).strip()
+                vehiculo = RutVehiculo.objects.filter(placa__iexact=placa_norm).first()
+                if not vehiculo:
+                    # Log para diagnosticar un "no existe" cuando el vehiculo SI
+                    # esta cargado: muestra que placa mando Semantica (repr, para
+                    # ver espacios ocultos) vs las guardadas. WARNING = visible sin
+                    # config de LOGGING.
+                    logger.warning(
+                        '[NUEVO-COMPLEMENTO] placa Semantica=%r (norm=%r) sin match; placas guardadas=%s',
+                        placa, placa_norm,
+                        list(RutVehiculo.objects.values_list('placa', flat=True)[:50]),
+                    )
                 if vehiculo:
+                    # Idempotencia: no crear un despacho duplicado si ese codigo del
+                    # complemento ya se trajo. Re-ejecutar generaba un 2do despacho
+                    # VACIO (el dedup omite las guias que ya asigno el 1ro).
+                    existente = RutDespacho.objects.filter(codigo_complemento=codigo_complemento).first()
+                    if existente:
+                        return Response({'mensaje': f'El despacho {despacho_id} ya esta creado en Ruteo (despacho #{existente.id}). Buscalo en la lista de despachos.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                     with transaction.atomic():
                         data = {
                             'vehiculo':vehiculo.id,
@@ -515,26 +539,59 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                             'codigo_complemento': codigo_complemento
                         }
                         serializador = RutDespachoSerializador(data=data)
-                        if serializador.is_valid():
-                            despacho = serializador.save()
-                            limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
-                            respuesta = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
-                            # Ubicar todas (es segura ante lat/lng nulos) y ordenar solo
-                            # las decodificadas: una visita sin coordenadas rompe
-                            # haversine() y dejaria sin 'orden' a todo el despacho.
-                            # ordenar() ademas calcula tiempo/tiempo_trayecto, asi que
-                            # debe correr ANTES de regenerar_valores (que los suma).
-                            visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id)
-                            VisitaServicio.ubicar(visitas_despacho)
-                            visitas_a_ordenar = visitas_despacho.filter(estado_decodificado=True)
-                            if visitas_a_ordenar.count() > 1:
-                                VisitaServicio.ordenar(visitas_a_ordenar)
-                            DespachoServicio.regenerar_valores(despacho)
-                            return Response({'mensaje': f'Se creo el despacho con exito'}, status=status.HTTP_200_OK)
-                        else:
-                            return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)                              
+                        if not serializador.is_valid():
+                            return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializador.errors}, status=status.HTTP_400_BAD_REQUEST)
+                        despacho = serializador.save()
+                        limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
+                        resultado = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
+                        # El import puede fallar (p.ej. Semantica caida en la 2da
+                        # llamada). Antes se IGNORABA el retorno y se respondia
+                        # "exito" con un despacho vacio -> el operador creia que
+                        # quedo bien. Ahora se revierte y se avisa el fallo real.
+                        if resultado.get('error'):
+                            transaction.set_rollback(True)
+                            return Response({'mensaje': f'No se pudieron traer las guias del despacho {despacho_id}: {resultado.get("mensaje", "error del complemento")}. No se creo el despacho.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                        cantidad = resultado.get('cantidad', 0)
+                        duplicadas = resultado.get('duplicadas', 0)
+                        # No dejar un despacho VACIO: si no entro ninguna guia se
+                        # revierte y se explica por que (ya importadas vs sin guias),
+                        # en vez de crear un despacho inutil que dice "exito".
+                        if cantidad == 0:
+                            transaction.set_rollback(True)
+                            if duplicadas:
+                                msg = f'El despacho {despacho_id} no se creo: sus {duplicadas} guia(s) ya estan importadas en Ruteo. Buscalas en Rutear o en el despacho donde ya esten.'
+                            else:
+                                msg = f'El despacho {despacho_id} no tiene guias para traer del complemento.'
+                            return Response({'mensaje': msg, 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                        # Ubicar todas (es segura ante lat/lng nulos) y ordenar solo
+                        # las decodificadas: una visita sin coordenadas rompe
+                        # haversine() y dejaria sin 'orden' a todo el despacho.
+                        # ordenar() ademas calcula tiempo/tiempo_trayecto, asi que
+                        # debe correr ANTES de regenerar_valores (que los suma).
+                        visitas_despacho = RutVisita.objects.filter(despacho_id=despacho.id)
+                        VisitaServicio.ubicar(visitas_despacho)
+                        visitas_a_ordenar = visitas_despacho.filter(estado_decodificado=True)
+                        if visitas_a_ordenar.count() > 1:
+                            VisitaServicio.ordenar(visitas_a_ordenar)
+                        DespachoServicio.regenerar_valores(despacho)
+                        mensaje = f'Se creo el despacho con {cantidad} guia(s).'
+                        if duplicadas:
+                            mensaje += f' ({duplicadas} ya estaban en Ruteo y no se re-agregaron.)'
+                        # Se devuelven los conteos para que el front muestre el
+                        # mismo modal de resumen que los otros imports.
+                        return Response({
+                            'mensaje': mensaje,
+                            'cantidad': cantidad,
+                            'duplicadas': duplicadas,
+                            'sin_ubicar': resultado.get('sin_ubicar', 0),
+                            'errores_guia': resultado.get('errores_guia', 0),
+                            'descartadas': resultado.get('descartadas', 0),
+                        }, status=status.HTTP_200_OK)
                 else:
-                    return Response({'mensaje':f'No existe el vehiculo {placa}', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
+                    # El vehiculo debe existir ANTES: Semantica manda solo la
+                    # placa, no la capacidad/tiempo/franjas que el ruteo necesita.
+                    # Mensaje que guia en vez de un "no existe" seco.
+                    return Response({'mensaje':f'El vehiculo {placa_norm} del despacho no esta registrado en Ruteo. Registralo en Administracion → Vehiculos (con su capacidad y tiempo) y volve a intentar.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 # Se propaga el motivo del complemento (p.ej. "el despacho no
                 # existe") en vez de un mensaje generico que no dice nada.

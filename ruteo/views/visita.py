@@ -401,10 +401,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     visitas = RutVisita.objects.filter(estado_despacho = False, estado_decodificado = True)
                     VisitaServicio.ubicar(visitas)
                     VisitaServicio.ordenar(visitas)
-                    mensaje = 'Se importó el archivo con éxito'
+                    cantidad = len(data_modelo)
+                    mensaje = f'Se importaron {cantidad} guía(s) con éxito'
                     if duplicadas:
-                        mensaje += f' ({duplicadas} guía(s) omitida(s): número ya importado en esa misma fecha)'
-                    return Response({'mensaje': mensaje, 'duplicadas': duplicadas}, status=status.HTTP_200_OK)
+                        mensaje += f' ({duplicadas} omitida(s): número ya importado en esa misma fecha)'
+                    return Response({'mensaje': mensaje, 'cantidad': cantidad, 'duplicadas': duplicadas}, status=status.HTTP_200_OK)
                 else:
                     gc.collect()                    
                     return Response({'mensaje':'Errores de validación', 'codigo':1, 'errores_validador': errores_datos}, status=status.HTTP_400_BAD_REQUEST)                                    
@@ -467,7 +468,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             descartadas = respuesta.get('descartadas', 0)
             sin_ubicar = respuesta.get('sin_ubicar', 0)
             errores_guia = respuesta.get('errores_guia', 0)
+            duplicadas = respuesta.get('duplicadas', 0)
             mensaje = f'Se importaron {cantidad} guias con exito'
+            # duplicadas: sin esto un "Se importaron 0" no explicaba POR QUE (todas
+            # ya estaban en Ruteo) y el operador quedaba confundido.
+            if duplicadas:
+                mensaje += f', {duplicadas} ya estaban en Ruteo (no se re-agregaron)'
             if descartadas:
                 mensaje += f', {descartadas} descartadas por estar fuera de las zonas seleccionadas'
             if sin_ubicar:
@@ -475,10 +481,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             if errores_guia:
                 mensaje += f', {errores_guia} omitidas por datos invalidos'
             # Devolvemos los conteos para que el front distinga exito TOTAL de
-            # parcial (mostrar warning si hubo descartes/omitidas).
+            # parcial (mostrar warning si hubo descartes/omitidas/duplicadas).
             return Response({
                 'mensaje': mensaje,
                 'cantidad': cantidad,
+                'duplicadas': duplicadas,
                 'descartadas': descartadas,
                 'sin_ubicar': sin_ubicar,
                 'errores_guia': errores_guia,
