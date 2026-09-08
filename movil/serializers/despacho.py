@@ -23,6 +23,7 @@ class DespachoMovilSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'fecha', 'peso', 'volumen', 'tiempo', 'tiempo_servicio',
             'tiempo_trayecto', 'visitas', 'visitas_entregadas', 'despacho_id',
+            'codigo_complemento',
             'contenedor_id', 'usuario_id', 'schema_name', 'empresa_nombre',
         ]
         read_only_fields = fields

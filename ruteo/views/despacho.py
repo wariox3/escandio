@@ -110,6 +110,9 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     if despacho.estado_aprobado == False:
                         entrega = VerEntrega()
                         entrega.despacho_id = despacho.id
+                        # Codigo del origen (Semantica) para que el Home muestre
+                        # el codigo que la empresa/conductor reconoce, no el id.
+                        entrega.codigo_complemento = despacho.codigo_complemento
                         entrega.fecha = despacho.fecha
                         entrega.peso = despacho.peso
                         entrega.volumen = despacho.volumen
