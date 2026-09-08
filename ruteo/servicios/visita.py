@@ -504,10 +504,20 @@ class VisitaServicio():
             for guia in guias:
                 if cantidad >= limite:
                     break
-                # Dedup: si ya existe una guía con ese numero, se salta (evita
-                # duplicados al re-importar un rango o re-pull del complemento).
+                # Dedup por ESTADO, no por numero a secas: se salta solo si ya
+                # existe una copia ABIERTA (no entregada) con ese numero. El
+                # codigoGuiaPk es unico en Semantica (no recicla por fecha como
+                # el Excel), pero una guia ya ENTREGADA en un ciclo previo no debe
+                # bloquear un re-pull legitimo si Semantica la vuelve a mandar como
+                # pendiente (reapertura / re-entrega). Bloquear por numero a secas
+                # dejaba al operador sin poder re-importarla (mismo sintoma que la
+                # 263276 en el Excel).
                 numero_guia = guia.get('codigoGuiaPk')
-                if numero_guia is not None and RutVisita.objects.filter(numero=numero_guia).exists():
+                if numero_guia is not None and RutVisita.objects.filter(
+                    numero=numero_guia,
+                    estado_entregado=False,
+                    estado_entregado_complemento=False,
+                ).exists():
                     duplicadas += 1
                     continue
                 direccion_destinatario = VisitaServicio.limpiar_direccion(guia.get('direccionDestinatario'))
