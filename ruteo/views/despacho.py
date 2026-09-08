@@ -26,6 +26,9 @@ from utilidades.holmio import Holmio
 from ruteo.servicios.notificacion import NotificacionServicio
 from general.models.configuracion import GenConfiguracion
 from contenedor.mixins import RolMixin
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
@@ -506,7 +509,22 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 codigo_complemento = despacho_complemento.get('codigoDespachoPk')
                 if not placa or not codigo_complemento:
                     return Response({'mensaje':f'El complemento devolvio el despacho {despacho_id} sin placa de vehiculo o sin codigo', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-                vehiculo = RutVehiculo.objects.filter(placa=placa).first()
+                # Match tolerante de placa: Semantica puede mandar la placa con
+                # espacios o distinta capitalizacion que la guardada, y un match
+                # EXACTO daba un falso "No existe el vehiculo" (fragil). Se compara
+                # normalizado (sin espacios, case-insensitive).
+                placa_norm = str(placa).strip()
+                vehiculo = RutVehiculo.objects.filter(placa__iexact=placa_norm).first()
+                if not vehiculo:
+                    # Log para diagnosticar un "no existe" cuando el vehiculo SI
+                    # esta cargado: muestra que placa mando Semantica (repr, para
+                    # ver espacios ocultos) vs las guardadas. WARNING = visible sin
+                    # config de LOGGING.
+                    logger.warning(
+                        '[NUEVO-COMPLEMENTO] placa Semantica=%r (norm=%r) sin match; placas guardadas=%s',
+                        placa, placa_norm,
+                        list(RutVehiculo.objects.values_list('placa', flat=True)[:50]),
+                    )
                 if vehiculo:
                     with transaction.atomic():
                         data = {
