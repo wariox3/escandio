@@ -101,10 +101,10 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         raw = request.data
         id = raw.get('id')
         if id:
-            try:                
-                with transaction.atomic():               
-                    despacho = RutDespacho.objects.get(pk=id)  
-                    if despacho.estado_aprobado == False: 
+            try:
+                with transaction.atomic():
+                    despacho = RutDespacho.objects.select_for_update().get(pk=id)
+                    if despacho.estado_aprobado == False:
                         entrega = VerEntrega()
                         entrega.despacho_id = despacho.id
                         entrega.fecha = despacho.fecha
@@ -225,7 +225,11 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         try:
             with transaction.atomic():
-                despacho = RutDespacho.objects.get(pk=id)
+                # Lock de fila: serializa dos "terminar" concurrentes (dos
+                # operadores/pestañas). El segundo espera al commit del primero,
+                # lee estado_terminado=True y validar_terminacion lo rechaza ->
+                # no se crean dos Documentos de Terminación.
+                despacho = RutDespacho.objects.select_for_update().get(pk=id)
                 ok, mensaje = DespachoServicio.validar_terminacion(despacho)
                 if not ok:
                     return Response({'mensaje': mensaje, 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
@@ -253,7 +257,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         if id:
             try:
                 with transaction.atomic():
-                    despacho = RutDespacho.objects.get(pk=id)
+                    despacho = RutDespacho.objects.select_for_update().get(pk=id)
                     if despacho.estado_aprobado == True and despacho.estado_anulado == False and despacho.estado_terminado == False:
                         visitas_entregadas = RutVisita.objects.filter(despacho_id=id, estado_entregado=True).first()
                         if visitas_entregadas:
