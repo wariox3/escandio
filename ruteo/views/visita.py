@@ -267,8 +267,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 return Response({'mensaje': 'Error procesando el archivo, valide que es un archivo de excel .xlsx', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
             data_modelo = []
             errores = False
-            errores_datos = []    
-            franjas = RutFranja.objects.all()            
+            errores_datos = []
+            franjas = RutFranja.objects.all()
+            numeros_vistos = set()
+            duplicadas = 0
             total_registros = sheet.max_row - 1
             limite_importacion = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_importacion', flat=True).first() or 500
             if total_registros <= limite_importacion:
@@ -325,7 +327,23 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     if ciudad_id:
                         data['ciudad'] = ciudad_id
 
-                    if direccion_destinatario:                   
+                    # Dedup: no importar una guía cuyo numero ya existe (en la BD
+                    # o repetido dentro del mismo archivo) -> evita duplicados.
+                    _num = data.get('numero')
+                    try:
+                        numero_fila = int(_num) if _num not in (None, '') else None
+                    except (TypeError, ValueError):
+                        numero_fila = None
+                    if numero_fila is not None and (
+                        numero_fila in numeros_vistos
+                        or RutVisita.objects.filter(numero=numero_fila).exists()
+                    ):
+                        duplicadas += 1
+                        continue
+                    if numero_fila is not None:
+                        numeros_vistos.add(numero_fila)
+
+                    if direccion_destinatario:
                         respuesta = DireccionServicio.decodificar(direccion_destinatario)
                         if respuesta['error'] == False:
                             direccion = respuesta['datos']
@@ -359,8 +377,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     gc.collect()
                     visitas = RutVisita.objects.filter(estado_despacho = False, estado_decodificado = True)
                     VisitaServicio.ubicar(visitas)
-                    VisitaServicio.ordenar(visitas)                                        
-                    return Response({'mensaje': 'Se importó el archivo con éxito'}, status=status.HTTP_200_OK)                
+                    VisitaServicio.ordenar(visitas)
+                    mensaje = 'Se importó el archivo con éxito'
+                    if duplicadas:
+                        mensaje += f' ({duplicadas} guía(s) omitida(s) por número ya existente)'
+                    return Response({'mensaje': mensaje, 'duplicadas': duplicadas}, status=status.HTTP_200_OK)
                 else:
                     gc.collect()                    
                     return Response({'mensaje':'Errores de validación', 'codigo':1, 'errores_validador': errores_datos}, status=status.HTTP_400_BAD_REQUEST)                                    

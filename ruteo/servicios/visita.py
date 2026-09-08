@@ -464,6 +464,7 @@ class VisitaServicio():
         descartadas = 0
         sin_ubicar = 0
         errores_guia = 0
+        duplicadas = 0
         visitas_creadas = []
         # Con filtro de zonas las guías descartadas siguen pendientes en el
         # complemento y volverían a ocupar la ventana `limite` en cada intento
@@ -503,7 +504,13 @@ class VisitaServicio():
             for guia in guias:
                 if cantidad >= limite:
                     break
-                direccion_destinatario = VisitaServicio.limpiar_direccion(guia.get('direccionDestinatario'))                                               
+                # Dedup: si ya existe una guía con ese numero, se salta (evita
+                # duplicados al re-importar un rango o re-pull del complemento).
+                numero_guia = guia.get('codigoGuiaPk')
+                if numero_guia is not None and RutVisita.objects.filter(numero=numero_guia).exists():
+                    duplicadas += 1
+                    continue
+                direccion_destinatario = VisitaServicio.limpiar_direccion(guia.get('direccionDestinatario'))
                 # fromisoformat revienta (TypeError si es None, ValueError si viene
                 # mal formada) -> tumbaba TODO el import por una sola guia. Se tolera
                 # como None (el campo fecha es null) en vez de reventar.
@@ -609,7 +616,7 @@ class VisitaServicio():
             if guia_hasta_actual and nuevo_desde > int(guia_hasta_actual):
                 break
             parametros['guia_desde'] = nuevo_desde
-        return {'error': False, 'cantidad': cantidad, 'descartadas': descartadas, 'sin_ubicar': sin_ubicar, 'errores_guia': errores_guia, 'visitas_creadas': visitas_creadas}
+        return {'error': False, 'cantidad': cantidad, 'descartadas': descartadas, 'sin_ubicar': sin_ubicar, 'errores_guia': errores_guia, 'duplicadas': duplicadas, 'visitas_creadas': visitas_creadas}
 
     @staticmethod
     def entrega_complemento(visita: RutVisita, imagenes_b64, firmas_b64, datos_entrega):
