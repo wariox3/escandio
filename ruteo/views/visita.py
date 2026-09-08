@@ -281,7 +281,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             errores = False
             errores_datos = []
             franjas = RutFranja.objects.all()
-            numeros_vistos = set()
+            claves_vistas = set()
             duplicadas = 0
             total_registros = sheet.max_row - 1
             limite_importacion = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_importacion', flat=True).first() or 500
@@ -339,21 +339,32 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     if ciudad_id:
                         data['ciudad'] = ciudad_id
 
-                    # Dedup: no importar una guía cuyo numero ya existe (en la BD
-                    # o repetido dentro del mismo archivo) -> evita duplicados.
+                    # Dedup por (numero, fecha del manifiesto), NO por numero solo:
+                    # el numero de guia puede volver en otra fecha (nuevo ciclo), y
+                    # bloquear por numero a secas descartaba guias legitimas ya
+                    # cerradas en dias previos (p.ej. la 263276). La clave (numero,
+                    # fecha) sigue atrapando el caso real: re-subir el mismo
+                    # manifiesto o una fila repetida dentro del archivo.
                     _num = data.get('numero')
                     try:
                         numero_fila = int(_num) if _num not in (None, '') else None
                     except (TypeError, ValueError):
                         numero_fila = None
-                    if numero_fila is not None and (
-                        numero_fila in numeros_vistos
-                        or RutVisita.objects.filter(numero=numero_fila).exists()
+                    _fecha_dia = fecha.date() if fecha else None
+                    clave = (numero_fila, _fecha_dia) if numero_fila is not None else None
+                    if clave is not None and (
+                        clave in claves_vistas
+                        or (
+                            _fecha_dia is not None
+                            and RutVisita.objects.filter(
+                                numero=numero_fila, fecha__date=_fecha_dia
+                            ).exists()
+                        )
                     ):
                         duplicadas += 1
                         continue
-                    if numero_fila is not None:
-                        numeros_vistos.add(numero_fila)
+                    if clave is not None:
+                        claves_vistas.add(clave)
 
                     if direccion_destinatario:
                         respuesta = DireccionServicio.decodificar(direccion_destinatario)
@@ -392,7 +403,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     VisitaServicio.ordenar(visitas)
                     mensaje = 'Se importó el archivo con éxito'
                     if duplicadas:
-                        mensaje += f' ({duplicadas} guía(s) omitida(s) por número ya existente)'
+                        mensaje += f' ({duplicadas} guía(s) omitida(s): número ya importado en esa misma fecha)'
                     return Response({'mensaje': mensaje, 'duplicadas': duplicadas}, status=status.HTTP_200_OK)
                 else:
                     gc.collect()                    
