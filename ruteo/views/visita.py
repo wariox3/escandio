@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from ruteo.models.visita import RutVisita
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.vehiculo import RutVehiculo
@@ -70,10 +71,21 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+class VisitaPaginacion(PageNumberPagination):
+    """Permite ?page_size=N (default 30, tope 5000) para traer todas las visitas
+    de un despacho en una pagina — el modal de tráfico calcula los KPIs sobre la
+    lista cargada, asi que necesita el set completo. Sin esto el endpoint usa
+    PageNumberPagination (que IGNORA ?limit) y siempre pagina de a 30 -> los KPIs
+    quedaban parciales (Total 30 vs Registros 58)."""
+    page_size_query_param = 'page_size'
+    max_page_size = 5000
+
+
 class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     modulo = 'visita'
     queryset = RutVisita.objects.all()
     serializer_class = RutVisitaSerializador
+    pagination_class = VisitaPaginacion
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = VisitaFilter
     acciones_admin = [
