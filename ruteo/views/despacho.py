@@ -484,7 +484,73 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         raw = request.data
         id = raw.get('id', None)
         cantidad = DespachoServicio.regenerar_indicador_entregas(despacho_id=id)
-        return Response({'mensaje': f'Se actualizaron {cantidad} despachos'},status=status.HTTP_200_OK )    
+        return Response({'mensaje': f'Se actualizaron {cantidad} despachos'},status=status.HTTP_200_OK )
+
+    @action(detail=False, methods=["get"], url_path=r'conductores',)
+    def conductores_action(self, request):
+        """Conductores del contenedor (usuarios con acceso movil y perfil
+        'conductor') para el selector 'Asignar conductor' de Trafico."""
+        from contenedor.models import UsuarioContenedor, User
+        ids = list(
+            UsuarioContenedor.objects.filter(
+                contenedor_id=request.tenant.id,
+                tiene_acceso_movil=True,
+                perfil_movil='conductor',
+            ).values_list('usuario_id', flat=True)
+        )
+        usuarios = User.objects.filter(id__in=ids).only('nombre', 'apellido')
+        data = [
+            {
+                'id': u.id,
+                'nombre': f'{u.nombre or ""} {u.apellido or ""}'.strip() or f'Usuario {u.id}',
+            }
+            for u in usuarios
+        ]
+        data.sort(key=lambda x: x['nombre'].lower())
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path=r'asignar-conductor',)
+    def asignar_conductor_action(self, request):
+        """Asigna (o quita) el conductor de un despacho.
+
+        Setea RutDespacho.conductor_id Y propaga a VerEntrega.usuario_id, porque
+        el usuario_id se congela al APROBAR: si el despacho ya se aprobo, hay que
+        actualizarlo aca para que la orden aparezca/desaparezca en 'Mis Ordenes'
+        del conductor con solo refrescar (no hace falta cargar por codigo)."""
+        raw = request.data
+        despacho_id = raw.get('despacho_id') or raw.get('id')
+        # conductor_id: id de usuario a asignar, o None/''/0 para DESASIGNAR.
+        conductor_id = raw.get('conductor_id')
+        if conductor_id in ('', 0, '0'):
+            conductor_id = None
+        if not despacho_id:
+            return Response({'mensaje': 'Falta el despacho', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        # No dejar asignar un usuario ajeno: debe ser miembro de ESTE contenedor
+        # con acceso movil.
+        if conductor_id is not None:
+            from contenedor.models import UsuarioContenedor
+            pertenece = UsuarioContenedor.objects.filter(
+                contenedor_id=request.tenant.id,
+                usuario_id=conductor_id,
+                tiene_acceso_movil=True,
+            ).exists()
+            if not pertenece:
+                return Response({'mensaje': 'Ese conductor no pertenece a este contenedor o no tiene acceso movil.', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            with transaction.atomic():
+                despacho = RutDespacho.objects.select_for_update().get(pk=despacho_id)
+                despacho.conductor_id = conductor_id
+                despacho.save(update_fields=['conductor_id'])
+                # Propaga a la orden del movil (misma tenant + despacho). Puede no
+                # existir aun (despacho sin aprobar): el filter no falla, y al
+                # aprobar tomara el conductor_id ya seteado.
+                VerEntrega.objects.filter(
+                    despacho_id=despacho.id,
+                    schema_name=request.tenant.schema_name,
+                ).update(usuario_id=conductor_id)
+        except RutDespacho.DoesNotExist:
+            return Response({'mensaje': f'No existe el despacho {despacho_id}', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'mensaje': 'Conductor actualizado'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'nuevo-complemento',)
     def nuevo_complemento_action(self, request): 
