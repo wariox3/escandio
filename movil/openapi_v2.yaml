@@ -671,6 +671,10 @@ components:
           type: integer
           readOnly: true
           nullable: true
+        orden_entrega:
+          type: integer
+          nullable: true
+          readOnly: true
         contenedor_id:
           type: integer
           readOnly: true
@@ -693,6 +697,7 @@ components:
       - empresa_nombre
       - fecha
       - id
+      - orden_entrega
       - peso
       - schema_name
       - tiempo
