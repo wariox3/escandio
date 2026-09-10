@@ -498,11 +498,26 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 perfil_movil='conductor',
             ).values_list('usuario_id', flat=True)
         )
-        usuarios = User.objects.filter(id__in=ids).only('nombre', 'apellido')
+        usuarios = User.objects.filter(id__in=ids).only(
+            'nombre', 'apellido', 'nombre_corto', 'correo', 'username',
+            'telefono', 'numero_identificacion',
+        )
+
+        def _label(u):
+            # Nombre real; si no hay, nombre_corto; si no, el correo (siempre
+            # existe: es unico/requerido). NUNCA "Usuario N" (a nadie le sirve).
+            n = f'{u.nombre or ""} {u.apellido or ""}'.strip()
+            return n or u.nombre_corto or u.correo or u.username or f'Usuario {u.id}'
+
         data = [
             {
                 'id': u.id,
-                'nombre': f'{u.nombre or ""} {u.apellido or ""}'.strip() or f'Usuario {u.id}',
+                'nombre': _label(u),
+                # Campos extra para mostrar y para que el buscador del front
+                # matchee por correo / telefono / cedula, no solo por nombre.
+                'correo': u.correo or u.username or '',
+                'telefono': u.telefono or '',
+                'identificacion': u.numero_identificacion or '',
             }
             for u in usuarios
         ]
