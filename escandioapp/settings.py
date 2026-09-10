@@ -236,7 +236,11 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = 'contenedor.User'
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
+    # Dev local: localhost, 127.0.0.1 e IPv6 [::1], en cualquier puerto (front
+    # local -> back QA). Sin esto el preflight no devuelve Access-Control-Allow-Origin.
     r"^https?://localhost(:\d+)?$",
+    r"^https?://127\.0\.0\.1(:\d+)?$",
+    r"^https?://\[::1\](:\d+)?$",
     r"^https?://([a-z0-9-]+\.)*ruteoapi\.online$",
     r"^https?://([a-z0-9-]+\.)*ruteoapi\.co$",
     r"^https?://([a-z0-9-]+\.)*ruteo\.co$",
