@@ -110,6 +110,9 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     if despacho.estado_aprobado == False:
                         entrega = VerEntrega()
                         entrega.despacho_id = despacho.id
+                        # Codigo del origen (Semantica) para que el Home muestre
+                        # el codigo que la empresa/conductor reconoce, no el id.
+                        entrega.codigo_complemento = despacho.codigo_complemento
                         entrega.fecha = despacho.fecha
                         entrega.peso = despacho.peso
                         entrega.volumen = despacho.volumen
@@ -527,12 +530,19 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     )
                 if vehiculo:
                     # Idempotencia: no crear un despacho duplicado si ese codigo del
-                    # complemento ya se trajo. Re-ejecutar generaba un 2do despacho
-                    # VACIO (el dedup omite las guias que ya asigno el 1ro).
+                    # complemento ya se trajo CON guias. Pero si el despacho que ya
+                    # existe quedo VACIO (0 visitas: por un intento fallido, o porque
+                    # el complemento se anulo/despacho y ya no tiene pendientes),
+                    # bloquear seria una TRAMPA: nunca se podria re-importar ese
+                    # codigo. En ese caso se borra el cascaron vacio y se re-crea
+                    # limpio, dentro de la transaccion: si el import vuelve a traer 0,
+                    # el rollback restaura el cascaron y todo queda como estaba.
                     existente = RutDespacho.objects.filter(codigo_complemento=codigo_complemento).first()
-                    if existente:
+                    if existente and RutVisita.objects.filter(despacho_id=existente.id).exists():
                         return Response({'mensaje': f'El despacho {despacho_id} ya esta creado en Ruteo (despacho #{existente.id}). Buscalo en la lista de despachos.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                     with transaction.atomic():
+                        if existente:
+                            existente.delete()
                         data = {
                             'vehiculo':vehiculo.id,
                             'fecha': datetime.now(),
@@ -561,7 +571,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                             if duplicadas:
                                 msg = f'El despacho {despacho_id} no se creo: sus {duplicadas} guia(s) ya estan importadas en Ruteo. Buscalas en Rutear o en el despacho donde ya esten.'
                             else:
-                                msg = f'El despacho {despacho_id} no tiene guias para traer del complemento.'
+                                msg = f'El despacho {despacho_id} no tiene guias pendientes en el complemento (puede estar anulado o ya despachado en Semantica).'
                             return Response({'mensaje': msg, 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                         # Ubicar todas (es segura ante lat/lng nulos) y ordenar solo
                         # las decodificadas: una visita sin coordenadas rompe

@@ -39,19 +39,21 @@ def recalcular_verentrega(schema_name, dry_run=False):
         # mostrar en el Home), NO el count vivo de la relacion (que difiere en
         # despachos liberados/reasignados).
         despachos = {
-            d['id']: (d['visitas'], d['visitas_entregadas'])
+            d['id']: (d['visitas'], d['visitas_entregadas'], d['codigo_complemento'])
             for d in RutDespacho.objects.values(
-                'id', 'visitas', 'visitas_entregadas')
+                'id', 'visitas', 'visitas_entregadas', 'codigo_complemento')
         }
 
         por_actualizar = []
         filas = VerEntrega.objects.filter(schema_name=schema_name).only(
-            'id', 'despacho_id', 'visitas', 'visitas_entregadas')
+            'id', 'despacho_id', 'visitas', 'visitas_entregadas',
+            'codigo_complemento')
         for e in filas.iterator(chunk_size=1000):
             if e.despacho_id not in despachos:
                 continue  # VerEntrega huerfano (despacho borrado): no tocar
             revisados += 1
-            total, entregadas = despachos[e.despacho_id]
+            total, entregadas, codigo = despachos[e.despacho_id]
+            necesita_update = False
             if e.visitas != total or e.visitas_entregadas != entregadas:
                 corregidos.append({
                     'id': e.id,
@@ -61,11 +63,21 @@ def recalcular_verentrega(schema_name, dry_run=False):
                 })
                 e.visitas = total
                 e.visitas_entregadas = entregadas
+                necesita_update = True
+            # Backfill del codigo del complemento (identificador del Home). No se
+            # cuenta como "corregida" (eso es solo para los contadores) pero se
+            # persiste igual para las filas viejas creadas antes de este campo.
+            if e.codigo_complemento != codigo:
+                e.codigo_complemento = codigo
+                necesita_update = True
+            if necesita_update:
                 por_actualizar.append(e)
 
         if por_actualizar and not dry_run:
             VerEntrega.objects.bulk_update(
-                por_actualizar, ['visitas', 'visitas_entregadas'], batch_size=500)
+                por_actualizar,
+                ['visitas', 'visitas_entregadas', 'codigo_complemento'],
+                batch_size=500)
 
     return {'revisados': revisados, 'corregidos': corregidos}
 

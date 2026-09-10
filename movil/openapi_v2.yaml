@@ -667,6 +667,10 @@ components:
         despacho_id:
           type: integer
           readOnly: true
+        codigo_complemento:
+          type: integer
+          readOnly: true
+          nullable: true
         contenedor_id:
           type: integer
           readOnly: true
@@ -683,6 +687,7 @@ components:
           nullable: true
           readOnly: true
       required:
+      - codigo_complemento
       - contenedor_id
       - despacho_id
       - empresa_nombre
