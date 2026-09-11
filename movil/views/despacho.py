@@ -1,8 +1,11 @@
 """Vista de despacho/entrega de la API movil v2."""
 from django.db.models import Q
-from drf_spectacular.utils import extend_schema
-from rest_framework import generics
+from django.utils import timezone
+from drf_spectacular.utils import OpenApiExample, extend_schema
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from movil.serializers.despacho import DespachoMovilSerializer
 from movil.views.base import MovilApiMixin
@@ -78,3 +81,104 @@ class DespachosMiasView(MovilApiMixin, generics.ListAPIView):
     @extend_schema(tags=['despachos'])
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class TomarDespachoRequestSerializer(serializers.Serializer):
+    """Body de POST /despachos/tomar/: el OE (el numero de Trafico)."""
+    oe = serializers.IntegerField(
+        min_value=1,
+        help_text='El O_E de Trafico (RutDespacho.entrega_id) que el conductor teclea.',
+    )
+
+
+class TomarDespachoView(MovilApiMixin, APIView):
+    """El conductor TOMA una orden por su OE (self-service).
+
+    Reemplaza al viejo "cargar por codigo" (que solo leia y guardaba local en el
+    dispositivo). Aca, tomar = auto-asignarse: se busca el RutDespacho por
+    `entrega_id == oe` en el/los schema(s) del/los contenedor(es) del usuario, se
+    setea `conductor_id`, se registra quien la cargo (`cargado_por_id`/`cargado_en`,
+    una sola vez) y se propaga `usuario_id` a la VerEntrega PUBLICA para que la
+    orden aparezca en "Mis Ordenes" en TODOS los dispositivos del conductor al
+    refrescar (no solo en el que la cargo).
+
+    OJO tenant/public: `RutDespacho` es tenant-only (se lee/escribe DENTRO del
+    schema_context). `VerEntrega` existe en public Y en cada tenant; el movil lee
+    la de PUBLIC, asi que su update va FUERA del schema_context (en el dominio
+    base, donde corre esta vista).
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=['despachos'],
+        request=TomarDespachoRequestSerializer,
+        responses=DespachoMovilSerializer,
+        examples=[OpenApiExample('Tomar por OE', value={'oe': 1234})],
+    )
+    def post(self, request, *args, **kwargs):
+        from django_tenants.utils import schema_context
+        from contenedor.models import Contenedor, UsuarioContenedor
+        from ruteo.models.despacho import RutDespacho
+
+        entrada = TomarDespachoRequestSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        oe = entrada.validated_data['oe']
+
+        # Contenedores del usuario con acceso movil (donde puede tomar ordenes).
+        # Un superuser podria no tener membresias; en la practica los conductores
+        # si las tienen. Se recorre cada schema buscando el OE.
+        contenedor_ids = list(
+            UsuarioContenedor.objects.filter(
+                usuario_id=request.user.id, tiene_acceso_movil=True,
+            ).values_list('contenedor_id', flat=True)
+        )
+        schemas = list(
+            Contenedor.objects.filter(id__in=contenedor_ids)
+            .values_list('schema_name', flat=True)
+        )
+
+        # Fase tenant: hallar el despacho por OE y auto-asignarlo. Se guarda
+        # (schema, despacho_id) para actualizar la VerEntrega publica despues.
+        encontrado = None  # (schema_name, despacho_id)
+        for schema_name in schemas:
+            with schema_context(schema_name):
+                despacho = (
+                    RutDespacho.objects
+                    .filter(entrega_id=oe, estado_anulado=False)
+                    .first()
+                )
+                if despacho is None:
+                    continue
+                despacho.conductor_id = request.user.id
+                campos = ['conductor_id']
+                if not despacho.cargado_por_id:
+                    despacho.cargado_por_id = request.user.id
+                    despacho.cargado_en = timezone.now()
+                    campos += ['cargado_por_id', 'cargado_en']
+                despacho.save(update_fields=campos)
+                encontrado = (schema_name, despacho.id)
+                break
+
+        if encontrado is None:
+            return Response(
+                {'codigo': 1, 'titulo': 'No encontrada',
+                 'mensaje': f'No hay una orden con OE {oe} en tus contenedores.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Fase public: propagar a la VerEntrega cross-tenant que lee el movil.
+        schema_name, despacho_id = encontrado
+        ve = VerEntrega.objects.filter(
+            despacho_id=despacho_id, schema_name=schema_name,
+        ).first()
+        if ve is None:
+            return Response(
+                {'codigo': 2, 'titulo': 'Aun no publicada',
+                 'mensaje': 'La orden existe pero todavia no esta publicada al '
+                            'movil. Proba de nuevo en unos minutos.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if ve.usuario_id != request.user.id:
+            ve.usuario_id = request.user.id
+            ve.save(update_fields=['usuario_id'])
+        return Response(DespachoMovilSerializer(ve).data, status=status.HTTP_200_OK)

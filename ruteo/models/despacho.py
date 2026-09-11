@@ -32,6 +32,12 @@ class RutDespacho(models.Model):
     # cualquiera con la placa puede (self-service). Lo setea el despachador al usar
     # "Consultar al conductor" (o se cae al telefono del conductor asignado).
     conductor_telefono = models.CharField(max_length=30, null=True, blank=True)
+    # Trazabilidad de "cargar por OE (self-service)": quien tomo la orden desde
+    # la app (id plano a contenedor.User, como conductor_id) y cuando. Se setea
+    # UNA sola vez (la primera carga); la web lo muestra como analitica. NO se
+    # limpia al reasignar (queda el registro de quien la tomo originalmente).
+    cargado_por_id = models.IntegerField(null=True)
+    cargado_en = models.DateTimeField(null=True)
 
     class Meta:
         db_table = "rut_despacho"

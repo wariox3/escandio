@@ -16,7 +16,11 @@ from movil.views.auth import (
     SolicitarClaveView,
     TokenRefreshMovilView,
 )
-from movil.views.despacho import DespachoMovilView, DespachosMiasView
+from movil.views.despacho import (
+    DespachoMovilView,
+    DespachosMiasView,
+    TomarDespachoView,
+)
 from movil.views.novedad import NovedadMovilViewSet
 from movil.views.ubicacion import UbicacionMovilView
 from movil.views.visita import VisitaMovilViewSet
@@ -34,6 +38,8 @@ urlpatterns = [
     path('auth/me/', MeView.as_view(), name='movil-me'),
     path('auth/clave/solicitar/', SolicitarClaveView.as_view(), name='movil-clave-solicitar'),
     path('despachos/', DespachosMiasView.as_view(), name='movil-despachos-mias'),
+    # 'tomar' antes de '<int:pk>' (aunque <int> no captura texto, queda explicito).
+    path('despachos/tomar/', TomarDespachoView.as_view(), name='movil-despacho-tomar'),
     path('despachos/<int:pk>/', DespachoMovilView.as_view(), name='movil-despacho'),
     path('ubicacion/', UbicacionMovilView.as_view(), name='movil-ubicacion'),
     path('schema/', SpectacularAPIView.as_view(), name='schema-v2'),
