@@ -44,7 +44,11 @@ class RutVisita(models.Model):
     resultados = models.JSONField(null=True, blank=True)
     franja_id = models.IntegerField(null=True)
     franja_codigo = models.CharField(max_length=20, null=True)
-    datos_entrega = models.JSONField(null=True, blank=True, default=dict, help_text="Datos de la entrega (nombre, identificación, teléfono, etc.)")    
+    datos_entrega = models.JSONField(null=True, blank=True, default=dict, help_text="Datos de la entrega (nombre, identificación, teléfono, etc.)")
+    # Quien ENTREGO esta guia (id plano a contenedor.User, como conductor_id). Lo
+    # setea la app al registrar la entrega. Base del multi-conductor colaborativo:
+    # varios conductores sobre un despacho, y aca queda quien entrego CADA guia.
+    entregado_por_id = models.IntegerField(null=True)
     observacion = models.TextField(null=True, blank=True)
     destinatario_direccion_complemento = models.CharField(max_length=200, null=True, blank=True)
     cita_inicio = models.DateTimeField(null=True, blank=True)

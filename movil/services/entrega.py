@@ -79,10 +79,12 @@ def _guardar_archivos(visita_id, archivos, schema_name, archivo_tipo_id, extensi
         raise EvidenciaNoGuardada() from e
 
 
-def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales, tenant):
+def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales, tenant, usuario_id=None):
     """Marca la visita como entregada, sube evidencias y notifica al cliente.
 
     `visita` ya fue validada y NO esta entregada. `tenant` es request.tenant.
+    `usuario_id` es quien entrega (request.user.id): queda en entregado_por_id
+    para la analitica (quien entrego cada guia) y el multi-conductor.
     """
     _revincular_despacho(visita)
     with transaction.atomic():
@@ -90,6 +92,8 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
         visita.estado_entregado = True
         visita.fecha_entrega = fecha_entrega
         visita.datos_entrega = datos_entrega
+        if usuario_id:
+            visita.entregado_por_id = usuario_id
         # visita.save() dispara la señal post_save (ruteo/signals.py) que
         # RECOMPUTA visitas_entregadas desde las visitas reales; NO sumar +1 a
         # mano aca (lo hacia y quedaba +1 de mas por entrega -> marcaba el
