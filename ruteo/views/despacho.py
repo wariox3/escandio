@@ -272,6 +272,15 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho.estado_anulado = True
                         despacho.estado_terminado = True
                         despacho.save()
+                        # Quitar la orden del movil: al anular hay que BORRAR la
+                        # VerEntrega publica del despacho. Si no, queda "pegada" en
+                        # "Mis Ordenes" del conductor (usuario_id sigue seteado) sin
+                        # forma de sacarla (era la causa de las ordenes huerfanas).
+                        # Mismo patron que asignar-conductor (que si llega al movil).
+                        VerEntrega.objects.filter(
+                            despacho_id=despacho.id,
+                            schema_name=request.tenant.schema_name,
+                        ).delete()
                         # La desvinculacion de arriba es masiva (no dispara la señal)
                         # y el despacho sobrevive: se recomputan sus contadores.
                         DespachoServicio.recalcular_contadores([id])
@@ -623,6 +632,13 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         return Response({'mensaje': f'El despacho {despacho_id} ya esta creado en Ruteo (despacho #{existente.id}). Buscalo en la lista de despachos.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                     with transaction.atomic():
                         if existente:
+                            # Borrar tambien su VerEntrega publica: si no, el
+                            # cascaron borrado deja una VerEntrega huerfana (misma
+                            # causa de las ordenes pegadas en el movil).
+                            VerEntrega.objects.filter(
+                                despacho_id=existente.id,
+                                schema_name=request.tenant.schema_name,
+                            ).delete()
                             existente.delete()
                         data = {
                             'vehiculo':vehiculo.id,
