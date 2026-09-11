@@ -86,11 +86,16 @@ class RutDespachoTraficoSerializador(_ConductorNombreMixin, serializers.ModelSer
                   'estado_anulado', 'latitud', 'longitud', 'codigo_complemento',
                   'vehiculo',
                   'vehiculo__placa',
-                  'conductor_id']
+                  'conductor_id',
+                  'cargado_por_id', 'cargado_en']
         select_related_fields = ['vehiculo']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['conductor_nombre'] = self._nombre_conductor(instance.conductor_id)
+        # Analitica "cargar por OE (self-service)": quien tomo la orden desde la
+        # app. Reusa el mismo cache de nombres (cachea por user id, no solo
+        # conductor). conductor_nombre = quien la tiene/entrega hoy.
+        data['cargado_por_nombre'] = self._nombre_conductor(instance.cargado_por_id)
         _aplicar_contadores_reales(instance, data)
         return data

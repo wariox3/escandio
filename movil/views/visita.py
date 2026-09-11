@@ -90,6 +90,7 @@ class VisitaMovilViewSet(MovilApiMixin, mixins.ListModelMixin, viewsets.GenericV
                 firmas=request.FILES.getlist('firmas'),
                 datos_adicionales=request.data.get('datos_adicionales'),
                 tenant=request.tenant,
+                usuario_id=request.user.id,
             )
         except EvidenciaNoGuardada:
             return responses.error(

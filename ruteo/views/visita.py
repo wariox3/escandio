@@ -153,6 +153,19 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     if u:
                         conductor_nombre = f"{u['nombre'] or ''} {u['apellido'] or ''}".strip() or None
                 respuesta.data['conductor_nombre'] = conductor_nombre
+        # Quien ENTREGO esta guia (self-service / multi-conductor colaborativo).
+        # Puede diferir del conductor del despacho: en un despacho compartido cada
+        # guia la entrega quien la hizo.
+        entregado_por_id = RutVisita.objects.filter(
+            pk=respuesta.data.get('id'),
+        ).values_list('entregado_por_id', flat=True).first()
+        entregado_por_nombre = None
+        if entregado_por_id:
+            u = User.objects.filter(pk=entregado_por_id).values('nombre', 'apellido').first()
+            if u:
+                entregado_por_nombre = f"{u['nombre'] or ''} {u['apellido'] or ''}".strip() or None
+        respuesta.data['entregado_por_id'] = entregado_por_id
+        respuesta.data['entregado_por_nombre'] = entregado_por_nombre
         return respuesta
 
     def list(self, request, *args, **kwargs):

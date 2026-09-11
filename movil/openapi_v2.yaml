@@ -248,6 +248,91 @@ paths:
               schema:
                 $ref: '#/components/schemas/DespachoMovil'
           description: ''
+  /api/v2/despachos/soltar/:
+    post:
+      operationId: despachos_soltar_create
+      description: |-
+        El conductor SUELTA una orden de su "Mis Ordenes" (inverso de tomar).
+
+        Limpia `usuario_id` de SU VerEntrega (public) y, best-effort, el `conductor_id`
+        del RutDespacho (tenant). Scopeado por `usuario_id`: solo puede soltar lo que
+        tiene asignado (no toca lo de otros). Resuelve el caso de ordenes huerfanas /
+        vacias que no tienen despacho en Trafico y por eso no se podian desasignar.
+      tags:
+      - despachos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SoltarDespachoRequestRequest'
+            examples:
+              SoltarOrden:
+                value:
+                  id: 14163
+                summary: Soltar orden
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SoltarDespachoRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SoltarDespachoRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Orden soltada
+  /api/v2/despachos/tomar/:
+    post:
+      operationId: despachos_tomar_create
+      description: |-
+        El conductor TOMA una orden por su OE (self-service).
+
+        Reemplaza al viejo "cargar por codigo" (que solo leia y guardaba local en el
+        dispositivo). Aca, tomar = auto-asignarse: se busca el RutDespacho por
+        `entrega_id == oe` en el/los schema(s) del/los contenedor(es) del usuario, se
+        setea `conductor_id`, se registra quien la cargo (`cargado_por_id`/`cargado_en`,
+        una sola vez) y se propaga `usuario_id` a la VerEntrega PUBLICA para que la
+        orden aparezca en "Mis Ordenes" en TODOS los dispositivos del conductor al
+        refrescar (no solo en el que la cargo).
+
+        OJO tenant/public: `RutDespacho` es tenant-only (se lee/escribe DENTRO del
+        schema_context). `VerEntrega` existe en public Y en cada tenant; el movil lee
+        la de PUBLIC, asi que su update va FUERA del schema_context (en el dominio
+        base, donde corre esta vista).
+      tags:
+      - despachos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TomarDespachoRequestRequest'
+            examples:
+              TomarPorOE:
+                value:
+                  oe: 1234
+                summary: Tomar por OE
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TomarDespachoRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TomarDespachoRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DespachoMovil'
+              examples:
+                TomarPorOE:
+                  value:
+                    oe: 1234
+                  summary: Tomar por OE
+          description: ''
   /api/v2/novedades/:
     post:
       operationId: novedades_create
@@ -856,6 +941,17 @@ components:
           minLength: 1
       required:
       - username
+    SoltarDespachoRequestRequest:
+      type: object
+      description: 'Body de POST /despachos/soltar/: el id (VerEntrega) de la orden
+        a soltar.'
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: El id de la orden (VerEntrega.id) que el conductor quiere soltar.
+      required:
+      - id
     SolucionarNovedadRequest:
       type: object
       properties:
@@ -881,6 +977,17 @@ components:
           minLength: 1
       required:
       - refresh
+    TomarDespachoRequestRequest:
+      type: object
+      description: 'Body de POST /despachos/tomar/: el OE (el numero de Trafico).'
+      properties:
+        oe:
+          type: integer
+          minimum: 1
+          description: El O_E de Trafico (RutDespacho.entrega_id) que el conductor
+            teclea.
+      required:
+      - oe
     UbicacionMovil:
       type: object
       description: Punto de tracking enviado por la app en background.

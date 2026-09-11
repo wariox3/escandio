@@ -152,9 +152,30 @@ class RutVistaTraficoSerializador(serializers.ModelSerializer):
         # preferente vencida, que el front trata distinto a la obligatoria.
         fields = ['id', 'fecha', 'numero', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_telefono',
                   'estado_entregado', 'estado_novedad', 'unidades',
-                  'estado_decodificado', 'estado_decodificado_alerta', 'cita_inicio', 'cita_fin', 'cita_tipo', 'fecha_entrega']
+                  'estado_decodificado', 'estado_decodificado_alerta', 'cita_inicio', 'cita_fin', 'cita_tipo', 'fecha_entrega',
+                  'entregado_por_id']
 
-class RutVistaEstadoSerializador(serializers.ModelSerializer):    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Quien entrego ESTA guia (analitica / multi-conductor). Cache por
+        # instancia del serializer (reutilizado con many=True) -> 1 query por
+        # usuario unico en vez de 1 por guia.
+        data['entregado_por_nombre'] = self._nombre_usuario(instance.entregado_por_id)
+        return data
+
+    def _nombre_usuario(self, usuario_id):
+        if not usuario_id:
+            return None
+        cache = self.__dict__.setdefault('_cache_usuarios', {})
+        if usuario_id not in cache:
+            from contenedor.models import User
+            u = User.objects.filter(pk=usuario_id).only('nombre', 'apellido').first()
+            cache[usuario_id] = (
+                f'{u.nombre or ""} {u.apellido or ""}'.strip() or None if u else None
+            )
+        return cache[usuario_id]
+
+class RutVistaEstadoSerializador(serializers.ModelSerializer):
     class Meta:
         model = RutVisita
         fields = ['id', 'fecha', 'numero', 'documento', 'estado_despacho', 'estado_entregado', 'estado_novedad', 'estado_devolucion', 'fecha_entrega']

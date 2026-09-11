@@ -24,6 +24,8 @@ Endpoints — ver paths y shapes exactos en openapi_v2.yaml:
     PATCH /api/v2/auth/me/               -> actualiza el nombre, devuelve el usuario
     POST /api/v2/auth/clave/solicitar/   -> 200 {mensaje}
     GET  /api/v2/despachos/              -> lista de despachos asignados al conductor
+    POST /api/v2/despachos/tomar/        -> {oe} el conductor TOMA la orden por su OE (self-service)
+    POST /api/v2/despachos/soltar/       -> {id} el conductor SUELTA una orden suya (inverso de tomar)
     GET  /api/v2/despachos/<id>/         -> {schema_name, despacho_id, ...}
 
   Subdominio del tenant ({schema}.ruteoapi.co):
@@ -60,6 +62,8 @@ ENDPOINTS_MOVIL_V2 = (
     'PATCH /api/v2/auth/me/',
     'POST /api/v2/auth/clave/solicitar/',
     'GET /api/v2/despachos/',
+    'POST /api/v2/despachos/tomar/',
+    'POST /api/v2/despachos/soltar/',
     'GET /api/v2/despachos/<id>/',
     'GET /api/v2/visitas/',
     'POST /api/v2/visitas/<id>/entregar/',
