@@ -1,7 +1,7 @@
 import django_filters
 from ruteo.models.despacho import RutDespacho
 
-class DespachoFilter(django_filters.FilterSet):    
+class DespachoFilter(django_filters.FilterSet):
     vehiculo__placa = django_filters.CharFilter(field_name='vehiculo__placa', lookup_expr='icontains')
     class Meta:
         model = RutDespacho
@@ -9,7 +9,9 @@ class DespachoFilter(django_filters.FilterSet):
                   'entrega_id': ['exact'],
                   'fecha': ['gte', 'lte', 'gt', 'lt', 'exact'],
                   'vehiculo__placa': ['exact', 'icontains'],
-                  'conductor_id': ['exact'],
+                  # 'isnull' habilita el filtro "Sin asignar" de Trafico:
+                  # ?conductor_id__isnull=true -> sin asignar; =false -> asignadas.
+                  'conductor_id': ['exact', 'isnull'],
                   'estado_aprobado': ['exact'],
                   'estado_anulado': ['exact'],
                   'estado_terminado': ['exact'], }
