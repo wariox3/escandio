@@ -1,7 +1,7 @@
 """Vista de despacho/entrega de la API movil v2."""
 from django.db.models import Q
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiExample, extend_schema
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -182,3 +182,61 @@ class TomarDespachoView(MovilApiMixin, APIView):
             ve.usuario_id = request.user.id
             ve.save(update_fields=['usuario_id'])
         return Response(DespachoMovilSerializer(ve).data, status=status.HTTP_200_OK)
+
+
+class SoltarDespachoRequestSerializer(serializers.Serializer):
+    """Body de POST /despachos/soltar/: el id (VerEntrega) de la orden a soltar."""
+    id = serializers.IntegerField(
+        min_value=1,
+        help_text='El id de la orden (VerEntrega.id) que el conductor quiere soltar.',
+    )
+
+
+class SoltarDespachoView(MovilApiMixin, APIView):
+    """El conductor SUELTA una orden de su "Mis Ordenes" (inverso de tomar).
+
+    Limpia `usuario_id` de SU VerEntrega (public) y, best-effort, el `conductor_id`
+    del RutDespacho (tenant). Scopeado por `usuario_id`: solo puede soltar lo que
+    tiene asignado (no toca lo de otros). Resuelve el caso de ordenes huerfanas /
+    vacias que no tienen despacho en Trafico y por eso no se podian desasignar.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=['despachos'],
+        request=SoltarDespachoRequestSerializer,
+        responses={200: OpenApiResponse(description='Orden soltada')},
+        examples=[OpenApiExample('Soltar orden', value={'id': 14163})],
+    )
+    def post(self, request, *args, **kwargs):
+        entrada = SoltarDespachoRequestSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        ve_id = entrada.validated_data['id']
+
+        ve = VerEntrega.objects.filter(
+            pk=ve_id, usuario_id=request.user.id,
+        ).first()
+        if ve is None:
+            return Response(
+                {'codigo': 1, 'titulo': 'No encontrada',
+                 'mensaje': 'Esa orden no esta asignada a vos.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        schema_name = ve.schema_name
+        despacho_id = ve.despacho_id
+        ve.usuario_id = None
+        ve.save(update_fields=['usuario_id'])
+        # Best-effort: limpiar tambien el conductor en el tenant (si el despacho
+        # existe). Fail-silent: la orden ya se solto de Mis Ordenes (lo que ve el
+        # conductor); si el despacho es huerfano/inexistente, no pasa nada.
+        if schema_name and despacho_id:
+            from django_tenants.utils import schema_context
+            from ruteo.models.despacho import RutDespacho
+            try:
+                with schema_context(schema_name):
+                    RutDespacho.objects.filter(
+                        pk=despacho_id, conductor_id=request.user.id,
+                    ).update(conductor_id=None)
+            except Exception:
+                pass
+        return Response({'mensaje': 'Soltaste la orden'}, status=status.HTTP_200_OK)

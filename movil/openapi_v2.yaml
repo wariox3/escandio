@@ -248,6 +248,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/DespachoMovil'
           description: ''
+  /api/v2/despachos/soltar/:
+    post:
+      operationId: despachos_soltar_create
+      description: |-
+        El conductor SUELTA una orden de su "Mis Ordenes" (inverso de tomar).
+
+        Limpia `usuario_id` de SU VerEntrega (public) y, best-effort, el `conductor_id`
+        del RutDespacho (tenant). Scopeado por `usuario_id`: solo puede soltar lo que
+        tiene asignado (no toca lo de otros). Resuelve el caso de ordenes huerfanas /
+        vacias que no tienen despacho en Trafico y por eso no se podian desasignar.
+      tags:
+      - despachos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SoltarDespachoRequestRequest'
+            examples:
+              SoltarOrden:
+                value:
+                  id: 14163
+                summary: Soltar orden
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SoltarDespachoRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SoltarDespachoRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Orden soltada
   /api/v2/despachos/tomar/:
     post:
       operationId: despachos_tomar_create
@@ -907,6 +941,17 @@ components:
           minLength: 1
       required:
       - username
+    SoltarDespachoRequestRequest:
+      type: object
+      description: 'Body de POST /despachos/soltar/: el id (VerEntrega) de la orden
+        a soltar.'
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: El id de la orden (VerEntrega.id) que el conductor quiere soltar.
+      required:
+      - id
     SolucionarNovedadRequest:
       type: object
       properties:
