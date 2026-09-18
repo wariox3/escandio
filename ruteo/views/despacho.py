@@ -265,6 +265,14 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 with transaction.atomic():
                     despacho = RutDespacho.objects.select_for_update().get(pk=id)
                     if despacho.estado_aprobado == True and despacho.estado_anulado == False and despacho.estado_terminado == False:
+                        # Candado: no anular un despacho que un conductor tiene en la
+                        # calle. Puede tener novedades/entregas creadas offline (aun
+                        # sin sincronizar); si anulamos y luego se limpian las visitas,
+                        # esas novedades quedan huerfanas ("la visita no existe"). El
+                        # conductor debe soltar/finalizar primero, o la oficina quitar
+                        # la asignacion.
+                        if despacho.conductor_id:
+                            return Response({'mensaje': 'El despacho tiene un conductor asignado. Antes de anular, el conductor debe soltar o finalizar la orden (o quitá la asignación) para no perder novedades sin sincronizar.', 'codigo': 16}, status=status.HTTP_400_BAD_REQUEST)
                         visitas_entregadas = RutVisita.objects.filter(despacho_id=id, estado_entregado=True).first()
                         if visitas_entregadas:
                             return Response({'mensaje':'El despacho tiene visitas entregadas', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
