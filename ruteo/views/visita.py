@@ -206,6 +206,12 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
                     despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
                     despacho.save()
+        # Candado: una visita que vino de un despacho (aunque ya este anulado /
+        # desvinculado, con despacho_anterior seteado) puede tener novedades creadas
+        # offline en el movil, aun sin sincronizar. Borrarla las dejaria huerfanas
+        # ("la visita no existe" al sincronizar). Se protege.
+        if visita.despacho_anterior_id:
+            return Response({'mensaje': 'No se puede eliminar: la visita perteneció a un despacho y podría tener novedades sin sincronizar.'}, status=status.HTTP_400_BAD_REQUEST)
         # El contador de visitas lo repone la señal de RutVisita (post_delete).
         self.perform_destroy(visita)
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -844,11 +850,16 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     def eliminar_todos(self, request):             
         raw = request.data
         estado_decodificado = raw.get('estado_decodificado', None)
+        # despacho_anterior_id__isnull=True: solo borra el POOL real de importacion
+        # (visitas que nunca estuvieron en un despacho). Las que vienen de un despacho
+        # anulado/desvinculado (despacho_anterior seteado) se PROTEGEN: pueden tener
+        # novedades creadas offline aun sin sincronizar. Borrarlas dejaria esas
+        # novedades huerfanas ("la visita no existe").
         if estado_decodificado == False:
-            RutVisita.objects.filter(estado_decodificado=False).delete()
+            RutVisita.objects.filter(estado_decodificado=False, despacho_anterior_id__isnull=True).delete()
         else:
-            RutVisita.objects.filter(estado_despacho=False).delete()
-        return Response({'mensaje':'eliminados'}, status=status.HTTP_200_OK) 
+            RutVisita.objects.filter(estado_despacho=False, despacho_anterior_id__isnull=True).delete()
+        return Response({'mensaje':'eliminados'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'resumen',)
     def resumen(self, request):
