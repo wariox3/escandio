@@ -206,12 +206,15 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
                     despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
                     despacho.save()
-        # Candado: una visita que vino de un despacho (aunque ya este anulado /
-        # desvinculado, con despacho_anterior seteado) puede tener novedades creadas
-        # offline en el movil, aun sin sincronizar. Borrarla las dejaria huerfanas
-        # ("la visita no existe" al sincronizar). Se protege.
-        if visita.despacho_anterior_id:
-            return Response({'mensaje': 'No se puede eliminar: la visita perteneció a un despacho y podría tener novedades sin sincronizar.'}, status=status.HTTP_400_BAD_REQUEST)
+        # NOTA: hubo un candado que bloqueaba el borrado individual si la visita
+        # tenia despacho_anterior seteado (posibles novedades offline). Se QUITO:
+        # bloqueaba la limpieza legitima del pool de Rutear (guias que vuelven de
+        # una orden anulada), y su motivo era una hipotesis equivocada (el
+        # incidente real de novedades pegadas era descripcion="", no visitas
+        # borradas). El borrado individual es deliberado; la proteccion real vive
+        # en `anular` (bloquea con conductor) + el hardening del sync offline
+        # (UI honesta, reporte a Sentry, fix multipart/401). El `eliminar_todos`
+        # SI sigue scoped (masivo es peligroso, sobre todo sin complemento).
         # El contador de visitas lo repone la señal de RutVisita (post_delete).
         self.perform_destroy(visita)
         return Response(status=status.HTTP_204_NO_CONTENT)
