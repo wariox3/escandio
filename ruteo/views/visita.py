@@ -853,15 +853,18 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     def eliminar_todos(self, request):             
         raw = request.data
         estado_decodificado = raw.get('estado_decodificado', None)
-        # despacho_anterior_id__isnull=True: solo borra el POOL real de importacion
-        # (visitas que nunca estuvieron en un despacho). Las que vienen de un despacho
-        # anulado/desvinculado (despacho_anterior seteado) se PROTEGEN: pueden tener
-        # novedades creadas offline aun sin sincronizar. Borrarlas dejaria esas
-        # novedades huerfanas ("la visita no existe").
+        # Limpia TODO el pool (incluidas las guias que volvieron de un despacho
+        # anulado). Hubo un candado que protegia las ex-despacho (despacho_anterior)
+        # de este borrado masivo; se QUITO porque rompia el flujo real de la oficina
+        # ("Eliminar todas" no limpiaba y las guias quedaban pegadas). Es una accion
+        # deliberada con confirmacion; la proteccion real vive en `anular` (con
+        # conductor) + el hardening del sync offline. OJO: en contenedores sin
+        # complemento este borrado es PERMANENTE (no hay de donde re-importar) — el
+        # aviso en la web lo advierte.
         if estado_decodificado == False:
-            RutVisita.objects.filter(estado_decodificado=False, despacho_anterior_id__isnull=True).delete()
+            RutVisita.objects.filter(estado_decodificado=False).delete()
         else:
-            RutVisita.objects.filter(estado_despacho=False, despacho_anterior_id__isnull=True).delete()
+            RutVisita.objects.filter(estado_despacho=False).delete()
         return Response({'mensaje':'eliminados'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path=r'resumen',)
